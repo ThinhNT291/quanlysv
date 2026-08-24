@@ -112,6 +112,14 @@ const getToken = () => {
     return user?.token || user?.credential || user?.idToken || localStorage.getItem('gg_id_token');
 };
 
+// ĐÃ THÊM: lấy phiên đăng nhập tài khoản nội bộ (sessionToken) — trước đây trang này
+// chỉ gửi idToken (Google) lên các action AI/tra cứu, tài khoản nội bộ không dùng
+// được scanDocument/searchOldRecord. Backend giờ nhận cả 2, gửi kèm cho chắc.
+const getSessionToken = () => {
+    const user = JSON.parse(localStorage.getItem('tuyensinh_user'));
+    return user?.sessionToken || '';
+};
+
 const getUserEmail = () => {
     const user = JSON.parse(localStorage.getItem('tuyensinh_user'));
     return user?.username || user?.email || "Unknown";
@@ -506,6 +514,12 @@ const XetTuyenPage = () => {
     try {
         const payloadParams = new URLSearchParams();
         payloadParams.append('action', 'importStudents');
+        // ĐÃ VÁ BUG: trước đây KHÔNG gửi idToken/sessionToken ở đây — action "importStudents"
+        // phía backend đọc quyền qua requireAuth(e.parameter,...), cần idToken/sessionToken là
+        // field RIÊNG ngang hàng với "action", không phải lồng trong "data". Thiếu thì mọi lần
+        // bấm "Đẩy dữ liệu lên hệ thống" đều bị chặn 401 — cần bạn test lại kỹ chỗ này.
+        payloadParams.append('idToken', getToken());
+        payloadParams.append('sessionToken', getSessionToken());
         payloadParams.append('data', JSON.stringify(pendingList.map(row => {
             const copyRow = { ...row };
             if (copyRow["CĂN CƯỚC"]) copyRow["CĂN CƯỚC"] = "'" + copyRow["CĂN CƯỚC"];
@@ -561,7 +575,7 @@ const XetTuyenPage = () => {
           try {
               const payloadParams = new URLSearchParams();
               payloadParams.append('action', 'scanDocument');
-              payloadParams.append('data', JSON.stringify({ idToken: token, imageBase64: base64String, mimeType: 'image/jpeg' }));
+              payloadParams.append('data', JSON.stringify({ idToken: token, sessionToken: getSessionToken(), imageBase64: base64String, mimeType: 'image/jpeg' }));
 
               const response = await fetch(WEB_APP_URL, { method: 'POST', body: payloadParams });
               const result = await response.json();
@@ -602,7 +616,7 @@ const XetTuyenPage = () => {
       try {
           const payloadParams = new URLSearchParams();
           payloadParams.append('action', 'searchOldRecord');
-          payloadParams.append('data', JSON.stringify({ idToken: token, keyword: searchKeyword }));
+          payloadParams.append('data', JSON.stringify({ idToken: token, sessionToken: getSessionToken(), keyword: searchKeyword }));
 
           const response = await fetch(WEB_APP_URL, { method: 'POST', body: payloadParams });
           const result = await response.json();
@@ -820,10 +834,19 @@ const XetTuyenPage = () => {
                       const token = getToken();
                       const payloadParams = new URLSearchParams();
                       payloadParams.append('action', 'checkDuplicatesXetTuyen');
-                      payloadParams.append('data', JSON.stringify({
-                          idToken: token,
-                          keys: newItems.map(r => ({ cccd: r["CĂN CƯỚC"], nganh: r["NGÀNH"] }))
-                      }));
+                      // ĐÃ VÁ BUG: idToken/sessionToken phải là field RIÊNG (action
+                      // "checkDuplicatesXetTuyen" cũng dùng requireAuth(e.parameter,...) như
+                      // "importStudents" ở trên) — trước đây lồng nhầm trong "data", khiến lệnh
+                      // hỏi trùng này luôn bị chặn 401 âm thầm (chỉ bị bỏ qua, không chặn import,
+                      // nên không ai để ý — nhưng lớp bảo vệ "hỏi trước server" thực chất chưa
+                      // từng chạy được lần nào).
+                      payloadParams.append('idToken', token);
+                      payloadParams.append('sessionToken', getSessionToken());
+                      // "data" phải là MẢNG THẲNG [{cccd,nganh},...] — khớp đúng cách backend đọc
+                      // (JSON.parse(e.parameter.data) rồi gọi .map thẳng lên đó).
+                      payloadParams.append('data', JSON.stringify(
+                          newItems.map(r => ({ cccd: r["CĂN CƯỚC"], nganh: r["NGÀNH"] }))
+                      ));
                       const dupResp = await fetch(WEB_APP_URL, { method: 'POST', body: payloadParams });
                       const dupResult = await dupResp.json();
                       if (dupResult.code === 200 && Array.isArray(dupResult.data?.results)) {

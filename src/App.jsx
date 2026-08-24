@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import Swal from 'sweetalert2';
+import { sendFeedback } from './api/studentApi';
 import AdmissionsPage from './pages/Admissions/AdmissionsPage'; 
 import SettingsPage from './pages/Settings/SettingsPage'; 
 import LoginPage from './pages/Auth/LoginPage'; 
@@ -195,6 +197,28 @@ const App = () => {
   // bấm nút "Đăng xuất" thì không cần cảnh báo gì), tránh khai báo trùng tên 2 lần.
   const handleLogoutClick = () => handleLogout(null, true); // bấm tay -> xoá luôn sessionStorage
 
+  // ĐÃ THÊM: nút "Phản hồi" ở footer toàn app — mở form nhập, gửi qua Google Chat.
+  // Dùng Swal (đã có sẵn trong dự án) thay vì tự viết modal riêng cho gọn.
+  const handleOpenFeedback = async () => {
+    const { value: noiDung, isConfirmed } = await Swal.fire({
+      title: '💬 Gửi phản hồi',
+      input: 'textarea',
+      inputPlaceholder: 'Mô tả lỗi gặp phải hoặc góp ý của bạn...',
+      showCancelButton: true,
+      confirmButtonText: 'Gửi',
+      cancelButtonText: 'Hủy',
+      inputValidator: (value) => !value?.trim() ? 'Vui lòng nhập nội dung phản hồi!' : undefined,
+    });
+    if (!isConfirmed || !noiDung) return;
+
+    try {
+      await sendFeedback(noiDung.trim());
+      Swal.fire({ icon: 'success', title: 'Cảm ơn bạn!', text: 'Chúng tôi đã nhận được phản hồi.' });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Gửi thất bại', text: err.message });
+    }
+  };
+
   if (!currentUser) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
@@ -203,7 +227,7 @@ const App = () => {
 
   return (
     <HashRouter>
-      <div style={{ minHeight: '100vh', backgroundColor: '#f4f6f9' }}>
+      <div style={{ minHeight: '100vh', backgroundColor: '#f4f6f9', paddingBottom: '38px' }}>
         
         <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top">
           <div className="container-fluid px-4">
@@ -351,6 +375,20 @@ const App = () => {
               </div>
             } />
           </Routes>
+        </div>
+
+        {/* ĐÃ THÊM: footer cố định dưới cùng, hiện xuyên suốt toàn app — nút Phản hồi bên
+            trái, dòng "Cập nhật lần cuối" bên phải theo đúng yêu cầu. */}
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1020,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '6px 16px', background: 'rgba(255,255,255,0.95)',
+          borderTop: '1px solid #dee2e6', fontSize: '0.8rem'
+        }}>
+          <button className="btn btn-sm btn-outline-secondary" onClick={handleOpenFeedback}>
+            💬 Phản hồi
+          </button>
+          <span className="text-muted">Cập nhật lần cuối bởi Nguyễn Tiến Thịnh</span>
         </div>
 
       </div>

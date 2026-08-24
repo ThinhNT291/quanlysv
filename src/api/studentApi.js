@@ -185,13 +185,13 @@ export const banGiaoDaoTao = (payloadArray) => postThamDinhAction('capNhatDaoTao
 // (JSON.parse(e.parameter.data).idToken) chứ không phải field idToken/sessionToken
 // riêng như các action khác — giữ đúng quy ước đã viết sẵn ở Gas_Quanlysv.gs, không
 // đổi lại cho "đồng bộ" vì sẽ phải sửa cả backend, ngoài phạm vi đợt này.
-// LƯU Ý: các action AI hiện CHỈ nhận Google idToken, tài khoản nội bộ (sessionToken)
-// chưa dùng được 3 tính năng AI này — cùng giới hạn đã nói ở phần session tài khoản
-// nội bộ trước đây, chưa mở rộng ở đợt này.
+// ĐÃ SỬA: giờ gửi kèm cả sessionToken (không chỉ idToken) — backend đã cập nhật dùng
+// requireAuth() cho cả 3 action này, hỗ trợ tài khoản nội bộ (trước đây chỉ Google).
 const postAiAction = async (action, dataObj) => {
   const formData = new URLSearchParams();
   formData.append('action', action);
-  formData.append('data', JSON.stringify({ idToken: getAuthParams().idToken, ...dataObj }));
+  const auth = getAuthParams();
+  formData.append('data', JSON.stringify({ idToken: auth.idToken, sessionToken: auth.sessionToken, ...dataObj }));
 
   const response = await axios.post(GAS_URL, formData);
   if (response.data && response.data.code === 200) {
@@ -294,3 +294,8 @@ export const fetchLogs = async (username) => {
   }
   throw new Error(response.data.message || 'Lỗi tải nhật ký');
 };
+
+// ==========================================
+// PHẦN 6: PHẢN HỒI LỖI (gửi qua Google Chat, hiện ở footer toàn app)
+// ==========================================
+export const sendFeedback = (noiDung) => postAiAction('feedback', { noiDung });
