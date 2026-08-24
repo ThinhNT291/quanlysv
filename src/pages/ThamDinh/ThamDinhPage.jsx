@@ -11,7 +11,7 @@ import {
   calculateScores, isSafeDriveUrl, getCandidateScanKey
 } from './thamDinhHelpers';
 import { DICT_NGANH } from './thamDinhConfig';
-
+import './ThamDinh.css';
 // ===================================================================
 // TRANG BAN THẨM ĐỊNH — Pha 3 (KPI/bộ lọc/bảng, chỉ đọc) + Pha 4 (Duyệt trúng
 // tuyển, Báo thiếu hồ sơ, Lưu CSDL, Bàn giao Đào tạo, thao tác hàng loạt) + Pha 5
@@ -487,7 +487,7 @@ const ThamDinhPage = () => {
   const batchTitleMap = { duyet: "Xác nhận DUYỆT TRÚNG TUYỂN hàng loạt", baothieu: "Xác nhận YÊU CẦU BỔ SUNG HỒ SƠ hàng loạt", luucsdl: "Xác nhận LƯU VÀO CSDL hàng loạt" };
 
   return (
-    <div className="container-fluid py-3">
+    <div className="container-fluid py-3 thamdinh-page">
       <div className="row mb-3 align-items-center">
         <div className="col-md-6">
           <h4 className="text-uppercase fw-bold" style={{ color: '#037683' }}>
@@ -541,42 +541,42 @@ const ThamDinhPage = () => {
         </div>
       </div>
 
-      <div className="card border-0 shadow-sm mb-3">
+            <div className="card border-0 shadow-sm mb-3">
         <div className="card-body py-2">
           <div className="row g-2 align-items-end">
-            <div className="col-md-3">
+            <div className="col-md-3 col-xl-2">
               <label className="form-label small mb-1">Tìm nhanh</label>
               <input type="search" className="form-control form-control-sm" placeholder="🔎 Mã SV / Căn cước / Họ và tên..."
                 value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
             </div>
-            <div className="col-6 col-md-2">
+            <div className="col-6 col-md-2 col-xl-1">
               <label className="form-label small mb-1">Từ ngày</label>
               <input type="date" className="form-control form-control-sm" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }} />
             </div>
-            <div className="col-6 col-md-2">
+            <div className="col-6 col-md-2 col-xl-1">
               <label className="form-label small mb-1">Đến ngày</label>
               <input type="date" className="form-control form-control-sm" value={dateTo} onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }} />
             </div>
-            <div className="col-6 col-md-2">
+            <div className="col-6 col-md-2 col-xl-2">
               <label className="form-label small mb-1">Ngành đào tạo</label>
               <select className="form-select form-select-sm" value={filterNganh} onChange={e => { setFilterNganh(e.target.value); setCurrentPage(1); }}>
                 <option value="">-- Tất cả ngành --</option>
                 {nganhOptions.map(ng => <option key={ng} value={ng}>{ng}</option>)}
               </select>
             </div>
-            <div className="col-6 col-md-2">
+            <div className="col-6 col-md-2 col-xl-2">
               <label className="form-label small mb-1">Đối tượng đầu vào</label>
               <select className="form-select form-select-sm" value={filterDoiTuong} onChange={e => { setFilterDoiTuong(e.target.value); setCurrentPage(1); }}>
                 <option value="">-- Tất cả --</option>
                 {doiTuongOptions.map(dt => <option key={dt} value={dt}>{dt}</option>)}
               </select>
             </div>
-            <div className="col-6 col-md-1">
+            <div className="col-6 col-md-1 col-xl-1">
               <button className="btn btn-sm btn-outline-secondary w-100" onClick={resetFilters} title="Xoá bộ lọc">
                 <i className="bi bi-x-circle"></i>
               </button>
             </div>
-            <div className="col-6 col-md-3">
+            <div className="col-6 col-md-3 col-xl-2">
               <label className="form-label small mb-1">Trạng thái hồ sơ</label>
               <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
                 <option value="">-- Tất cả --</option>
@@ -584,7 +584,7 @@ const ThamDinhPage = () => {
                 <option value="Thiếu">Thiếu hồ sơ</option>
               </select>
             </div>
-            <div className="col-6 col-md-3">
+            <div className="col-6 col-md-3 col-xl-1">
               <label className="form-label small mb-1">Sắp xếp</label>
               <select className="form-select form-select-sm" value={sortBy} onChange={e => setSortBy(e.target.value)}>
                 <option value="date_desc">Ngày nộp mới nhất</option>
@@ -611,7 +611,7 @@ const ThamDinhPage = () => {
 
       <div className="card border-0 shadow-sm">
         <div className="table-responsive">
-          <table className="table table-hover align-middle mb-0" style={{ fontSize: '13px' }}>
+           <table className="table table-hover align-middle mb-0" style={{ fontSize: '12px' }}>
             <thead className="table-light">
               <tr>
                 <th style={{ width: 34 }}></th>
@@ -734,7 +734,7 @@ const ThamDinhPage = () => {
         const btnSaveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : saveMutation.isPending ? '⏳ Đang lưu...' : saved ? '💾 Đã lưu hồ sơ vào CSDL' : '💾 LƯU VÀO CSDL';
 
         return (
-          <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) setViewingIndex(null); }}>
+                    <div className="modal show d-block thamdinh-detail-modal" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) setViewingIndex(null); }}>
             <div className="modal-dialog modal-lg modal-dialog-scrollable">
               <div className="modal-content">
                 <div className="modal-header">
@@ -746,9 +746,9 @@ const ThamDinhPage = () => {
                   <button type="button" className="btn-close ms-3" onClick={() => setViewingIndex(null)}></button>
                 </div>
                 <div className="modal-body">
-                  <table className="table table-sm table-borderless mb-2">
+                  <table className="table table-sm table-borderless mb-2 thamdinh-info-table">
                     <tbody>
-                      <tr><th style={{ width: 180 }}>Mã SV (tự sinh)</th><td>{generateMaSV(row)}</td></tr>
+                      <tr><th style={{ width: 230 }}>Mã SV (tự sinh)</th><td>{generateMaSV(row)}</td></tr>
                       <tr><th>Số CCCD</th><td>{getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '')}</td></tr>
                       <tr><th>Hệ / Hình thức đào tạo</th><td>{getVal(row, ["HỆ ĐÀO TẠO"])} / {getVal(row, ["HÌNH THỨC ĐÀO TẠO"])}</td></tr>
                       <tr><th>Đối tượng đầu vào</th><td>{getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"])}</td></tr>

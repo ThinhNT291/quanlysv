@@ -252,7 +252,7 @@ const XetTuyenPage = () => {
         const allRequiredDocs = DICT_HO_SO.chung.filter(doc => !doc.optional);
         const isAllSelected = allRequiredDocs.every(doc => prev[doc.id]);
         const newState = { ...prev };
-        DICT_HO_SO.chung.forEach(doc => newState[doc.id] = !isAllSelected);
+        allRequiredDocs.forEach(doc => newState[doc.id] = !isAllSelected);
         return newState;
     });
   };
@@ -1125,14 +1125,14 @@ const XetTuyenPage = () => {
           </div>
 
           <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mt-4 mb-4">
-              <div className="flex-grow-1 order-2 order-md-1">
+                            <div className="flex-grow-1 order-2 order-md-1">
                   {admissionResult && formData.nganh && formData.doituongdauvao && (
                       <div className="d-flex align-items-center gap-2 p-2 px-3 rounded shadow-sm" style={{ backgroundColor: admissionResult.boxBg, border: `1px solid ${admissionResult.boxBorder}`, maxWidth: '400px'}}>
                           <div className="fs-3 lh-1">{admissionResult.icon}</div>
                           <div>
-                              <h6 className="mb-0 fw-bold text-uppercase" style={{color: admissionResult.titleColor, fontSize: '13px'}}>{admissionResult.title}</h6>
-                              <div className="fw-bold mt-1" style={{fontSize: '11px', color: admissionResult.hsColor}} dangerouslySetInnerHTML={{__html: admissionResult.hsMsg}}></div>
-                              <div className="fw-bold mt-1" style={{fontSize: '11px', color: '#444'}}>📊 <span dangerouslySetInnerHTML={{__html: admissionResult.diemMsg}}></span></div>
+                              <h6 className="mb-0 fw-bold text-uppercase" style={{color: admissionResult.titleColor, fontSize: '12px'}}>{admissionResult.title}</h6>
+                              <div className="fw-bold mt-1" style={{fontSize: '10px', color: admissionResult.hsColor}} dangerouslySetInnerHTML={{__html: admissionResult.hsMsg}}></div>
+                              <div className="fw-bold mt-1" style={{fontSize: '10px', color: '#444'}}>📊 <span dangerouslySetInnerHTML={{__html: admissionResult.diemMsg}}></span></div>
                           </div>
                       </div>
                   )}
@@ -1157,8 +1157,7 @@ const XetTuyenPage = () => {
             <>
               <h5 className="fw-bold text-primary mb-3 mt-5 border-bottom pb-2">📋 DANH SÁCH CHỜ ĐỒNG BỘ ({dataList.filter(r => r["TRẠNG THÁI ĐẨY"] === "Waiting" || r["TRẠNG THÁI ĐẨY"].includes("Lỗi")).length} hồ sơ)</h5>
               <div className="table-responsive border rounded mb-3">
-                  <table className="table table-bordered table-hover table-striped mb-0 align-middle" style={{ minWidth: 'max-content', fontSize: '12px', whiteSpace: 'nowrap', borderColor: '#dee2e6' }}>
-                      <thead className="table-light sticky-top">
+                  <table className="table table-bordered table-hover table-striped mb-0 align-middle" style={{ minWidth: 'max-content', fontSize: '11px', whiteSpace: 'nowrap', borderColor: '#dee2e6' }}>                      <thead className="table-light sticky-top">
                           <tr>
                               <th className="text-center">STT</th>
                               <th className="text-center">TRẠNG THÁI</th>
@@ -1303,8 +1302,7 @@ const XetTuyenPage = () => {
                           </div>
                           
                           <div className="table-responsive border rounded" style={{ maxHeight: '300px' }}>
-                              <table className="table table-hover mb-0 align-middle" style={{fontSize: '13px'}}>
-                                  <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center">TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
+                              <table className="table table-hover mb-0 align-middle" style={{fontSize: '12px'}}>                                  <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center">TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
                                   <tbody>
                                       {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Nhập từ khóa và bấm Tìm kiếm...</td></tr>) : (
                                           searchResults.map((item, index) => (

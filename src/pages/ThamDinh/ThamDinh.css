@@ -1,0 +1,56 @@
+/* ========================================================
+   THU NHỎ FONT TOÀN TRANG THẨM ĐỊNH (yêu cầu #5)
+   Lưu ý: :root trong src/index.css đang set font 18px cho toàn app. Các class
+   Bootstrap (btn, form-control, table...) dùng đơn vị rem nên luôn tính theo
+   font-size của thẻ <html>, KHÔNG kế thừa theo class cha .thamdinh-page — vì
+   vậy phải override trực tiếp bằng px để không ảnh hưởng các trang khác.
+   ======================================================== */
+.thamdinh-page { font-size: 15px; }
+.thamdinh-page h3 { font-size: 24px; }
+.thamdinh-page h4 { font-size: 18px; }
+.thamdinh-page h5 { font-size: 16px; }
+.thamdinh-page h6 { font-size: 14px; }
+.thamdinh-page .btn { font-size: 13px; padding: 0.3rem 0.7rem; }
+.thamdinh-page .btn-sm { font-size: 12px; padding: 0.2rem 0.5rem; }
+.thamdinh-page .form-control,
+.thamdinh-page .form-select { font-size: 13px; }
+.thamdinh-page .form-control-sm,
+.thamdinh-page .form-select-sm { font-size: 12px; }
+.thamdinh-page .badge { font-size: 11px; }
+.thamdinh-page .small { font-size: 12px; }
+
+/* ========================================================
+   MODAL THẨM ĐỊNH CHI TIẾT (yêu cầu #2)
+   ======================================================== */
+/* Nền modal-content hơi ngả xám nhạt (thay vì trắng tinh) để các khung con
+   (border rounded) bên trong nổi rõ lên. */
+.thamdinh-detail-modal .modal-content {
+  background-color: #f4f6f8;
+}
+
+/* Cột nhãn bên trái của bảng thông tin hồ sơ — giãn rộng hơn để các nhãn dài
+   (VD: "Khu vực / Đối tượng ưu tiên") không bị xuống dòng. */
+.thamdinh-info-table th {
+  width: 230px;
+  white-space: nowrap;
+}
+
+/* Thu nhỏ font trong modal 1-2 nấc. Bảng tổ hợp và bảng điểm các môn quét AI
+   đã tự set fontSize:12 bằng inline style ngay trong JSX -> inline style luôn
+   thắng class CSS nên KHÔNG bị ảnh hưởng bởi các rule dưới đây (đúng yêu cầu
+   "trừ phần bảng tổ hợp và điểm các môn"). */
+.thamdinh-detail-modal .modal-body {
+  font-size: 13px;
+}
+.thamdinh-detail-modal .modal-title {
+  font-size: 15px;
+}
+.thamdinh-detail-modal .modal-body h6 {
+  font-size: 13px;
+}
+.thamdinh-detail-modal .modal-body .btn {
+  font-size: 12px;
+}
+.thamdinh-detail-modal .modal-footer .btn {
+  font-size: 13px;
+}
