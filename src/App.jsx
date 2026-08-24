@@ -1,21 +1,71 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
 import AdmissionsPage from './pages/Admissions/AdmissionsPage'; 
 import SettingsPage from './pages/Settings/SettingsPage'; 
 import LoginPage from './pages/Auth/LoginPage'; 
 import UserStatsPage from './pages/Settings/UserStatsPage'; 
+import XetTuyenPage from './pages/XetTuyen/XetTuyenPage'; 
+
+// TRẠM KIỂM SOÁT PHÂN QUYỀN
+const ProtectedRoute = ({ userRole, allowedRoles, children }) => {
+  // Nếu Role của user nằm trong danh sách được phép -> Cho qua
+  if (allowedRoles.includes(userRole) || userRole === 'Admin') {
+    return children;
+  }
+  // Nếu không -> Hiện màn hình Khóa
+  return (
+    <div className="d-flex flex-column align-items-center justify-content-center mt-5 pt-5 text-center">
+      <h1 className="text-danger display-1"><i className="bi bi-shield-lock-fill"></i></h1>
+      <h3 className="text-muted mt-3 fw-bold">KHÔNG CÓ QUYỀN TRUY CẬP</h3>
+      <p className="text-secondary">Tài khoản của bạn không được phân quyền sử dụng chức năng này.</p>
+    </div>
+  );
+};
 
 const App = () => {
   // State quản lý menu dọc trên điện thoại
   const [isNavCollapsed, setIsNavCollapsed] = useState(true);
   
-  // THÊM STATE NÀY ĐỂ QUẢN LÝ ĐÓNG/MỞ MENU TÀI KHOẢN
+  // State quản lý Đóng/Mở menu tài khoản
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = localStorage.getItem('tuyensinh_user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
+// ====================================================
+  // TÍNH NĂNG TỰ ĐỘNG LOGOUT SAU 30 PHÚT KHÔNG TƯƠNG TÁC
+  // ====================================================
+  useEffect(() => {
+    let idleTimer;
+    
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      if (currentUser) {
+        // 30 phút = 30 * 60 * 1000 mili-giây
+        idleTimer = setTimeout(() => {
+          setCurrentUser(null);
+          localStorage.removeItem('tuyensinh_user');
+          alert("Phiên làm việc hết hạn do không tương tác quá lâu.");
+          window.location.href = "/"; // Đẩy về trang chủ (Login)
+        }, 30 * 60 * 1000);
+      }
+    };
+
+    // Theo dõi các sự kiện tương tác của người dùng
+    const events = ['mousemove', 'keydown', 'scroll', 'click'];
+    
+    if (currentUser) {
+      events.forEach(e => window.addEventListener(e, resetIdleTimer));
+      resetIdleTimer(); // Kích hoạt bộ đếm lần đầu
+    }
+
+    return () => {
+      clearTimeout(idleTimer);
+      events.forEach(e => window.removeEventListener(e, resetIdleTimer));
+    };
+  }, [currentUser]);
+
 
   const handleLoginSuccess = (userInfo) => {
     setCurrentUser(userInfo);
@@ -48,25 +98,42 @@ const App = () => {
             </button>
 
             <div className={`${isNavCollapsed ? 'collapse' : ''} navbar-collapse`} id="navbarNav">
+              
+              {/* MENU CHÍNH: Đã bọc điều kiện ẩn/hiện theo quyền */}
               <ul className="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-4 gap-2">
-                <li className="nav-item">
-                  <NavLink to="/" end onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
-                    <i className="bi bi-people-fill me-1"></i> Quản lý hồ sơ
-                  </NavLink>
-                </li>
-                <li className="nav-item">
-                  <NavLink to="/settings" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
-                    <i className="bi bi-gear-fill me-1"></i> Cấu hình hệ thống
-                  </NavLink>
-                </li>
+                {/* MENU QUẢN LÝ HỒ SƠ: Dành cho CanBo và Admin */}
+                {['CanBo', 'Admin'].includes(currentUser.role) && (
+                  <li className="nav-item">
+                    <NavLink to="/" end onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
+                      <i className="bi bi-people-fill me-1"></i> Quản lý hồ sơ
+                    </NavLink>
+                  </li>
+                )}
+
+                {/* MENU XÉT TUYỂN: Dành cho TuyenSinh, ThamDinh và Admin */}
+                {['TuyenSinh', 'ThamDinh', 'Admin'].includes(currentUser.role) && (
+                  <li className="nav-item">
+                    <NavLink to="/xet-tuyen" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
+                      <i className="bi bi-card-checklist me-1"></i> Nhập liệu Xét tuyển
+                    </NavLink>
+                  </li>
+                )}
+
+                {/* CẤU HÌNH: Chỉ Admin mới thấy */}
+                {currentUser.role === 'Admin' && (
+                  <li className="nav-item">
+                    <NavLink to="/settings" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
+                      <i className="bi bi-gear-fill me-1"></i> Cấu hình hệ thống
+                    </NavLink>
+                  </li>
+                )}
               </ul>
               
-              {/* DROPDOWN USER MENU (ĐÃ SỬA LẠI BẰNG REACT STATE) */}
+              {/* DROPDOWN USER MENU */}
               <div className="nav-item dropdown d-flex align-items-center mt-3 mt-lg-0 position-relative">
                 <a 
                   className="nav-link dropdown-toggle text-light d-flex align-items-center p-0" 
                   href="#" 
-                  // Bấm vào thì đảo ngược trạng thái Đóng/Mở
                   onClick={(e) => {
                     e.preventDefault();
                     setIsUserDropdownOpen(!isUserDropdownOpen);
@@ -84,7 +151,6 @@ const App = () => {
                   </div>
                 </a>
                 
-                {/* Dùng class 'show' của Bootstrap để ép nó hiện ra khi state là true */}
                 <ul 
                   className={`dropdown-menu dropdown-menu-end shadow border-0 mt-2 ${isUserDropdownOpen ? 'show' : ''}`} 
                   style={{ position: 'absolute', right: 0, top: '100%' }}
@@ -95,7 +161,7 @@ const App = () => {
                       className="dropdown-item py-2" 
                       onClick={() => {
                         setIsNavCollapsed(true);
-                        setIsUserDropdownOpen(false); // Chuyển trang thì tự động cụp menu lại
+                        setIsUserDropdownOpen(false);
                       }}
                     >
                       <i className="bi bi-graph-up-arrow me-2 text-primary"></i> Thống kê cá nhân
@@ -115,10 +181,33 @@ const App = () => {
         </nav>
 
         <div className="p-2 p-md-3">
+          {/* VÙNG ĐỊNH TUYẾN CHÍNH (Chỉ giữ 1 khối Routes duy nhất) */}
           <Routes>
-            <Route path="/" element={<AdmissionsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            {/* Nhóm 1: Cán bộ */}
+            <Route path="/" element={
+              <ProtectedRoute userRole={currentUser.role} allowedRoles={['CanBo']}>
+                <AdmissionsPage />
+              </ProtectedRoute>
+            } />
+
+            {/* Nhóm 2 & 3: Tuyển sinh + Thẩm định */}
+            <Route path="/xet-tuyen" element={
+              <ProtectedRoute userRole={currentUser.role} allowedRoles={['TuyenSinh', 'ThamDinh']}>
+                <XetTuyenPage />
+              </ProtectedRoute>
+            } />
+
+            {/* Nhóm 4: Settings (Chỉ Admin) */}
+            <Route path="/settings" element={
+              <ProtectedRoute userRole={currentUser.role} allowedRoles={[]}>
+                <SettingsPage />
+              </ProtectedRoute>
+            } />
+            
+            {/* Các trang chung ai cũng vào được */}
             <Route path="/user-stats" element={<UserStatsPage />} />
+            
+            {/* Trang báo lỗi 404 */}
             <Route path="*" element={
               <div className="d-flex flex-column align-items-center justify-content-center mt-5 pt-5">
                 <h1 className="text-muted display-1"><i className="bi bi-emoji-frown"></i></h1>

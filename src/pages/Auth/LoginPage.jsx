@@ -8,21 +8,51 @@ const LoginPage = ({ onLoginSuccess }) => {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
 
-  // 1. Xử lý đăng nhập bằng Google
-  const handleGoogleSuccess = (credentialResponse) => {
-    // Giải mã cục Token do Google trả về để lấy thông tin Email, Tên, Avatar
+// Khai báo link GAS (nhớ dán link mới nhất của ông vào nếu có đổi)
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
+
+// 1. Xử lý đăng nhập bằng Google (Phiên bản nối mạng Check Role)
+const handleGoogleSuccess = async (credentialResponse) => {
+  try {
+    // Giải mã tạm để lấy cái ảnh Avatar hiển thị cho đẹp
     const decoded = jwtDecode(credentialResponse.credential);
     
-    // Tạm thời cho phép tất cả ai có mail Google đều vào được (Có thể chặn domain trường sau này)
-    const userInfo = {
-      username: decoded.email,
-      name: decoded.name,
-      avatar: decoded.picture,
-      role: 'Giảng viên / Cán bộ'
-    };
+    // Gói Token gửi xuống Trạm kiểm soát của GAS
+    const payloadParams = new URLSearchParams();
+    payloadParams.append('action', 'verifyToken');
+    payloadParams.append('data', JSON.stringify({
+        idToken: credentialResponse.credential
+    }));
+
+    // Gọi Backend để dò tên trong Sheet TaiKhoan
+    const response = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        body: payloadParams
+    });
     
-    onLoginSuccess(userInfo); // Báo cho App.jsx biết là đã Login thành công
-  };
+    const result = await response.json();
+
+    // Nếu Backend báo OK (Tìm thấy tên trong Sheet)
+    if (result.code === 200) {
+        const userInfo = {
+            username: result.data.email,
+            name: result.data.name || decoded.name,
+            avatar: decoded.picture,
+            role: result.data.role, // <--- ĂN TIỀN Ở ĐÂY! Lấy đúng Role (Admin, CanBo...) từ Google Sheets
+            token: credentialResponse.credential
+        };
+        
+        if (typeof onLoginSuccess === 'function') {
+            onLoginSuccess(userInfo);
+        }
+    } else {
+        // Bị Backend từ chối (Không có trong Sheet hoặc sai Token)
+        alert("⛔ Từ chối truy cập: " + result.message);
+    }
+  } catch (error) {
+      alert("Lỗi kết nối đến máy chủ xác thực.");
+  }
+};
 
   // 2. Xử lý đăng nhập bằng Tài khoản nội bộ (Google Sheets)
   const handleLocalLogin = async (e) => {

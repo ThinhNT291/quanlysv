@@ -1,31 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchConfig } from '../../api/studentApi'; // Nhúng API lấy cấu hình vào đây
+import { fetchConfig } from '../../api/studentApi';
 
 const AddStudentModal = ({ onClose, onSave, isPending, initialData }) => {
-  // 1. TẢI CẤU HÌNH ĐỘNG TỪ GOOGLE SHEETS
   const { data: configData, isLoading: isConfigLoading } = useQuery({
     queryKey: ['systemConfig'],
     queryFn: fetchConfig,
-    staleTime: Infinity, // Cấu hình ít đổi nên lưu cache vĩnh viễn cho nhẹ máy
+    staleTime: Infinity,
   });
 
-  // State lưu trữ form
+  // DANH SÁCH CÁC LOẠI GIẤY TỜ CỐ ĐỊNH
+  const DANH_SACH_GIAY_TO = [
+    'Học bạ THPT', 
+    'Bằng/Giấy CNTN', 
+    'Giấy khai sinh', 
+    'CCCD/CMND', 
+    'Ảnh thẻ', 
+    'Giấy khám sức khỏe', 
+    'Minh chứng ưu tiên'
+  ];
+
+  // Thêm field GiayTo (dạng mảng) vào state
   const [formData, setFormData] = useState({
     MaSV: '', HoTen: '', NgaySinh: '', CCCD: '', Nganh: '',
     KhoaNhapHoc: '', DoiTuongUT: '', KhuVucUT: '', DoiTuongDauVao: 'Trung học phổ thông',
     NamXetTuyen: '', HinhThucDT: 'Chính quy', PhuongThucDT: 'Đại trà', 
-    HeDT: 'Đại học', LinkHoSo: '', TrangThai: 1
+    HeDT: 'Đại học', LinkHoSo: '', TrangThai: 1, GiayTo: []
   });
 
-  // 2. NẠP DỮ LIỆU BAN ĐẦU
   useEffect(() => {
     if (initialData) {
-      // Đang ở chế độ SỬA HỒ SƠ
       const formattedDate = initialData.NgaySinh ? new Date(initialData.NgaySinh).toISOString().split('T')[0] : '';
-      setFormData({ ...initialData, NgaySinh: formattedDate });
+      
+      // Chuyển chuỗi GiayTo từ Sheet (VD: "Học bạ, CCCD") thành mảng để check vào ô
+      const giayToMang = initialData.GiayTo ? initialData.GiayTo.split(',').map(item => item.trim()) : [];
+      
+      setFormData({ ...initialData, NgaySinh: formattedDate, GiayTo: giayToMang });
     } else if (configData) {
-      // Đang ở chế độ THÊM MỚI: Tự động lấy giá trị đầu tiên trong Cấu hình làm mặc định
       setFormData(prev => ({
         ...prev,
         Nganh: configData.Nganh?.[0] || '',
@@ -33,11 +44,11 @@ const AddStudentModal = ({ onClose, onSave, isPending, initialData }) => {
         DoiTuongUT: configData.DoiTuongUT?.[0] || '',
         KhuVucUT: configData.KhuVucUT?.[0] || '',
         NamXetTuyen: configData.NamXetTuyen?.[0] || '',
+        GiayTo: []
       }));
     }
   }, [initialData, configData]);
 
-  // Lắng nghe phím ESC để đóng Modal
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
@@ -51,36 +62,51 @@ const AddStudentModal = ({ onClose, onSave, isPending, initialData }) => {
     setFormData({ ...formData, [name]: value });
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSave(formData);
+  // HÀM XỬ LÝ KHI TICK/BỎ TICK GIẤY TỜ
+  const handleGiayToToggle = (loaiGiayTo) => {
+    setFormData(prev => {
+      const dangCo = prev.GiayTo || [];
+      if (dangCo.includes(loaiGiayTo)) {
+        // Nếu đã có thì gỡ bỏ
+        return { ...prev, GiayTo: dangCo.filter(item => item !== loaiGiayTo) };
+      } else {
+        // Nếu chưa có thì thêm vào
+        return { ...prev, GiayTo: [...dangCo, loaiGiayTo] };
+      }
+    });
   };
 
-  // Các mảng cố định (Không cần đưa vào cấu hình vì nó là quy chuẩn quốc gia)
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    // Trước khi lưu xuống Sheet, gom cái mảng GiayTo lại thành 1 chuỗi cách nhau bằng dấu phẩy
+    const dataToSave = {
+      ...formData,
+      GiayTo: formData.GiayTo.join(', ')
+    };
+    onSave(dataToSave);
+  };
+
   const danhSachDoiTuongDauVao = ['Trung học phổ thông', 'Trung cấp TN trước 2022', 'Trung cấp TN sau 2022', 'Cao đẳng', 'Đại học'];
 
   return (
     <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-      <div className="modal-dialog modal-lg">
+      <div className="modal-dialog modal-lg modal-dialog-scrollable">
         <div className="modal-content shadow">
           
           <div className="modal-header bg-light">
             <h5 className="modal-title text-primary fw-bold">{initialData ? 'SỬA HỒ SƠ SINH VIÊN' : 'THÊM HỒ SƠ MỚI'}</h5>
-            <button type="button" className="btn-close" onClick={onClose} title="Đóng (Bấm ESC)"></button>
+            <button type="button" className="btn-close" onClick={onClose}></button>
           </div>
           
           <div className="modal-body p-4 position-relative">
-            
-            {/* Hiệu ứng mờ khi đang tải cấu hình */}
             {isConfigLoading && (
               <div className="position-absolute w-100 h-100 top-0 start-0 d-flex flex-column justify-content-center align-items-center bg-white" style={{ zIndex: 10, opacity: 0.8 }}>
-                <div className="spinner-border text-primary" role="status"></div>
-                <span className="mt-2 text-muted fw-bold">Đang đồng bộ dữ liệu cấu hình...</span>
+                <div className="spinner-border text-primary"></div>
+                <span className="mt-2 text-muted fw-bold">Đang tải cấu hình...</span>
               </div>
             )}
 
             <form id="addStudentForm" onSubmit={handleSubmit}>
-              
               <div className="row g-3">
                 <h6 className="text-muted border-bottom pb-2">I. Thông tin cá nhân</h6>
                 <div className="col-md-6">
@@ -118,7 +144,6 @@ const AddStudentModal = ({ onClose, onSave, isPending, initialData }) => {
 
                 <div className="col-md-4">
                   <label className="form-label small">Ngành trúng tuyển</label>
-                  {/* NÂNG CẤP: Chuyển Ngành thành Select box đổ data từ Cấu hình */}
                   <select className="form-select" name="Nganh" value={formData.Nganh} onChange={handleChange}>
                     {configData?.Nganh?.map(nganh => <option key={nganh} value={nganh}>{nganh}</option>)}
                   </select>
@@ -145,37 +170,28 @@ const AddStudentModal = ({ onClose, onSave, isPending, initialData }) => {
                   </select>
                 </div>
 
-                <div className="col-md-4">
-                  <label className="form-label small">Hệ đào tạo</label>
-                  <select className="form-select" name="HeDT" value={formData.HeDT} onChange={handleChange}>
-                    <option value="Cao đẳng">Cao đẳng</option>
-                    <option value="Đại học">Đại học</option>
-                    <option value="Liên thông CĐ - ĐH">Liên thông CĐ - ĐH</option>
-                    <option value="Liên thông ĐH - ĐH">Liên thông ĐH - ĐH</option>
-                    <option value="Thạc sĩ">Thạc sĩ</option>
-                    <option value="Chứng chỉ ngắn hạn">Chứng chỉ ngắn hạn</option>
-                  </select>
-                </div>
-                
-                <div className="col-md-4">
-                  <label className="form-label small">Hình thức đào tạo</label>
-                  <select className="form-select" name="HinhThucDT" value={formData.HinhThucDT} onChange={handleChange}>
-                    <option value="Chính quy">Chính quy</option>
-                    <option value="Thường xuyên">Thường xuyên</option>
-                  </select>
-                </div>
-                
-                <div className="col-md-4">
-                  <label className="form-label small">Phương thức ĐT</label>
-                  <select className="form-select" name="PhuongThucDT" value={formData.PhuongThucDT} onChange={handleChange}>
-                    <option value="Đại trà">Đại trà</option>
-                    <option value="Từ xa">Từ xa</option>
-                    <option value="Vừa học vừa làm">Vừa học vừa làm</option>
-                    <option value="Liên thông">Liên thông</option>
-                  </select>
+                {/* KHU VỰC III: CHECKBOX GIẤY TỜ */}
+                <h6 className="text-muted border-bottom pb-2 mt-4">III. Danh mục giấy tờ đã nộp</h6>
+                <div className="col-12">
+                  <div className="d-flex flex-wrap gap-3 p-3 bg-light rounded border">
+                    {DANH_SACH_GIAY_TO.map((doc, idx) => (
+                      <div className="form-check" key={idx}>
+                        <input 
+                          className="form-check-input" 
+                          type="checkbox" 
+                          id={`doc-${idx}`}
+                          checked={formData.GiayTo.includes(doc)}
+                          onChange={() => handleGiayToToggle(doc)}
+                        />
+                        <label className="form-check-label small cursor-pointer" htmlFor={`doc-${idx}`}>
+                          {doc}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="col-12">
+                <div className="col-12 mt-3">
                   <label className="form-label small">Link hồ sơ (Google Drive, v.v.)</label>
                   <input type="url" className="form-control" name="LinkHoSo" value={formData.LinkHoSo} onChange={handleChange} placeholder="https://..." />
                 </div>
@@ -185,7 +201,6 @@ const AddStudentModal = ({ onClose, onSave, isPending, initialData }) => {
           </div>
           
           <div className="modal-footer bg-light">
-            <span className="text-muted small me-auto">Mẹo: Bấm phím ESC để đóng nhanh</span>
             <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isPending || isConfigLoading}>Hủy bỏ</button>
             <button type="submit" form="addStudentForm" className="btn btn-primary px-4" disabled={isPending || isConfigLoading}>
               {isPending ? 'Đang lưu...' : 'Lưu hồ sơ'}
