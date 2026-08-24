@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchStudents, addStudent, deleteStudent, updateStudent, toggleStatusStudent, importStudents } from '../../api/studentApi';
+import { fetchStudents, addStudent, deleteStudent, updateStudent, toggleStatusStudent, importStudentsToAdmissions } from '../../api/studentApi';
 import moment from 'moment';
 import Swal from 'sweetalert2';
 import * as XLSX from 'xlsx';
@@ -29,10 +29,13 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
   const deleteMutation = useMutation({ mutationFn: deleteStudent, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); Swal.fire('Đã xóa!', 'Hồ sơ đã bị xóa.', 'success'); }, onError: (err) => Swal.fire('Lỗi', err.message, 'error') });
   
   const importMutation = useMutation({ 
-    mutationFn: importStudents, 
-    onSuccess: () => { 
+    // ĐÃ SỬA: dùng đúng importStudentsToAdmissions (ghi vào sheet SinhVien) thay vì
+    // importStudents cũ (ghi nhầm vào sheet TrungGian của luồng Xét tuyển)
+    mutationFn: importStudentsToAdmissions, 
+    onSuccess: (result) => { 
       queryClient.invalidateQueries({ queryKey: ['students'] }); 
-      Swal.fire('Thành công!', 'Đã nạp toàn bộ danh sách từ Excel', 'success'); 
+      const addedMsg = result ? `Đã thêm ${result.added} hồ sơ mới` + (result.skipped ? `, bỏ qua ${result.skipped} hồ sơ trùng Mã SV.` : '.') : 'Đã nạp danh sách từ Excel';
+      Swal.fire('Thành công!', addedMsg, 'success'); 
       setShowImportModal(false); 
     }, 
     onError: (err) => Swal.fire('Lỗi', err.message, 'error') 

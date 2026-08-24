@@ -29,3 +29,27 @@ tr:has(.status-failed) td { background-color: #fdecea !important; }
 @media (max-width: 900px) { .checkbox-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 768px) { .checkbox-grid, .score-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .checkbox-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ========================================================
+   BACKGROUND PATTERN CHO TRANG XÉT TUYỂN
+   ======================================================== */
+.xettuyen-wrapper {
+    /* Màu nền xám nhạt */
+    background-color: #f4f6f8; 
+    
+    /* Họa tiết chấm bi (Dot Grid) - Màu xám êm dịu */
+    background-image: radial-gradient(#d5dbe1 0.8px, transparent 1px);
+    background-size: 25px 25px; /* Khoảng cách giữa các chấm */
+    
+    min-height: 100vh;
+    padding: 24px 15px; /* Tạo khoảng không xung quanh form */
+}
+
+/* Hiệu ứng bo góc và đổ bóng mượt hơn cho thẻ Form chính */
+.xettuyen-main-card {
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04);
+    max-width: 1500px; /* Giới hạn chiều rộng để background lòi ra 2 bên */
+    margin: 0 auto;    /* Căn giữa màn hình */
+}

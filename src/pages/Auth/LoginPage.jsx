@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from "jwt-decode";
-import { loginUser } from '../../api/studentApi';
+import { loginUser, GAS_URL } from '../../api/studentApi';
 import Swal from 'sweetalert2';
 
 const LoginPage = ({ onLoginSuccess }) => {
-  const [credentials, setCredentials] = useState({ username: '', password: '' });
+  // ĐÃ THÊM: tự điền sẵn username lần đăng nhập nội bộ gần nhất — đỡ phải gõ lại khi bị
+  // đẩy về đây do hết phiên (mật khẩu thì KHÔNG lưu/điền sẵn, phải tự gõ lại).
+  const [credentials, setCredentials] = useState({ username: localStorage.getItem('tuyensinh_last_username') || '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
 
-// Khai báo link GAS (nhớ dán link mới nhất của ông vào nếu có đổi)
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
+// ĐÃ SỬA (Pha 6): dùng chung GAS_URL từ studentApi.js thay vì khai báo WEB_APP_URL
+// riêng ở đây — trước đây 2 hằng số cùng giá trị nhưng tách rời, dễ quên đồng bộ.
 
 // 1. Xử lý đăng nhập bằng Google (Phiên bản nối mạng Check Role)
 const handleGoogleSuccess = async (credentialResponse) => {
@@ -25,7 +27,7 @@ const handleGoogleSuccess = async (credentialResponse) => {
     }));
 
     // Gọi Backend để dò tên trong Sheet TaiKhoan
-    const response = await fetch(WEB_APP_URL, {
+    const response = await fetch(GAS_URL, {
         method: 'POST',
         body: payloadParams
     });
@@ -39,7 +41,11 @@ const handleGoogleSuccess = async (credentialResponse) => {
             name: result.data.name || decoded.name,
             avatar: decoded.picture,
             role: result.data.role, // <--- ĂN TIỀN Ở ĐÂY! Lấy đúng Role (Admin, CanBo...) từ Google Sheets
-            token: credentialResponse.credential
+            roles: result.data.roles, // ĐÃ THÊM: mảng role (chữ thường) để hỗ trợ multi-role, App.jsx dùng cái này để so quyền
+            // ĐÃ SỬA tên field "token" -> "credential": App.jsx đọc currentUser.credential để tính hạn
+            // JWT (checkTokenExpiry) — do lệch tên field, tính năng cảnh báo/gia hạn token trước đây
+            // KHÔNG BAO GIỜ chạy (luôn no-op), user bị lỗi âm thầm sau ~1 tiếng mà không có cảnh báo.
+            credential: credentialResponse.credential
         };
         
         if (typeof onLoginSuccess === 'function') {
@@ -61,6 +67,7 @@ const handleGoogleSuccess = async (credentialResponse) => {
     try {
       const userInfo = await loginUser(credentials.username, credentials.password);
       userInfo.name = userInfo.username; // Lấy username làm tên hiển thị
+      localStorage.setItem('tuyensinh_last_username', credentials.username); // ĐÃ THÊM: nhớ cho lần sau
       onLoginSuccess(userInfo);
     } catch (error) {
       Swal.fire('Lỗi đăng nhập', error.message, 'error');

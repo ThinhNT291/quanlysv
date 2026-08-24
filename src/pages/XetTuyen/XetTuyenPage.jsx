@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import './XetTuyen.css';
+// ĐÃ THÊM: dùng chung đúng 1 hàm fetchConfig() với studentApi.js (AdmissionsPage/
+// SettingsPage đang dùng, đã chạy ổn) — thay vì tự viết lại 1 bản riêng ở đây. Cả 2
+// nơi giờ gọi CÙNG 1 chỗ, cùng 1 cách xác thực (GET + idToken/sessionToken).
+import { fetchConfig } from '../../api/studentApi';
 
-// ==========================================
-// 1. TỪ ĐIỂN DỮ LIỆU & CẤU HÌNH API
-// ==========================================
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
 const DICT_KHU_VUC = { "KV 01": 0.75, "KV 02-NT": 0.5, "KV 02": 0.25, "KV 03": 0 };
@@ -33,6 +34,20 @@ const DICT_NGANH = {
     "Quản trị dịch vụ du lịch và lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
 };
 
+const SUBJECTS_UI = [
+    { id: 'toan', label: 'TOÁN' }, { id: 'vatli', label: 'VẬT LÍ' }, { id: 'hoahoc', label: 'HÓA HỌC' },
+    { id: 'sinhhoc', label: 'SINH HỌC' }, { id: 'nguvan', label: 'NGỮ VĂN' }, { id: 'lichsu', label: 'LỊCH SỬ' },
+    { id: 'dialy', label: 'ĐỊA LÝ' }, { id: 'tienganh', label: 'TIẾNG ANH' }, { id: 'tiengtrung', label: 'TIẾNG TRUNG' },
+    { id: 'tinhoc', label: 'TIN HỌC' }, { id: 'gdktpl', label: 'GDKTPL' }
+];
+
+const HK_FIELDS = SUBJECTS_UI.reduce((acc, subj) => {
+    acc[`diem_${subj.id}_hk1_11`] = '';
+    acc[`diem_${subj.id}_hk1_12`] = '';
+    acc[`diem_${subj.id}_hk2_12`] = '';
+    return acc;
+}, {});
+
 const DICT_HO_SO = {
     chung: [
         { id: "doc_syll", name: "Sơ yếu lý lịch", short: "SƠ YẾU LÝ LỊCH", optional: false },
@@ -57,10 +72,25 @@ const initialFormState = {
   hoten: '', cccd: '', ngaysinh: '', khoa: '', nganh: '', khuvucuutien: '', doituonguutien: '', 
   doituongdauvao: '', namtt: '', hedaotao: '', htdaotao: '', link_folder: '', 
   has_giay_uutien: false, giay_uutien: '', 
+  loai_diem: '', time_goc: '', 
   diem_toan: '', diem_vatli: '', diem_hoahoc: '', diem_sinhhoc: '', diem_nguvan: '', diem_lichsu: '', 
   diem_dialy: '', diem_tienganh: '', diem_tiengtrung: '', diem_tinhoc: '', diem_gdktpl: '', 
+  ...HK_FIELDS, 
   diem_tb_he4: '', diem_tb_he10: '', diem_cong: '', diem_chuan: '', 
   ...ALL_HO_SO_DOCS.reduce((acc, doc) => ({ ...acc, [doc.id]: false }), {})
+};
+
+const getSubjectAverage = (subjId, data) => {
+    if (data.loai_diem === 'HOC_BA_2025') {
+        const v1 = parseFloat(data[`diem_${subjId}_hk1_11`]);
+        const v2 = parseFloat(data[`diem_${subjId}_hk1_12`]);
+        const v3 = parseFloat(data[`diem_${subjId}_hk2_12`]);
+        if (!isNaN(v1) && !isNaN(v2) && !isNaN(v3)) {
+            return Math.round(((v1 + v2 + v3) / 3) * 100) / 100;
+        }
+        return 0; 
+    }
+    return parseFloat(data[`diem_${subjId}`]) || 0;
 };
 
 const compareIsoDates = (a, b) => {
@@ -87,16 +117,24 @@ const getUserEmail = () => {
     return user?.username || user?.email || "Unknown";
 }
 
+const loadSession = (key, defaultVal) => {
+    const stored = sessionStorage.getItem(key);
+    if (stored) { try { return JSON.parse(stored); } catch(e) { return defaultVal; } }
+    return defaultVal;
+};
+
 const XetTuyenPage = () => {
-  const [formData, setFormData] = useState(initialFormState);
-  const [dataList, setDataList] = useState([]); 
+  const [formData, setFormData] = useState(() => loadSession('xt_form', initialFormState));
+  const [dataList, setDataList] = useState(() => loadSession('xt_list', [])); 
+  const [isEditMode, setIsEditMode] = useState(() => loadSession('xt_isEdit', false));
+
+  useEffect(() => { sessionStorage.setItem('xt_form', JSON.stringify(formData)); }, [formData]);
+  useEffect(() => { sessionStorage.setItem('xt_list', JSON.stringify(dataList)); }, [dataList]);
+  useEffect(() => { sessionStorage.setItem('xt_isEdit', JSON.stringify(isEditMode)); }, [isEditMode]);
+
   const [admissionResult, setAdmissionResult] = useState(null);
   const [isPushing, setIsPushing] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
 
-  // ==========================================
-  // STATE LƯU CẤU HÌNH TỪ BACKEND
-  // ==========================================
   const [sysConfig, setSysConfig] = useState({
       Nganh: [], KhoaNhapHoc: [], DoiTuongUT: [], KhuVucUT: [],
       NamXetTuyen: [], DoiTuongDauVao: [], HeDaoTao: [], HinhThucDaoTao: []
@@ -115,37 +153,41 @@ const XetTuyenPage = () => {
   const [importFile, setImportFile] = useState(null);
   const [importStatus, setImportStatus] = useState("");
 
-  // ==========================================
-  // TẢI CẤU HÌNH TỪ BACKEND KHI MỞ TRANG
-  // ==========================================
+  const closeSearchModal = () => {
+      setIsSearchModalOpen(false);
+      setSearchKeyword("");
+      setSearchResults([]);
+  };
+
   useEffect(() => {
-    const fetchConfig = async () => {
+    const loadConfig = async () => {
         try {
-            const res = await fetch(`${WEB_APP_URL}?action=getConfig`);
-            const result = await res.json();
-            if (result.code === 200 && result.data) {
-                // Nếu Backend có dữ liệu thì lấy, nếu trống thì rớt về từ điển mặc định
+            // Gọi thẳng fetchConfig() dùng chung với studentApi.js — thay cho việc tự viết
+            // riêng 1 bản fetch ở đây (trước đó có 2 bản khác nhau: 1 GET tôi đề xuất chưa
+            // test, 1 POST bạn tự thêm để tránh bug thiếu idToken — giờ hợp nhất về 1 nơi).
+            const data = await fetchConfig();
+            if (data) {
                 setSysConfig({
-                    Nganh: result.data.Nganh?.length ? result.data.Nganh : Object.keys(DICT_NGANH),
-                    KhoaNhapHoc: result.data.KhoaNhapHoc?.length ? result.data.KhoaNhapHoc : ["01", "02"],
-                    DoiTuongUT: result.data.DoiTuongUT?.length ? result.data.DoiTuongUT : Object.keys(DICT_DOI_TUONG),
-                    KhuVucUT: result.data.KhuVucUT?.length ? result.data.KhuVucUT : Object.keys(DICT_KHU_VUC),
-                    NamXetTuyen: result.data.NamXetTuyen?.length ? result.data.NamXetTuyen : ["2026", "2027"],
-                    DoiTuongDauVao: result.data.DoiTuongDauVao?.length ? result.data.DoiTuongDauVao : Object.keys(DICT_HO_SO.tien_quyet),
-                    HeDaoTao: result.data.HeDaoTao?.length ? result.data.HeDaoTao : ["Đại học chính quy", "Cao đẳng"],
-                    HinhThucDaoTao: result.data.HinhThucDaoTao?.length ? result.data.HinhThucDaoTao : ["Chính quy đại trà"]
+                    Nganh: data.Nganh?.length ? data.Nganh : Object.keys(DICT_NGANH),
+                    KhoaNhapHoc: data.KhoaNhapHoc?.length ? data.KhoaNhapHoc : ["01", "02"],
+                    DoiTuongUT: data.DoiTuongUT?.length ? data.DoiTuongUT : Object.keys(DICT_DOI_TUONG),
+                    KhuVucUT: data.KhuVucUT?.length ? data.KhuVucUT : Object.keys(DICT_KHU_VUC),
+                    NamXetTuyen: data.NamXetTuyen?.length ? data.NamXetTuyen : ["2026", "2027"],
+                    DoiTuongDauVao: data.DoiTuongDauVao?.length ? data.DoiTuongDauVao : Object.keys(DICT_HO_SO.tien_quyet),
+                    HeDaoTao: data.HeDaoTao?.length ? data.HeDaoTao : ["Đại học chính quy", "Cao đẳng"],
+                    HinhThucDaoTao: data.HinhThucDaoTao?.length ? data.HinhThucDaoTao : ["Chính quy đại trà"]
                 });
             }
         } catch (e) { console.error("Lỗi tải cấu hình:", e); }
     };
-    fetchConfig();
+    loadConfig();
   }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
             if (isImportModalOpen) { setIsImportModalOpen(false); setImportFile(null); setImportStatus(""); } 
-            else if (isSearchModalOpen) { setIsSearchModalOpen(false); }
+            else if (isSearchModalOpen) { closeSearchModal(); }
         }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -161,7 +203,20 @@ const XetTuyenPage = () => {
         return;
     }
 
-    if (name.startsWith('diem_') && type === 'text') finalValue = finalValue.replace(',', '.');
+    // Logic tick chọn 1 trong 3 dạng mượt mà (Toggle qua lại)
+    if (name === 'check_thi_thpt') { setFormData(prev => ({...prev, loai_diem: checked ? 'THI_THPT' : ''})); return; }
+    if (name === 'check_hoc_ba') { setFormData(prev => ({...prev, loai_diem: checked ? 'HOC_BA' : ''})); return; }
+    if (name === 'check_hoc_ba_2025') { setFormData(prev => ({...prev, loai_diem: checked ? 'HOC_BA_2025' : ''})); return; }
+
+    if (name.startsWith('diem_') && type === 'text') {
+        finalValue = finalValue.replace(',', '.');
+        if (finalValue !== '') {
+            const num = Number(finalValue);
+            if (isNaN(num) || num < 0) return; 
+            if (name === 'diem_tb_he4' && num > 4) return; 
+            if (name !== 'diem_tb_he4' && num > 10) return;
+        }
+    }
     
     if (name === 'diem_tb_he4' && finalValue.trim() !== '') setFormData(prev => ({...prev, diem_tb_he10: ''}));
     if (name === 'diem_tb_he10' && finalValue.trim() !== '') setFormData(prev => ({...prev, diem_tb_he4: ''}));
@@ -172,11 +227,22 @@ const XetTuyenPage = () => {
     }));
   };
 
+  const handleClearHK2025 = () => {
+      setFormData(prev => {
+          const newState = { ...prev };
+          SUBJECTS_UI.forEach(subj => {
+              newState[`diem_${subj.id}_hk1_11`] = '';
+              newState[`diem_${subj.id}_hk1_12`] = '';
+              newState[`diem_${subj.id}_hk2_12`] = '';
+          });
+          return newState;
+      });
+  };
+
   const handleSelectAllCommon = () => {
     setFormData(prev => {
         const allRequiredDocs = DICT_HO_SO.chung.filter(doc => !doc.optional);
         const isAllSelected = allRequiredDocs.every(doc => prev[doc.id]);
-        
         const newState = { ...prev };
         DICT_HO_SO.chung.forEach(doc => newState[doc.id] = !isAllSelected);
         return newState;
@@ -192,7 +258,6 @@ const XetTuyenPage = () => {
     DICT_HO_SO.chung.forEach(doc => { 
         if (!doc.optional && !formData[doc.id]) missingChung.push(doc.name); 
     });
-    
     const dsTienQuyet = DICT_HO_SO.tien_quyet[doituongdauvao] || [];
     dsTienQuyet.forEach(doc => { if (!formData[doc.id]) missingTienQuyet.push(doc.name); });
 
@@ -201,30 +266,56 @@ const XetTuyenPage = () => {
     else if (missingChung.length > 0) { hsStatus = "WARN"; hsColor = "#856404"; hsMsg = `⚠️ Yêu cầu bổ sung: ${missingChung.join(', ')}.`; }
 
     let diemStatus = "FAIL", diemMsg = "";
+    let diemCong = parseFloat(formData.diem_cong) || 0;
+
     if (doituongdauvao === "Tốt nghiệp THPT") {
-        let maxScore = 0, bestCombo = "";
-        (DICT_NGANH[nganh] || []).forEach(maToHop => {
-            let subjects = DICT_TO_HOP[maToHop];
-            if(subjects) {
-                let total = (parseFloat(formData[subjects[0]]) || 0) + (parseFloat(formData[subjects[1]]) || 0) + (parseFloat(formData[subjects[2]]) || 0);
-                if (total > maxScore && (parseFloat(formData[subjects[0]]) > 0 && parseFloat(formData[subjects[1]]) > 0 && parseFloat(formData[subjects[2]]) > 0)) { 
-                    maxScore = total; bestCombo = maToHop; 
+        if (!formData.loai_diem) {
+            diemMsg = `Vui lòng tick chọn Phương thức xét điểm.`;
+        } else {
+            let maxScore = 0, bestCombo = "";
+            (DICT_NGANH[nganh] || []).forEach(maToHop => {
+                let subjects = DICT_TO_HOP[maToHop];
+                if(subjects) {
+                    let s1_id = subjects[0].replace('diem_', '');
+                    let s2_id = subjects[1].replace('diem_', '');
+                    let s3_id = subjects[2].replace('diem_', '');
+
+                    let v1 = getSubjectAverage(s1_id, formData);
+                    let v2 = getSubjectAverage(s2_id, formData);
+                    let v3 = getSubjectAverage(s3_id, formData);
+                    
+                    let total = v1 + v2 + v3;
+                    if (total > maxScore && v1 > 0 && v2 > 0 && v3 > 0) { 
+                        maxScore = total; bestCombo = maToHop; 
+                    }
+                }
+            });
+
+            if (maxScore === 0) diemMsg = `Chưa nhập đủ điểm để xét tổ hợp.`;
+            else {
+                let uTienBanDau = (DICT_KHU_VUC[khuvucuutien] || 0) + (DICT_DOI_TUONG[doituonguutien] || 0);
+                let uTienChinhThuc = uTienBanDau;
+                
+                if (formData.loai_diem === 'THI_THPT' && maxScore >= 22.5) {
+                    uTienChinhThuc = ((30 - maxScore) / 7.5) * uTienBanDau;
+                }
+                
+                let finalScore = Math.round((maxScore + uTienChinhThuc + diemCong) * 100) / 100;
+                
+                if (finalScore >= 15.0) { 
+                    diemStatus = "PASS"; 
+                    diemMsg = `Tổng: <strong>${finalScore}đ</strong> (Tổ hợp: ${maxScore.toFixed(2)} + ƯT: ${uTienChinhThuc.toFixed(2)}${diemCong > 0 ? ` + Cộng: ${diemCong}` : ''}). Chuẩn: 15.0đ.`; 
+                } else { 
+                    diemMsg = `Tổng điểm: ${finalScore}đ. Thiếu ${(15.0 - finalScore).toFixed(2)}đ.`; 
                 }
             }
-        });
-
-        if (maxScore === 0) diemMsg = `Chưa nhập đủ điểm để xét tổ hợp.`;
-        else {
-            let uTienBanDau = (DICT_KHU_VUC[khuvucuutien] || 0) + (DICT_DOI_TUONG[doituonguutien] || 0);
-            let uTienChinhThuc = maxScore >= 22.5 ? ((30 - maxScore) / 7.5) * uTienBanDau : uTienBanDau;
-            let finalScore = Math.round((maxScore + uTienChinhThuc) * 100) / 100;
-            if (finalScore >= 15.0) { diemStatus = "PASS"; diemMsg = `Tổng điểm: ${finalScore}đ (Tổ hợp: ${bestCombo} = ${maxScore}đ). Chuẩn: 15.0đ.`; } 
-            else { diemMsg = `Tổng điểm: ${finalScore}đ. Thiếu ${(15.0 - finalScore).toFixed(2)}đ.`; }
         }
     } else {
         let he4 = parseFloat(formData.diem_tb_he4); let he10 = parseFloat(formData.diem_tb_he10);
-        if (he4 >= 2.0 || he10 >= 5.0) { diemStatus = "PASS"; diemMsg = `Đạt chuẩn điểm hệ CĐ/ĐH/TC.`; } 
-        else { diemMsg = `Không đạt chuẩn điểm.`; }
+        if (he4 >= 2.0 || he10 >= 5.0) { 
+            diemStatus = "PASS"; 
+            diemMsg = `Đạt chuẩn điểm hệ CĐ/ĐH/TC. ${diemCong > 0 ? `(Điểm cộng: ${diemCong})` : ''}`; 
+        } else { diemMsg = `Không đạt chuẩn điểm.`; }
     }
 
     let boxBg = '#d4edda', boxBorder = '#c3e6cb', icon = '🟢', title = "ĐỦ ĐIỀU KIỆN SƠ TUYỂN", titleColor = '#155724';
@@ -240,6 +331,11 @@ const XetTuyenPage = () => {
         if (!formData[field]) { alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); return; }
     }
 
+    if (formData.doituongdauvao === 'Tốt nghiệp THPT' && !formData.loai_diem) {
+        alert("Vui lòng tick chọn Phương thức xét điểm (Thi THPT, Học bạ thường, hoặc Học bạ TBTS 2025)!");
+        return;
+    }
+
     let validHasGiayUuTien = formData.has_giay_uutien;
     let validGiayUuTien = formData.giay_uutien;
     if (validHasGiayUuTien && !validGiayUuTien.trim()) {
@@ -252,7 +348,20 @@ const XetTuyenPage = () => {
     
     if (!isEditMode) {
         const isDup = dataList.some(r => String(r["CĂN CƯỚC"]).replace(/\D/g, '') === cccdClean && String(r["NGÀNH"]).trim().toLowerCase() === nganhClean);
-        if (isDup) { alert("Hồ sơ này ĐÃ CÓ trong danh sách chờ bên dưới!"); return; }
+        if (isDup) { alert("Hồ sơ này ĐÃ CÓ trong danh sách chờ bên dưới!\n\n💡 Nếu cần sửa hồ sơ đã tồn tại, dùng nút \"🔍 Tìm hồ sơ cũ\" thay vì thêm mới."); return; }
+    }
+
+    const currentTimestamp = new Date().toLocaleString('vi-VN');
+
+    let packedDiemHK = "";
+    if (formData.loai_diem === 'HOC_BA_2025') {
+        const rawObj = {};
+        SUBJECTS_UI.forEach(subj => {
+            rawObj[`${subj.id}_hk1_11`] = formData[`diem_${subj.id}_hk1_11`] || "";
+            rawObj[`${subj.id}_hk1_12`] = formData[`diem_${subj.id}_hk1_12`] || "";
+            rawObj[`${subj.id}_hk2_12`] = formData[`diem_${subj.id}_hk2_12`] || "";
+        });
+        packedDiemHK = JSON.stringify(rawObj);
     }
 
     const newRow = {
@@ -265,15 +374,30 @@ const XetTuyenPage = () => {
         "NĂM XÉT TUYỂN": formData.namtt, "HỆ ĐÀO TẠO": formData.hedaotao, "HÌNH THỨC ĐÀO TẠO": formData.htdaotao,
         "LINK HỒ SƠ": formData.link_folder, 
         "GIẤY TỜ ƯU TIÊN": validHasGiayUuTien ? validGiayUuTien : "", 
-        "TOÁN": formData.diem_toan, "VẬT LÍ": formData.diem_vatli, "HÓA HỌC": formData.diem_hoahoc, "SINH HỌC": formData.diem_sinhhoc,
-        "NGỮ VĂN": formData.diem_nguvan, "LỊCH SỬ": formData.diem_lichsu, "ĐỊA LÝ": formData.diem_dialy, "TIẾNG ANH": formData.diem_tienganh,
-        "TIẾNG TRUNG": formData.diem_tiengtrung, "TIN HỌC": formData.diem_tinhoc, "GDKTPL": formData.diem_gdktpl,
+        
+        "TOÁN": getSubjectAverage('toan', formData) || "", 
+        "VẬT LÍ": getSubjectAverage('vatli', formData) || "", 
+        "HÓA HỌC": getSubjectAverage('hoahoc', formData) || "", 
+        "SINH HỌC": getSubjectAverage('sinhhoc', formData) || "",
+        "NGỮ VĂN": getSubjectAverage('nguvan', formData) || "", 
+        "LỊCH SỬ": getSubjectAverage('lichsu', formData) || "", 
+        "ĐỊA LÝ": getSubjectAverage('dialy', formData) || "", 
+        "TIẾNG ANH": getSubjectAverage('tienganh', formData) || "",
+        "TIẾNG TRUNG": getSubjectAverage('tiengtrung', formData) || "", 
+        "TIN HỌC": getSubjectAverage('tinhoc', formData) || "", 
+        "GDKTPL": getSubjectAverage('gdktpl', formData) || "",
+        
         "ĐIỂM TB HỆ 4": formData.diem_tb_he4, "ĐIỂM TB HỆ 10": formData.diem_tb_he10, "ĐIỂM CỘNG": formData.diem_cong,
         "ĐIỂM CHUẨN": formData.diem_chuan, 
         
+        "PHƯƠNG THỨC XÉT TUYỂN": formData.loai_diem === 'THI_THPT' ? 'Điểm thi THPT' : (formData.loai_diem === 'HOC_BA' ? 'Điểm học bạ' : (formData.loai_diem === 'HOC_BA_2025' ? 'Điểm học bạ (TBTS 2025)' : '')),
         "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "Mới bổ sung" : "Chưa thẩm định",
-        "NGÀY CẬP NHẬT HỒ SƠ": new Date().toLocaleString('vi-VN'),
-        "TÀI KHOẢN NHẬP LIỆU": getUserEmail()
+        
+        "TIME": isEditMode ? (formData.time_goc || currentTimestamp) : currentTimestamp,
+        "NGÀY CẬP NHẬT HỒ SƠ": isEditMode ? currentTimestamp : "",
+        "TÀI KHOẢN NHẬP LIỆU": getUserEmail(),
+        
+        "RAW_DIEM_HK": packedDiemHK
     };
 
     ALL_HO_SO_DOCS.forEach(doc => { newRow[doc.name.toUpperCase()] = formData[doc.id] ? "TRUE" : "FALSE"; });
@@ -292,14 +416,31 @@ const XetTuyenPage = () => {
     setIsEditMode(false); 
   };
 
+  const handleCancelEdit = () => {
+      if (window.confirm("Bạn có chắc chắn muốn Hủy chỉnh sửa? Các thay đổi sẽ không được lưu.")) {
+          setFormData(initialFormState);
+          setIsEditMode(false);
+      }
+  };
+
   const handleEditRowLocal = (index) => {
     const row = dataList[index];
     if(!window.confirm(`Bạn có muốn tải hồ sơ của [${row["TÊN SINH VIÊN"]}] lên Form để chỉnh sửa lại không?`)) return;
 
+    let phuongThuc = "";
+    if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Điểm thi THPT') phuongThuc = "THI_THPT";
+    if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Điểm học bạ') phuongThuc = "HOC_BA";
+    if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Điểm học bạ (TBTS 2025)') phuongThuc = "HOC_BA_2025";
+
+    let rawObj = {};
+    if (row["RAW_DIEM_HK"]) {
+        try { rawObj = JSON.parse(row["RAW_DIEM_HK"]); } catch(e) {}
+    }
+
     setFormData(prev => ({
         ...prev,
         hoten: row["TÊN SINH VIÊN"] || "",
-        cccd: row["CĂN CƯỚC"] || "",
+        cccd: String(row["CĂN CƯỚC"] || "").replace(/'/g, ''),
         nganh: row["NGÀNH"] || "",
         ngaysinh: row["NGÀY SINH"] || "",
         khoa: row["KHÓA"] || "",
@@ -310,6 +451,7 @@ const XetTuyenPage = () => {
         hedaotao: row["HỆ ĐÀO TẠO"] || "",
         htdaotao: row["HÌNH THỨC ĐÀO TẠO"] || "",
         link_folder: row["LINK HỒ SƠ"] || "",
+        
         diem_toan: row["TOÁN"] || "",
         diem_vatli: row["VẬT LÍ"] || row["VẬT LÝ"] || "",
         diem_hoahoc: row["HÓA HỌC"] || "",
@@ -321,12 +463,22 @@ const XetTuyenPage = () => {
         diem_tiengtrung: row["TIẾNG TRUNG"] || "",
         diem_tinhoc: row["TIN HỌC"] || "",
         diem_gdktpl: row["GDKTPL"] || "",
+        
+        ...SUBJECTS_UI.reduce((acc, subj) => {
+            acc[`diem_${subj.id}_hk1_11`] = rawObj[`${subj.id}_hk1_11`] || "";
+            acc[`diem_${subj.id}_hk1_12`] = rawObj[`${subj.id}_hk1_12`] || "";
+            acc[`diem_${subj.id}_hk2_12`] = rawObj[`${subj.id}_hk2_12`] || "";
+            return acc;
+        }, {}),
+
         diem_tb_he4: row["ĐIỂM TB HỆ 4"] || row["ĐIỂM TB TOÀN KHÓA HỆ 4"] || "",
         diem_tb_he10: row["ĐIỂM TB HỆ 10"] || row["ĐIỂM TB TOÀN KHÓA HỆ 10"] || "",
         diem_cong: row["ĐIỂM CỘNG"] || "",
         diem_chuan: row["ĐIỂM CHUẨN"] || "",
         has_giay_uutien: !!row["GIẤY TỜ ƯU TIÊN"],
         giay_uutien: row["GIẤY TỜ ƯU TIÊN"] || "",
+        loai_diem: phuongThuc,
+        time_goc: row["TIME"] || "",
         ...ALL_HO_SO_DOCS.reduce((acc, doc) => ({
             ...acc,
             [doc.id]: row[doc.name.toUpperCase()] === "TRUE"
@@ -356,9 +508,7 @@ const XetTuyenPage = () => {
         payloadParams.append('action', 'importStudents');
         payloadParams.append('data', JSON.stringify(pendingList.map(row => {
             const copyRow = { ...row };
-            if (copyRow["CĂN CƯỚC"]) {
-                copyRow["CĂN CƯỚC"] = "'" + copyRow["CĂN CƯỚC"];
-            }
+            if (copyRow["CĂN CƯỚC"]) copyRow["CĂN CƯỚC"] = "'" + copyRow["CĂN CƯỚC"];
             delete copyRow["TRẠNG THÁI ĐẨY"];
             return copyRow;
         })));
@@ -368,25 +518,24 @@ const XetTuyenPage = () => {
         
         if (result.code === 200) {
             const failedItems = result.data?.failedList || [];
-            
+            // ĐÃ THÊM: backend giờ trả thêm failedUpdates (hồ sơ _Action=UPDATE nhưng không khớp
+            // được hồ sơ gốc — trước đây bug âm thầm chèn thành dòng mới, giờ báo lỗi rõ ràng).
+            const failedUpdateItems = result.data?.failedUpdates || [];
             setDataList(prev => prev.map(r => {
                 if (r["TRẠNG THÁI ĐẨY"] === "Waiting" || r["TRẠNG THÁI ĐẨY"].includes("Lỗi")) {
                     const rCccd = String(r["CĂN CƯỚC"]).replace(/\D/g, '');
                     const rNganh = String(r["NGÀNH"]).trim().toLowerCase();
                     const isFailed = failedItems.some(f => f.cccd === rCccd && f.nganh.toLowerCase() === rNganh);
+                    const isFailedUpdate = failedUpdateItems.some(f => String(f.cccd).replace(/\D/g, '') === rCccd && String(f.nganh).toLowerCase() === rNganh);
                     
-                    if (isFailed) {
-                        return {...r, "TRẠNG THÁI ĐẨY": "Lỗi: Trùng hồ sơ"};
-                    } else {
-                        return {...r, "TRẠNG THÁI ĐẨY": "Uploaded"};
-                    }
+                    if (isFailed) return {...r, "TRẠNG THÁI ĐẨY": "Lỗi: Trùng hồ sơ"};
+                    if (isFailedUpdate) return {...r, "TRẠNG THÁI ĐẨY": "Lỗi: Không khớp hồ sơ gốc để sửa"};
+                    else return {...r, "TRẠNG THÁI ĐẨY": "Uploaded"};
                 }
                 return r;
             }));
             alert(result.message);
-        } else {
-            alert(`Lỗi Server: ${result.message}`);
-        }
+        } else { alert(`Lỗi Server: ${result.message}`); }
     } catch (error) { alert(`Lỗi kết nối mạng: ${error.message}`); } 
     finally { setIsPushing(false); }
   };
@@ -396,10 +545,7 @@ const XetTuyenPage = () => {
       if (!file) return;
 
       const token = getToken();
-      if (!token) { 
-          alert("Lỗi xác thực: Vui lòng đăng nhập lại Google để sử dụng AI!"); 
-          e.target.value = ""; return; 
-      }
+      if (!token) { alert("Lỗi xác thực: Vui lòng đăng nhập lại Google để sử dụng AI!"); e.target.value = ""; return; }
 
       setScanStatus("⏳ Đang phân tích bằng AI...");
       const img = new Image();
@@ -434,11 +580,7 @@ const XetTuyenPage = () => {
                       if (compareIsoDates(today, hanSuDung) > 0) hetHan = true;
                   }
 
-                  if (hetHan) {
-                      alert(`${loaiGiayTo === "hochieu" ? "Hộ chiếu" : "CCCD"} đã HẾT HIỆU LỰC (${hanSuDung}).`);
-                      setScanStatus(`❌ Hết hạn (${hanSuDung})`);
-                      return;
-                  }
+                  if (hetHan) { alert(`${loaiGiayTo === "hochieu" ? "Hộ chiếu" : "CCCD"} đã HẾT HIỆU LỰC (${hanSuDung}).`); setScanStatus(`❌ Hết hạn (${hanSuDung})`); return; }
 
                   setFormData(prev => ({
                       ...prev, cccd: extracted.so_giay_to || extracted.cccd || prev.cccd,
@@ -470,41 +612,99 @@ const XetTuyenPage = () => {
 
   const loadOldCandidate = (record) => {
       if(!window.confirm(`⚠️ CHÚ Ý: Việc chỉnh sửa sẽ ghi đè lên dữ liệu cũ của thí sinh [${record.hoTen}]. Bạn có chắc chắn muốn Tải lên Form?`)) return;
-      const normData = record.fullData;
+      
+      const rawData = record.fullData || {};
+      const normData = {};
+      for (let key in rawData) {
+          const cleanKey = String(key).trim().toUpperCase().replace(/\s+/g, ' ');
+          normData[cleanKey] = rawData[key];
+      }
+
+      let phuongThuc = "";
+      const rawPhuongThuc = normData["PHƯƠNG THỨC XÉT TUYỂN"] || normData["LOẠI ĐIỂM"] || "";
+      if (rawPhuongThuc === 'Điểm thi THPT' || rawPhuongThuc === 'THI_THPT') phuongThuc = "THI_THPT";
+      if (rawPhuongThuc === 'Điểm học bạ' || rawPhuongThuc === 'HOC_BA') phuongThuc = "HOC_BA";
+      if (rawPhuongThuc === 'Điểm học bạ (TBTS 2025)' || rawPhuongThuc === 'HOC_BA_2025') phuongThuc = "HOC_BA_2025";
+
+      let rawObj = {};
+      if (normData["RAW_DIEM_HK"]) {
+          try { rawObj = JSON.parse(normData["RAW_DIEM_HK"]); } catch(e) {}
+      }
+
+      const getDocVal = (doc) => {
+          const val = normData[doc.name.toUpperCase()] || normData[doc.short.toUpperCase()];
+          if (val === true || val === 1) return true;
+          const strVal = String(val).toUpperCase().trim();
+          return strVal === "TRUE" || strVal === "CÓ" || strVal === "V";
+      };
+
       setFormData(prev => ({
           ...prev, 
-          hoten: normData["TÊN SINH VIÊN"] || normData["HoTen"] || "",
-          cccd: normData["CĂN CƯỚC"] || normData["CCCD"] || "", 
-          nganh: normData["NGÀNH"] || normData["Nganh"] || "",
+          hoten: normData["TÊN SINH VIÊN"] || normData["HỌ VÀ TÊN"] || "",
+          cccd: String(normData["CĂN CƯỚC"] || normData["CCCD"] || "").replace(/'/g, ''), 
+          nganh: normData["NGÀNH"] || "",
           ngaysinh: normData["NGÀY SINH"] || "",
-          khoa: normData["KHÓA"] || "", khuvucuutien: normData["KHU VỰC ƯU TIÊN"] || "",
-          doituonguutien: normData["ĐỐI TƯỢNG ƯU TIÊN"] || "", doituongdauvao: normData["ĐỐI TƯỢNG ĐẦU VÀO"] || "",
-          namtt: normData["NĂM XÉT TUYỂN"] || "", hedaotao: normData["HỆ ĐÀO TẠO"] || "", 
-          htdaotao: normData["HÌNH THỨC ĐÀO TẠO"] || "", link_folder: normData["LINK HỒ SƠ"] || "",
-          has_giay_uutien: !!normData["GIẤY TỜ ƯU TIÊN"],
-          giay_uutien: normData["GIẤY TỜ ƯU TIÊN"] || ""
+          khoa: normData["KHÓA"] || "", 
+          khuvucuutien: normData["KHU VỰC ƯU TIÊN"] || normData["KHU VỰC"] || "",
+          doituonguutien: normData["ĐỐI TƯỢNG ƯU TIÊN"] || "", 
+          doituongdauvao: normData["ĐỐI TƯỢNG ĐẦU VÀO"] || "",
+          namtt: normData["NĂM XÉT TUYỂN"] || normData["NĂM TRÚNG TUYỂN"] || "", 
+          hedaotao: normData["HỆ ĐÀO TẠO"] || "", 
+          htdaotao: normData["HÌNH THỨC ĐÀO TẠO"] || "", 
+          link_folder: normData["LINK HỒ SƠ"] || "",
+          has_giay_uutien: !!normData["GIẤY TỜ ƯU TIÊN"] || !!normData["GIẤY ƯU TIÊN"],
+          giay_uutien: normData["GIẤY TỜ ƯU TIÊN"] || normData["GIẤY ƯU TIÊN"] || "",
+          loai_diem: phuongThuc,
+          time_goc: normData["TIME"] || "",
+          
+          diem_toan: normData["TOÁN"] || "",
+          diem_vatli: normData["VẬT LÍ"] || normData["VẬT LÝ"] || "",
+          diem_hoahoc: normData["HÓA HỌC"] || "",
+          diem_sinhhoc: normData["SINH HỌC"] || "",
+          diem_nguvan: normData["NGỮ VĂN"] || "",
+          diem_lichsu: normData["LỊCH SỬ"] || "",
+          diem_dialy: normData["ĐỊA LÝ"] || normData["ĐỊA LÍ"] || "",
+          diem_tienganh: normData["TIẾNG ANH"] || "",
+          diem_tiengtrung: normData["TIẾNG TRUNG"] || "",
+          diem_tinhoc: normData["TIN HỌC"] || "",
+          diem_gdktpl: normData["GDKTPL"] || normData["GIÁO DỤC KINH TẾ"] || "",
+          
+          ...SUBJECTS_UI.reduce((acc, subj) => {
+              acc[`diem_${subj.id}_hk1_11`] = rawObj[`${subj.id}_hk1_11`] || "";
+              acc[`diem_${subj.id}_hk1_12`] = rawObj[`${subj.id}_hk1_12`] || "";
+              acc[`diem_${subj.id}_hk2_12`] = rawObj[`${subj.id}_hk2_12`] || "";
+              return acc;
+          }, {}),
+
+          diem_tb_he4: normData["ĐIỂM TB HỆ 4"] || normData["HỆ 4"] || "",
+          diem_tb_he10: normData["ĐIỂM TB HỆ 10"] || normData["HỆ 10"] || "",
+          diem_cong: normData["ĐIỂM CỘNG"] || "",
+          diem_chuan: normData["ĐIỂM CHUẨN"] || "",
+
+          ...ALL_HO_SO_DOCS.reduce((acc, doc) => ({
+              ...acc,
+              [doc.id]: getDocVal(doc)
+          }), {})
       }));
       setIsEditMode(true);
-      setIsSearchModalOpen(false);
+      closeSearchModal();
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleImportFileChange = (e) => {
-      const file = e.target.files[0];
-      if (file) setImportFile(file);
-  };
+  const handleImportFileChange = (e) => { const file = e.target.files[0]; if (file) setImportFile(file); };
 
   const handleDownloadTemplate = () => {
       setImportStatus("⏳ Đang tạo file mẫu...");
       try {
           const headers = [
-              "TT", "CĂN CƯỚC", "TÊN SINH VIÊN", "NGÀY SINH", "NGÀNH", "KHÓA",
+              "STT", "CĂN CƯỚC", "TÊN SINH VIÊN", "NGÀY SINH", "NGÀNH", "KHÓA",
               "ĐỐI TƯỢNG ƯU TIÊN", "KHU VỰC ƯU TIÊN", "ĐỐI TƯỢNG ĐẦU VÀO", "NĂM XÉT TUYỂN",
               "HỆ ĐÀO TẠO", "HÌNH THỨC ĐÀO TẠO", "PHIẾU ĐĂNG KÝ DỰ TUYỂN", "SƠ YẾU LÝ LỊCH",
               "BẢN SAO ID", "ẢNH THẺ", "GIẤY CHUYỂN NVQS (VỚI NAM)", "BẢN SAO BẰNG THPT/GIẤY BÁO ĐIỂM", "BẢN SAO HỌC BẠ THPT",
               "BẢN SAO BẰNG TRUNG CẤP", "BẢNG ĐIỂM TRUNG CẤP", "BẰNG THPT/GCN ĐỦ KL KTVH THPT",
               "BẢN SAO BẰNG TRUNG CẤP TRƯỚC 2022", "BẢNG ĐIỂM TRUNG CẤP TRƯỚC 2022", "GCN HOÀN THÀNH CT GDPT",
               "BẰNG CAO ĐẲNG", "BẢNG ĐIỂM CAO ĐẲNG", "BẰNG ĐẠI HỌC", "BẢNG ĐIỂM ĐẠI HỌC", "GIẤY TỜ ƯU TIÊN",
+              "PHƯƠNG THỨC XÉT TUYỂN",
               "TOÁN", "VẬT LÍ", "HÓA HỌC", "SINH HỌC", "NGỮ VĂN", "LỊCH SỬ", "ĐỊA LÝ",
               "TIẾNG ANH", "TIẾNG TRUNG", "TIN HỌC", "GDKTPL",
               "ĐIỂM TB HỆ 4", "ĐIỂM TB HỆ 10", "ĐIỂM CỘNG", "ĐIỂM CHUẨN", "LINK HỒ SƠ"
@@ -522,7 +722,7 @@ const XetTuyenPage = () => {
       setImportStatus("⏳ Đang đọc file...");
 
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
           try {
               const data = new Uint8Array(e.target.result);
               const workbook = XLSX.read(data, { type: 'array' });
@@ -543,7 +743,13 @@ const XetTuyenPage = () => {
                   return "";
               };
 
-              let importedCount = 0; let dupCount = 0; const newItems = [];
+              let importedCount = 0; let dupCount = 0; let dupInFileCount = 0; let dupOnSheetCount = 0;
+              const newItems = [];
+              // ĐÃ THÊM (rà soát Trunggian.gs): dò trùng NGAY TRONG CHÍNH FILE ĐANG CHỌN — trước đây
+              // chỉ so với dataList hiện có trên trang, nên 2 dòng trùng CCCD+Ngành nhau NGAY TRONG
+              // CÙNG 1 FILE (mà cả 2 đều chưa từng có trên dataList) sẽ lọt qua hết, cả 2 đều được
+              // thêm vào — dùng Set này để tự chặn trùng nội bộ file.
+              const seenInThisFile = new Set();
               const sttBase = dataList.length;
 
               dataRows.forEach((rowArr) => {
@@ -551,10 +757,22 @@ const XetTuyenPage = () => {
 
                   const cccdVal = getField(rowArr, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]);
                   const nganhVal = getField(rowArr, ["NGÀNH"]);
-                  
-                  const isDup = dataList.some(r => String(r["CĂN CƯỚC"]).replace(/\D/g, '') === cccdVal.replace(/\D/g, '') && String(r["NGÀNH"]).trim().toLowerCase() === nganhVal.toLowerCase());
-                  
-                  if (isDup) { dupCount++; } else {
+                  const cccdClean = cccdVal.replace(/\D/g, '');
+                  const nganhClean = nganhVal.trim().toLowerCase();
+                  const fileKey = cccdClean + "|" + nganhClean;
+
+                  const isDupOnList = dataList.some(r => String(r["CĂN CƯỚC"]).replace(/\D/g, '') === cccdClean && String(r["NGÀNH"]).trim().toLowerCase() === nganhClean);
+                  const isDupInFile = cccdClean && seenInThisFile.has(fileKey);
+
+                  if (isDupOnList || isDupInFile) {
+                      dupCount++;
+                      if (isDupInFile) dupInFileCount++;
+                      return;
+                  }
+                  if (cccdClean) seenInThisFile.add(fileKey);
+
+                  {
+                      const currentTimestamp = new Date().toLocaleString('vi-VN');
                       const newRow = {
                           "STT": sttBase + importedCount + 1, "TRẠNG THÁI ĐẨY": "Waiting", "_Action": "INSERT",
                           "KẾT QUẢ SƠ TUYỂN": getField(rowArr, ["KẾT QUẢ SƠ TUYỂN", "KẾT QUẢ"]),
@@ -566,6 +784,7 @@ const XetTuyenPage = () => {
                           "HÌNH THỨC ĐÀO TẠO": getField(rowArr, ["HÌNH THỨC ĐÀO TẠO", "HÌNH THỨC"]), "LINK HỒ SƠ": getField(rowArr, ["LINK HỒ SƠ"]),
                           "GIẤY TỜ ƯU TIÊN": getField(rowArr, ["GIẤY TỜ ƯU TIÊN", "GIẤY ƯU TIÊN"]),
                           
+                          "PHƯƠNG THỨC XÉT TUYỂN": getField(rowArr, ["PHƯƠNG THỨC XÉT TUYỂN", "LOẠI ĐIỂM"]),
                           "TOÁN": getField(rowArr, ["TOÁN"]), "VẬT LÍ": getField(rowArr, ["VẬT LÍ", "VẬT LÝ"]), "HÓA HỌC": getField(rowArr, ["HÓA HỌC"]), 
                           "SINH HỌC": getField(rowArr, ["SINH HỌC"]), "NGỮ VĂN": getField(rowArr, ["NGỮ VĂN"]), "LỊCH SỬ": getField(rowArr, ["LỊCH SỬ"]), 
                           "ĐỊA LÝ": getField(rowArr, ["ĐỊA LÝ", "ĐỊA LÍ"]), "TIẾNG ANH": getField(rowArr, ["TIẾNG ANH"]), "TIẾNG TRUNG": getField(rowArr, ["TIẾNG TRUNG"]), 
@@ -574,8 +793,10 @@ const XetTuyenPage = () => {
                           "ĐIỂM CHUẨN": getField(rowArr, ["ĐIỂM CHUẨN"]), 
                           
                           "TRẠNG THÁI THẨM ĐỊNH": "Chưa thẩm định",
-                          "NGÀY CẬP NHẬT HỒ SƠ": new Date().toLocaleString('vi-VN'),
-                          "TÀI KHOẢN NHẬP LIỆU": getUserEmail()
+                          "TIME": currentTimestamp,
+                          "NGÀY CẬP NHẬT HỒ SƠ": "",
+                          "TÀI KHOẢN NHẬP LIỆU": getUserEmail(),
+                          "RAW_DIEM_HK": ""
                       };
                       
                       ALL_HO_SO_DOCS.forEach(doc => {
@@ -588,11 +809,48 @@ const XetTuyenPage = () => {
                   }
               });
 
-              if (newItems.length > 0) setDataList(prev => [...prev, ...newItems]);
+              // ĐÃ THÊM (rà soát Trunggian.gs): hỏi server 1 LẦN DUY NHẤT cho cả loạt còn lại sau
+              // 2 vòng lọc cục bộ trên — bắt các hồ sơ đã được người khác/phiên khác đẩy lên Sheet
+              // thật rồi mà máy này chưa biết. Chỉ tốn 1 lượt chờ mạng cho cả trăm dòng, không lặp
+              // lại theo từng dòng nên không đáng kể so với thời gian đã chờ đọc/xử lý file.
+              let finalItems = newItems;
+              if (newItems.length > 0) {
+                  setImportStatus("⏳ Đang kiểm tra trùng với hệ thống...");
+                  try {
+                      const token = getToken();
+                      const payloadParams = new URLSearchParams();
+                      payloadParams.append('action', 'checkDuplicatesXetTuyen');
+                      payloadParams.append('data', JSON.stringify({
+                          idToken: token,
+                          keys: newItems.map(r => ({ cccd: r["CĂN CƯỚC"], nganh: r["NGÀNH"] }))
+                      }));
+                      const dupResp = await fetch(WEB_APP_URL, { method: 'POST', body: payloadParams });
+                      const dupResult = await dupResp.json();
+                      if (dupResult.code === 200 && Array.isArray(dupResult.data?.results)) {
+                          const existsSet = new Set(
+                              dupResult.data.results
+                                  .filter(r => r.exists)
+                                  .map(r => String(r.cccd).replace(/\D/g, '') + "|" + String(r.nganh).trim().toLowerCase())
+                          );
+                          finalItems = newItems.filter(r => {
+                              const key = String(r["CĂN CƯỚC"]).replace(/\D/g, '') + "|" + String(r["NGÀNH"]).trim().toLowerCase();
+                              if (existsSet.has(key)) { dupOnSheetCount++; return false; }
+                              return true;
+                          });
+                      }
+                      // Nếu server lỗi/không phản hồi đúng định dạng: không chặn người dùng, cứ để
+                      // finalItems = newItems như cũ — lớp chặn cuối ở bước "Đẩy lên hệ thống" vẫn
+                      // còn đó để bắt trùng thật nếu có.
+                  } catch (dupErr) { /* lỗi mạng lúc hỏi trùng -> bỏ qua, không chặn import */ }
+              }
+
+              if (finalItems.length > 0) setDataList(prev => [...prev, ...finalItems]);
               
               setImportStatus(""); setIsImportModalOpen(false); setImportFile(null);
-              let msg = `Đã nạp ${importedCount} hồ sơ từ file Excel.`;
-              if (dupCount > 0) msg += `\n⚠️ Bỏ qua ${dupCount} hồ sơ trùng CCCD + Ngành.`;
+              let msg = `Đã nạp ${finalItems.length} hồ sơ từ file Excel.`;
+              if (dupInFileCount > 0) msg += `\n⚠️ Bỏ qua ${dupInFileCount} hồ sơ trùng CCCD + Ngành NGAY TRONG file vừa chọn.`;
+              if (dupCount - dupInFileCount > 0) msg += `\n⚠️ Bỏ qua ${dupCount - dupInFileCount} hồ sơ trùng với danh sách đang chờ đẩy.`;
+              if (dupOnSheetCount > 0) msg += `\n⚠️ Bỏ qua ${dupOnSheetCount} hồ sơ đã có sẵn trên hệ thống (người khác đã nhập trước).`;
               alert(msg);
 
           } catch(err) { alert("Lỗi đọc file: " + err.message); setImportStatus(""); }
@@ -612,353 +870,436 @@ const XetTuyenPage = () => {
   );
 
   return (
-    <div className="container-fluid bg-white p-4 rounded shadow-sm position-relative">
-      <div className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
-        <h3 className="fw-bold" style={{ color: '#008080' }}>
-          <i className="bi bi-journal-text me-2"></i>{isEditMode ? "SỬA HỒ SƠ (UPDATE)" : "NHẬP LIỆU HỒ SƠ"}
-        </h3>
-        <div className="d-flex gap-2">
-            {!isEditMode && (
-                <button className="btn btn-sm btn-outline-purple fw-bold" style={{color: '#7b1fa2', borderColor: '#7b1fa2'}} onClick={() => setIsImportModalOpen(true)}>
-                    <i className="bi bi-file-earmark-excel me-1"></i> Import Excel
-                </button>
-            )}
-            <button className="btn btn-sm btn-warning fw-bold text-dark" onClick={() => setIsSearchModalOpen(true)}>
-                <i className="bi bi-search me-1"></i> Tìm hồ sơ cũ
-            </button>
-            <button className="btn btn-sm btn-success fw-bold" onClick={() => fileInputRef.current.click()}>
-                <i className="bi bi-camera me-1"></i> Quét CCCD/Hộ chiếu
-            </button>
-            <input type="file" ref={fileInputRef} onChange={processCCCDImage} accept="image/*" style={{ display: 'none' }} />
-        </div>
-      </div>
-
-      <form>
-        {isEditMode && <div className="alert alert-warning fw-bold small"><i className="bi bi-exclamation-triangle-fill me-2"></i>Chế độ Chỉnh sửa: KHÔNG THỂ thay đổi CCCD và Ngành đào tạo.</div>}
-
-        <h5 className="fw-bold text-teal mb-3" style={{ color: '#006666', borderLeft: '4px solid #008080', paddingLeft: '10px' }}>I. THÔNG TIN CHUNG</h5>
-        <div className="row g-3 mb-4">
-          {/* Hàng 1: NỐI ỐNG NƯỚC DROPDOWN */}
-          <div className="col-md-3"><label className="form-label fw-bold small mb-1">Họ và tên <span className="text-danger">*</span></label><input type="text" className="form-control" name="hoten" value={formData.hoten} onChange={handleChange} required /></div>
-          <div className="col-md-3">
-              <div className="d-flex justify-content-between align-items-end">
-                  <label className="form-label fw-bold small mb-1">Số CCCD/Hộ chiếu <span className="text-danger">*</span></label>
-                  <span className="small fst-italic fw-bold" style={{color: scanStatus.includes('❌') ? '#d32f2f' : '#0288d1'}}>{scanStatus}</span>
-              </div>
-              <input type="text" className="form-control" name="cccd" value={formData.cccd} onChange={handleChange} required disabled={isEditMode} />
+    <div className="xettuyen-wrapper">
+      <div className="container-fluid xettuyen-main-card p-4 position-relative">
+        <div className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+          <h3 className="fw-bold" style={{ color: '#008080' }}>
+            <i className="bi bi-journal-text me-2"></i>{isEditMode ? "SỬA HỒ SƠ (UPDATE)" : "NHẬP LIỆU HỒ SƠ"}
+          </h3>
+          <div className="d-flex gap-2">
+              {!isEditMode && (
+                  <button className="btn btn-sm btn-outline-purple fw-bold" style={{color: '#7b1fa2', borderColor: '#7b1fa2'}} onClick={() => setIsImportModalOpen(true)}>
+                      <i className="bi bi-file-earmark-excel me-1"></i> Import Excel
+                  </button>
+              )}
+              <button className="btn btn-sm btn-warning fw-bold text-dark" onClick={() => setIsSearchModalOpen(true)}>
+                  <i className="bi bi-search me-1"></i> Tìm hồ sơ cũ
+              </button>
+              <button className="btn btn-sm btn-success fw-bold" onClick={() => fileInputRef.current.click()}>
+                  <i className="bi bi-camera me-1"></i> Quét CCCD/Hộ chiếu
+              </button>
+              <input type="file" ref={fileInputRef} onChange={processCCCDImage} accept="image/*" style={{ display: 'none' }} />
           </div>
-          <div className="col-md-3"><label className="form-label fw-bold small mb-1">Ngày sinh <span className="text-danger">*</span></label><input type="date" className="form-control" name="ngaysinh" value={formData.ngaysinh} onChange={handleChange} required /></div>
-          <div className="col-md-3">
-              <label className="form-label fw-bold small mb-1">Ngành xét tuyển <span className="text-danger">*</span></label>
-              <select className="form-select" name="nganh" value={formData.nganh} onChange={handleChange} required disabled={isEditMode}>
-                  <option value="">-- Chọn ngành --</option>
-                  {sysConfig.Nganh.map(ng => <option key={ng} value={ng}>{ng}</option>)}
-              </select>
-          </div>
-          
-          {/* Hàng 2 */}
-          <div className="col-md-3">
-              <label className="form-label fw-bold small mb-1">Đối tượng đầu vào <span className="text-danger">*</span></label>
-              <select className="form-select" name="doituongdauvao" value={formData.doituongdauvao} onChange={handleChange} required>
-                  <option value="">-- Chọn --</option>
-                  {sysConfig.DoiTuongDauVao.map(dt => <option key={dt} value={dt}>{dt}</option>)}
-              </select>
-          </div>
-          <div className="col-md-3">
-              <label className="form-label fw-bold small mb-1">Hệ đào tạo <span className="text-danger">*</span></label>
-              <select className="form-select" name="hedaotao" value={formData.hedaotao} onChange={handleChange} required>
-                  <option value="">-- Chọn hệ --</option>
-                  {sysConfig.HeDaoTao.map(h => <option key={h} value={h}>{h}</option>)}
-              </select>
-          </div>
-          <div className="col-md-3">
-              <label className="form-label fw-bold small mb-1">Hình thức ĐT <span className="text-danger">*</span></label>
-              <select className="form-select" name="htdaotao" value={formData.htdaotao} onChange={handleChange} required>
-                  <option value="">-- Chọn HT --</option>
-                  {sysConfig.HinhThucDaoTao.map(h => <option key={h} value={h}>{h}</option>)}
-              </select>
-          </div>
-          <div className="col-md-3">
-              <label className="form-label fw-bold small mb-1">Khóa <span className="text-danger">*</span></label>
-              <select className="form-select" name="khoa" value={formData.khoa} onChange={handleChange} required>
-                  <option value="">-- Chọn --</option>
-                  {sysConfig.KhoaNhapHoc.map(k => <option key={k} value={k}>{k}</option>)}
-              </select>
-          </div>
-
-          {/* Hàng 3 */}
-          <div className="col-md-3">
-              <label className="form-label fw-bold small mb-1">Năm xét tuyển <span className="text-danger">*</span></label>
-              <select className="form-select" name="namtt" value={formData.namtt} onChange={handleChange} required>
-                  <option value="">-- Chọn --</option>
-                  {sysConfig.NamXetTuyen.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-          </div>
-          <div className="col-md-3">
-              <label className="form-label fw-bold small mb-1">Đối tượng ƯT <span className="text-danger">*</span></label>
-              <select className="form-select" name="doituonguutien" value={formData.doituonguutien} onChange={handleChange} required>
-                  <option value="">-- Chọn --</option>
-                  {sysConfig.DoiTuongUT.map(dt => <option key={dt} value={dt}>{dt}</option>)}
-              </select>
-          </div>
-          <div className="col-md-3">
-              <label className="form-label fw-bold small mb-1">Khu vực ưu tiên <span className="text-danger">*</span></label>
-              <select className="form-select" name="khuvucuutien" value={formData.khuvucuutien} onChange={handleChange} required>
-                  <option value="">-- Chọn --</option>
-                  {sysConfig.KhuVucUT.map(kv => <option key={kv} value={kv}>{kv}</option>)}
-              </select>
-          </div>
-          <div className="col-md-3"><label className="form-label fw-bold small mb-1 text-primary">🔗 Link Folder hồ sơ:</label><input type="text" className="form-control border-primary" name="link_folder" value={formData.link_folder} onChange={handleChange} placeholder="Link Google Drive..." /></div>
         </div>
 
-        {/* PHẦN II: CHECKLIST CHIA 2 CỘT */}
-        <div className="row mt-5 g-4">
-            <div className="col-md-6">
-                <div className="p-3 border rounded shadow-sm bg-light h-100">
-                    <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
-                        <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ CHUNG</h6>
-                        <button type="button" className="btn btn-sm btn-warning fw-bold py-0" onClick={handleSelectAllCommon}>⚡ Chọn/Bỏ Chọn</button>
-                    </div>
-                    {renderDocs(DICT_HO_SO.chung)} 
-                    
-                    <div className="mt-3 d-flex align-items-center gap-2">
-                        <label className="checkbox-item mb-0">
-                            <input type="checkbox" name="has_giay_uutien" checked={formData.has_giay_uutien} onChange={handleChange} />
-                            <span className="fw-bold text-primary">GIẤY TỜ ƯU TIÊN</span>
-                        </label>
-                        {formData.has_giay_uutien && (
-                            <input type="text" className="form-control form-control-sm border-primary" name="giay_uutien" value={formData.giay_uutien} onChange={handleChange} placeholder="Nhập loại giấy..." style={{ width: '180px' }} />
-                        )}
-                    </div>
+        <form>
+          <h5 className="fw-bold text-teal mb-3" style={{ color: '#006666', borderLeft: '4px solid #008080', paddingLeft: '10px' }}>I. THÔNG TIN CHUNG</h5>
+          <div className="row g-3 mb-4">
+            <div className="col-md-3"><label className="form-label fw-bold small mb-1">Họ và tên <span className="text-danger">*</span></label><input type="text" className="form-control" name="hoten" value={formData.hoten} onChange={handleChange} required /></div>
+            <div className="col-md-3">
+                <div className="d-flex justify-content-between align-items-end">
+                    <label className="form-label fw-bold small mb-1">Số CCCD/Hộ chiếu <span className="text-danger">*</span></label>
+                    <span className="small fst-italic fw-bold" style={{color: scanStatus.includes('❌') ? '#d32f2f' : '#0288d1'}}>{scanStatus}</span>
                 </div>
+                <input type="text" className="form-control" name="cccd" value={formData.cccd} onChange={handleChange} required disabled={isEditMode} />
             </div>
-
-            <div className="col-md-6">
-                <div className="p-3 border rounded shadow-sm bg-light h-100">
-                    <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
-                        <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ TIÊN QUYẾT</h6>
-                    </div>
-                    {!formData.doituongdauvao ? <div className="text-muted small fst-italic mt-2">👈 Vui lòng chọn "Đối tượng đầu vào" trước</div> : 
-                        renderDocs(DICT_HO_SO.tien_quyet[formData.doituongdauvao] || [])
-                    }
-                </div>
-            </div>
-        </div>
-
-        <h5 className="fw-bold text-teal mb-3 mt-5" style={{ color: '#006666', borderLeft: '4px solid #008080', paddingLeft: '10px' }}>III. THÔNG TIN ĐIỂM SỐ</h5>
-        <div className="score-container">
-            {formData.doituongdauvao === 'Tốt nghiệp THPT' ? (
-                <div className="score-group">
-                    <h4>📊 Điểm kỳ thi THPT:</h4>
-                    <div className="score-grid">
-                        {['toan', 'vatli', 'hoahoc', 'sinhhoc', 'nguvan', 'lichsu', 'dialy', 'tienganh', 'tiengtrung', 'tinhoc', 'gdktpl'].map(subject => (
-                            <div key={subject}><label className="form-label small fw-bold mb-1 text-uppercase">{subject}:</label><input type="text" className="form-control form-control-sm" name={`diem_${subject}`} value={formData[`diem_${subject}`]} onChange={handleChange} placeholder="0.0" /></div>
-                        ))}
-                    </div>
-                </div>
-            ) : formData.doituongdauvao ? (
-                <div className="score-group">
-                    <h4>📊 Điểm trung bình toàn khóa:</h4>
-                    <div className="row g-3">
-                        <div className="col-md-4"><label className="form-label small fw-bold">ĐIỂM TB HỆ 4:</label><input type="text" className="form-control" name="diem_tb_he4" value={formData.diem_tb_he4} onChange={handleChange} placeholder="0.0" disabled={formData.diem_tb_he10.trim() !== ''} /></div>
-                        <div className="col-md-4"><label className="form-label small fw-bold">ĐIỂM TB HỆ 10:</label><input type="text" className="form-control" name="diem_tb_he10" value={formData.diem_tb_he10} onChange={handleChange} placeholder="0.0" disabled={formData.diem_tb_he4.trim() !== ''} /></div>
-                        <div className="col-md-4"><label className="form-label small fw-bold text-danger">ĐIỂM CỘNG (Nếu có):</label><input type="text" className="form-control border-danger" name="diem_cong" value={formData.diem_cong} onChange={handleChange} placeholder="0.0" /></div>
-                    </div>
-                </div>
-            ) : null}
-        </div>
-
-        <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mt-4 mb-4">
-            <div className="flex-grow-1 order-2 order-md-1">
-                {admissionResult && formData.nganh && formData.doituongdauvao && (
-                    <div className="d-flex align-items-center gap-3 p-3 rounded shadow-sm" style={{ backgroundColor: admissionResult.boxBg, border: `2px solid ${admissionResult.boxBorder}`, maxWidth: '600px'}}>
-                        <div className="display-4 lh-1">{admissionResult.icon}</div>
-                        <div>
-                            <h5 className="mb-1 fw-bold text-uppercase" style={{color: admissionResult.titleColor}}>{admissionResult.title}</h5>
-                            <div className="fw-bold" style={{fontSize: '14px', color: admissionResult.hsColor}} dangerouslySetInnerHTML={{__html: admissionResult.hsMsg}}></div>
-                            <div className="fw-bold mt-1" style={{fontSize: '14px', color: '#444'}}>📊 Kết quả: <span dangerouslySetInnerHTML={{__html: admissionResult.diemMsg}}></span></div>
-                        </div>
-                    </div>
-                )}
+            <div className="col-md-3"><label className="form-label fw-bold small mb-1">Ngày sinh <span className="text-danger">*</span></label><input type="date" className="form-control" name="ngaysinh" value={formData.ngaysinh} onChange={handleChange} required /></div>
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Ngành xét tuyển <span className="text-danger">*</span></label>
+                <select className="form-select" name="nganh" value={formData.nganh} onChange={handleChange} required disabled={isEditMode}>
+                    <option value="">-- Chọn ngành --</option>
+                    {sysConfig.Nganh.map(ng => <option key={ng} value={ng}>{ng}</option>)}
+                </select>
             </div>
             
-            <div className="flex-shrink-0 order-1 order-md-2">
-                <button type="button" className={`btn ${isEditMode ? 'btn-warning text-dark' : 'btn-primary'} px-4 py-3 fw-bold shadow-sm`} onClick={handleAddRow}>
-                    <i className={`bi ${isEditMode ? 'bi-pencil-square' : 'bi-plus-circle'} me-2`}></i>
-                    {isEditMode ? "Lưu cập nhật vào danh sách" : "Thêm vào danh sách"}
-                </button>
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Đối tượng đầu vào <span className="text-danger">*</span></label>
+                <select className="form-select" name="doituongdauvao" value={formData.doituongdauvao} onChange={handleChange} required>
+                    <option value="">-- Chọn --</option>
+                    {sysConfig.DoiTuongDauVao.map(dt => <option key={dt} value={dt}>{dt}</option>)}
+                </select>
             </div>
-        </div>
-      </form>
-
-      {/* CHỈ HIỆN BẢNG KHI CÓ DỮ LIỆU */}
-      {dataList.length > 0 && (
-          <>
-            <h5 className="fw-bold text-primary mb-3 mt-5 border-bottom pb-2">📋 DANH SÁCH CHỜ ĐỒNG BỘ ({dataList.filter(r => r["TRẠNG THÁI ĐẨY"] === "Waiting" || r["TRẠNG THÁI ĐẨY"].includes("Lỗi")).length} hồ sơ)</h5>
-            <div className="table-responsive border rounded mb-3">
-                <table className="table table-bordered table-hover table-striped mb-0 align-middle" style={{ minWidth: 'max-content', fontSize: '12px', whiteSpace: 'nowrap', borderColor: '#dee2e6' }}>
-                    <thead className="table-light sticky-top">
-                        <tr>
-                            <th className="text-center">STT</th>
-                            <th className="text-center">TRẠNG THÁI</th>
-                            <th className="text-center">KẾT QUẢ SƠ TUYỂN</th>
-                            <th className="text-center">SỐ CCCD</th>
-                            <th>TÊN SINH VIÊN</th>
-                            <th>NGÀY SINH</th>
-                            <th>NGÀNH</th>
-                            <th className="text-center">KHÓA</th>
-                            <th className="text-center">ĐỐI TƯỢNG ƯU TIÊN</th>
-                            <th className="text-center">KHU VỰC ƯU TIÊN</th>
-                            <th className="text-center">ĐỐI TƯỢNG ĐẦU VÀO</th>
-                            <th className="text-center">NĂM XÉT TUYỂN</th>
-                            <th className="text-center">HỆ ĐÀO TẠO</th>
-                            <th className="text-center">HÌNH THỨC ĐÀO TẠO</th>
-                            <th>LINK HỒ SƠ</th>
-                            {ALL_HO_SO_DOCS.map(doc => <th key={doc.id} className="text-center">{doc.short}</th>)}
-                            <th className="text-center">GIẤY ƯU TIÊN</th>
-                            <th className="text-center">TOÁN</th>
-                            <th className="text-center">VẬT LÍ</th>
-                            <th className="text-center">HÓA HỌC</th>
-                            <th className="text-center">SINH HỌC</th>
-                            <th className="text-center">NGỮ VĂN</th>
-                            <th className="text-center">LỊCH SỬ</th>
-                            <th className="text-center">ĐỊA LÝ</th>
-                            <th className="text-center">TIẾNG ANH</th>
-                            <th className="text-center">TIẾNG TRUNG</th>
-                            <th className="text-center">TIN HỌC</th>
-                            <th className="text-center">GDKTPL</th>
-                            <th className="text-center">ĐIỂM TB HỆ 4</th>
-                            <th className="text-center">ĐIỂM TB HỆ 10</th>
-                            <th className="text-center text-danger">ĐIỂM CỘNG</th>
-                            <th className="text-center" style={{width: '90px'}}>THAO TÁC</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {dataList.map((row, idx) => {
-                            const isUp = row["TRẠNG THÁI ĐẨY"] === "Uploaded";
-                            return (
-                                <tr key={idx} className={isUp ? 'table-secondary text-muted' : ''}>
-                                    <td className="text-center fw-bold">{row["STT"]}</td>
-                                    <td className="text-center">
-                                        <span className={`badge ${row["_Action"] === 'UPDATE' ? 'bg-info text-dark' : 'bg-success'} me-1`}>{row["_Action"]}</span>
-                                        <span className={`badge ${isUp ? 'bg-success' : row["TRẠNG THÁI ĐẨY"].includes("Lỗi") ? 'bg-danger' : 'bg-warning text-dark'}`}>{row["TRẠNG THÁI ĐẨY"]}</span>
-                                    </td>
-                                    <td className="text-center fw-bold text-success">{row["KẾT QUẢ SƠ TUYỂN"]}</td>
-                                    <td className="text-center fw-bold text-primary">{row["CĂN CƯỚC"]}</td>
-                                    <td className="fw-bold">{row["TÊN SINH VIÊN"]}</td>
-                                    <td>{row["NGÀY SINH"]}</td>
-                                    <td>{row["NGÀNH"]}</td>
-                                    <td className="text-center">{row["KHÓA"]}</td>
-                                    <td className="text-center">{row["ĐỐI TƯỢNG ƯU TIÊN"]}</td>
-                                    <td className="text-center">{row["KHU VỰC ƯU TIÊN"]}</td>
-                                    <td className="text-center">{row["ĐỐI TƯỢNG ĐẦU VÀO"]}</td>
-                                    <td className="text-center">{row["NĂM XÉT TUYỂN"]}</td>
-                                    <td className="text-center">{row["HỆ ĐÀO TẠO"]}</td>
-                                    <td className="text-center">{row["HÌNH THỨC ĐÀO TẠO"]}</td>
-                                    <td>{row["LINK HỒ SƠ"]}</td>
-                                    {ALL_HO_SO_DOCS.map(doc => <td key={doc.id} className="text-center fw-bold fs-6">{row[doc.name.toUpperCase()] === "TRUE" ? <span className="text-success">✔</span> : <span className="text-danger">✘</span>}</td>)}
-                                    <td className="text-center fw-bold text-primary">{row["GIẤY TỜ ƯU TIÊN"]}</td>
-                                    <td className="text-center">{row["TOÁN"]}</td>
-                                    <td className="text-center">{row["VẬT LÍ"] || row["VẬT LÝ"]}</td>
-                                    <td className="text-center">{row["HÓA HỌC"]}</td>
-                                    <td className="text-center">{row["SINH HỌC"]}</td>
-                                    <td className="text-center">{row["NGỮ VĂN"]}</td>
-                                    <td className="text-center">{row["LỊCH SỬ"]}</td>
-                                    <td className="text-center">{row["ĐỊA LÝ"] || row["ĐỊA LÍ"]}</td>
-                                    <td className="text-center">{row["TIẾNG ANH"]}</td>
-                                    <td className="text-center">{row["TIẾNG TRUNG"]}</td>
-                                    <td className="text-center">{row["TIN HỌC"]}</td>
-                                    <td className="text-center">{row["GDKTPL"]}</td>
-                                    <td className="text-center">{row["ĐIỂM TB HỆ 4"] || row["ĐIỂM TB TOÀN KHÓA HỆ 4"]}</td>
-                                    <td className="text-center">{row["ĐIỂM TB HỆ 10"] || row["ĐIỂM TB TOÀN KHÓA HỆ 10"]}</td>
-                                    <td className="text-center fw-bold text-danger">{row["ĐIỂM CỘNG"]}</td>
-                                    <td className="text-center">
-                                        {!isUp && (
-                                            <div className="d-flex justify-content-center gap-1">
-                                                <button className="btn btn-sm btn-outline-primary" onClick={() => handleEditRowLocal(idx)} title="Sửa hồ sơ">✏️</button>
-                                                <button className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteRow(idx)} title="Xóa hồ sơ">🗑️</button>
-                                            </div>
-                                        )}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Hệ đào tạo <span className="text-danger">*</span></label>
+                <select className="form-select" name="hedaotao" value={formData.hedaotao} onChange={handleChange} required>
+                    <option value="">-- Chọn hệ --</option>
+                    {sysConfig.HeDaoTao.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+            </div>
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Hình thức ĐT <span className="text-danger">*</span></label>
+                <select className="form-select" name="htdaotao" value={formData.htdaotao} onChange={handleChange} required>
+                    <option value="">-- Chọn HT --</option>
+                    {sysConfig.HinhThucDaoTao.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+            </div>
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Khóa <span className="text-danger">*</span></label>
+                <select className="form-select" name="khoa" value={formData.khoa} onChange={handleChange} required>
+                    <option value="">-- Chọn --</option>
+                    {sysConfig.KhoaNhapHoc.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
             </div>
 
-            <div className="d-flex justify-content-end gap-3 mt-4">
-                <button className="btn btn-secondary fw-bold" onClick={() => { if(window.confirm("Xóa toàn bộ danh sách?")) setDataList([]); }}>🗑️ Xóa hết</button>
-                <button className="btn btn-success fw-bold px-4" onClick={handlePushToCloud} disabled={isPushing}>{isPushing ? '⏳ Đang đồng bộ...' : '☁️ Đẩy dữ liệu lên hệ thống'}</button>
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Năm xét tuyển <span className="text-danger">*</span></label>
+                <select className="form-select" name="namtt" value={formData.namtt} onChange={handleChange} required>
+                    <option value="">-- Chọn --</option>
+                    {sysConfig.NamXetTuyen.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
             </div>
-          </>
-      )}
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Đối tượng ƯT <span className="text-danger">*</span></label>
+                <select className="form-select" name="doituonguutien" value={formData.doituonguutien} onChange={handleChange} required>
+                    <option value="">-- Chọn --</option>
+                    {sysConfig.DoiTuongUT.map(dt => <option key={dt} value={dt}>{dt}</option>)}
+                </select>
+            </div>
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Khu vực ưu tiên <span className="text-danger">*</span></label>
+                <select className="form-select" name="khuvucuutien" value={formData.khuvucuutien} onChange={handleChange} required>
+                    <option value="">-- Chọn --</option>
+                    {sysConfig.KhuVucUT.map(kv => <option key={kv} value={kv}>{kv}</option>)}
+                </select>
+            </div>
+            <div className="col-md-3"><label className="form-label fw-bold small mb-1 text-primary">🔗 Link Folder hồ sơ:</label><input type="text" className="form-control border-primary" name="link_folder" value={formData.link_folder} onChange={handleChange} placeholder="Link Google Drive..." /></div>
+          </div>
 
-      {/* MODAL IMPORT EXCEL */}
-      {isImportModalOpen && (
-        <div className="modal show d-block" id="import-modal-backdrop" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if(e.target.id === 'import-modal-backdrop') { setIsImportModalOpen(false); setImportFile(null); setImportStatus(""); }}}>
-            <div className="modal-dialog modal-dialog-centered">
-                <div className="modal-content shadow-lg">
-                    <div className="modal-header bg-info text-white">
-                        <h5 className="modal-title fw-bold">📂 IMPORT DỮ LIỆU TỪ EXCEL</h5>
-                        <button type="button" className="btn-close btn-close-white" onClick={() => {setIsImportModalOpen(false); setImportFile(null); setImportStatus("");}}></button>
-                    </div>
-                    <div className="modal-body p-4">
-                        <button className="btn btn-outline-primary w-100 mb-3 fw-bold" onClick={handleDownloadTemplate}>⬇️ Tải file mẫu</button>
-                        <div className="d-flex align-items-center gap-2 p-2 border rounded bg-light mb-3">
-                            <div className="flex-grow-1 text-truncate text-muted small">{importFile ? importFile.name : "Chọn file dữ liệu..."}</div>
-                            <button className="btn btn-primary btn-sm fw-bold" onClick={() => importFileRef.current.click()}>📁 Chọn file</button>
-                        </div>
-                        <input type="file" ref={importFileRef} accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImportFileChange} />
-                        <div className="alert alert-secondary small mb-0">Chấp nhận file Excel (.xlsx, .xls) hoặc CSV chuẩn. Dòng 2 là hướng dẫn sẽ tự bỏ qua.</div>
-                    </div>
-                    <div className="modal-footer bg-light">
-                        <span className="text-primary fw-bold me-auto small">{importStatus}</span>
-                        <button type="button" className="btn btn-secondary" onClick={() => {setIsImportModalOpen(false); setImportFile(null); setImportStatus("");}}>Hủy</button>
-                        <button type="button" className="btn btn-success fw-bold" onClick={executeImport} disabled={!importFile || !!importStatus}>⬆️ Upload</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-      )}
+          <div className="row mt-5 g-4">
+              <div className="col-md-6">
+                  <div className="p-3 border rounded shadow-sm bg-light h-100">
+                      <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+                          <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ CHUNG</h6>
+                          <button type="button" className="btn btn-sm btn-warning fw-bold py-0" onClick={handleSelectAllCommon}>⚡ Chọn/Bỏ Chọn</button>
+                      </div>
+                      {renderDocs(DICT_HO_SO.chung)} 
+                      
+                      <div className="mt-3 d-flex align-items-center gap-2">
+                          <label className="checkbox-item mb-0">
+                              <input type="checkbox" name="has_giay_uutien" checked={formData.has_giay_uutien} onChange={handleChange} />
+                              <span className="fw-bold text-primary">GIẤY TỜ ƯU TIÊN</span>
+                          </label>
+                          {formData.has_giay_uutien && (
+                              <input type="text" className="form-control form-control-sm border-primary" name="giay_uutien" value={formData.giay_uutien} onChange={handleChange} placeholder="Nhập loại giấy..." style={{ width: '180px' }} />
+                          )}
+                      </div>
+                  </div>
+              </div>
 
-      {/* MODAL TÌM KIẾM HỒ SƠ CŨ */}
-      {isSearchModalOpen && (
-        <div className="modal show d-block" id="search-modal-backdrop" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if(e.target.id === 'search-modal-backdrop') setIsSearchModalOpen(false); }}>
-            <div className="modal-dialog modal-lg modal-dialog-centered">
-                <div className="modal-content shadow-lg">
-                    <div className="modal-header bg-info text-white">
-                        <h5 className="modal-title fw-bold">🔍 TÌM HỒ SƠ CŨ (TỪ FILE TRUNG GIAN)</h5>
-                        <button type="button" className="btn-close btn-close-white" onClick={() => setIsSearchModalOpen(false)}></button>
-                    </div>
-                    <div className="modal-body p-4">
-                        <div className="d-flex gap-2 mb-4">
-                            <input type="text" className="form-control" placeholder="Nhập Họ tên hoặc vài số CCCD..." 
-                                   value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} 
-                                   onKeyDown={e => e.key === 'Enter' && executeSearchCandidate()} />
-                            <button className="btn btn-warning fw-bold text-dark px-4" onClick={executeSearchCandidate} disabled={isSearching}>{isSearching ? '⏳...' : 'Tìm kiếm'}</button>
-                        </div>
-                        
-                        <div className="table-responsive border rounded" style={{ maxHeight: '300px' }}>
-                            <table className="table table-hover mb-0 align-middle">
-                                <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center">TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
-                                <tbody>
-                                    {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Nhập từ khóa và bấm Tìm kiếm...</td></tr>) : (
-                                        searchResults.map((item, index) => (
-                                            <tr key={index}>
-                                                <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td><td className="text-center"><span className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}>{item.trangThai}</span></td>
-                                                <td className="text-center"><button className="btn btn-sm btn-outline-primary fw-bold" onClick={() => loadOldCandidate(item)}>✏️ Sửa</button></td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-      )}
+              <div className="col-md-6">
+                  <div className="p-3 border rounded shadow-sm bg-light h-100">
+                      <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+                          <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ TIÊN QUYẾT</h6>
+                      </div>
+                      {!formData.doituongdauvao ? <div className="text-muted small fst-italic mt-2">👈 Vui lòng chọn "Đối tượng đầu vào" trước</div> : 
+                          renderDocs(DICT_HO_SO.tien_quyet[formData.doituongdauvao] || [])
+                      }
+                  </div>
+              </div>
+          </div>
+
+          <h5 className="fw-bold text-teal mb-3 mt-5" style={{ color: '#006666', borderLeft: '4px solid #008080', paddingLeft: '10px' }}>III. THÔNG TIN ĐIỂM SỐ</h5>
+          <div className="score-container">
+              {formData.doituongdauvao === 'Tốt nghiệp THPT' ? (
+                  <div className="score-group border-primary pb-2">
+                      <div className="d-flex align-items-center gap-4 mb-3 border-bottom pb-2">
+                          <h6 className="mb-0 text-primary fw-bold">📊 Phương thức xét điểm:</h6>
+                          <label className="checkbox-item mb-0">
+                              <input type="checkbox" name="check_thi_thpt" 
+                                     checked={formData.loai_diem === 'THI_THPT'} 
+                                     onChange={handleChange} />
+                              <span className="fw-bold">Điểm thi THPT</span>
+                          </label>
+                          <label className="checkbox-item mb-0">
+                              <input type="checkbox" name="check_hoc_ba" 
+                                     checked={formData.loai_diem === 'HOC_BA'} 
+                                     onChange={handleChange} />
+                              <span className="fw-bold">Điểm học bạ</span>
+                          </label>
+                          <label className="checkbox-item mb-0 ms-3">
+                              <input type="checkbox" name="check_hoc_ba_2025" 
+                                     checked={formData.loai_diem === 'HOC_BA_2025'} 
+                                     onChange={handleChange} />
+                              <span className="fw-bold text-danger">TBTS 2025 (3 HK)</span>
+                          </label>
+                      </div>
+
+                      {formData.loai_diem === 'HOC_BA_2025' ? (
+                          <div className="table-responsive mt-3 border rounded position-relative">
+                              <table className="table table-bordered table-sm align-middle text-center mb-0">
+                                  <thead className="table-light">
+                                      <tr>
+                                          <th style={{width: '120px'}} className="text-primary">MÔN</th>
+                                          <th>HK1-11</th>
+                                          <th>HK1-12</th>
+                                          <th>HK2-12</th>
+                                          <th className="text-danger" style={{width: '100px'}}>TRUNG BÌNH</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {SUBJECTS_UI.map(subj => {
+                                          const avg = getSubjectAverage(subj.id, formData);
+                                          return (
+                                              <tr key={subj.id}>
+                                                  <td className="fw-bold text-primary">{subj.label}</td>
+                                                  <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk1_11`} value={formData[`diem_${subj.id}_hk1_11`]} onChange={handleChange} placeholder="-" /></td>
+                                                  <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk1_12`} value={formData[`diem_${subj.id}_hk1_12`]} onChange={handleChange} placeholder="-" /></td>
+                                                  <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk2_12`} value={formData[`diem_${subj.id}_hk2_12`]} onChange={handleChange} placeholder="-" /></td>
+                                                  <td className="fw-bold text-danger bg-light">{avg > 0 ? avg : '-'}</td>
+                                              </tr>
+                                          );
+                                      })}
+                                      <tr>
+                                          <td colSpan={5} className="bg-white p-2 border-top border-danger border-opacity-25">
+                                              <div className="d-flex justify-content-between align-items-center px-1">
+                                                  <button type="button" className="btn btn-sm btn-outline-danger fw-bold shadow-sm" onClick={handleClearHK2025}>
+                                                      <i className="bi bi-trash"></i> Xóa hết điểm 3 HK
+                                                  </button>
+                                                  <div className="d-flex align-items-center gap-2">
+                                                      <label className="form-label small fw-bold mb-0 text-danger">ĐIỂM CỘNG:</label>
+                                                      <input type="text" className="form-control form-control-sm border-danger" style={{width: '80px'}} name="diem_cong" value={formData.diem_cong} onChange={handleChange} placeholder="0.0" />
+                                                  </div>
+                                              </div>
+                                          </td>
+                                      </tr>
+                                  </tbody>
+                              </table>
+                          </div>
+                      ) : (
+                          <div className="score-grid mt-3">
+                              {SUBJECTS_UI.map(subj => (
+                                  <div key={subj.id}>
+                                      <label className="form-label small fw-bold mb-1 text-primary">{subj.label}:</label>
+                                      <input type="text" className="form-control form-control-sm" name={`diem_${subj.id}`} value={formData[`diem_${subj.id}`]} onChange={handleChange} placeholder="0.0" />
+                                  </div>
+                              ))}
+                              <div>
+                                  <label className="form-label small fw-bold mb-1 text-danger">ĐIỂM CỘNG:</label>
+                                  <input type="text" className="form-control form-control-sm border-danger" name="diem_cong" value={formData.diem_cong} onChange={handleChange} placeholder="0.0" />
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              ) : formData.doituongdauvao ? (
+                  <div className="score-group">
+                      <h6 className="fw-bold">📊 Điểm trung bình toàn khóa:</h6>
+                      <div className="row g-3 mt-1">
+                          <div className="col-md-4">
+                              <label className="form-label small fw-bold text-primary">ĐIỂM TB HỆ 4:</label>
+                              <input type="text" className="form-control" name="diem_tb_he4" value={formData.diem_tb_he4} onChange={handleChange} placeholder="0.0" disabled={formData.diem_tb_he10.trim() !== ''} />
+                          </div>
+                          <div className="col-md-4">
+                              <label className="form-label small fw-bold text-primary">ĐIỂM TB HỆ 10:</label>
+                              <input type="text" className="form-control" name="diem_tb_he10" value={formData.diem_tb_he10} onChange={handleChange} placeholder="0.0" disabled={formData.diem_tb_he4.trim() !== ''} />
+                          </div>
+                          <div className="col-md-4">
+                              <label className="form-label small fw-bold text-danger">ĐIỂM CỘNG:</label>
+                              <input type="text" className="form-control border-danger" name="diem_cong" value={formData.diem_cong} onChange={handleChange} placeholder="0.0" />
+                          </div>
+                      </div>
+                  </div>
+              ) : null}
+          </div>
+
+          <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mt-4 mb-4">
+              <div className="flex-grow-1 order-2 order-md-1">
+                  {admissionResult && formData.nganh && formData.doituongdauvao && (
+                      <div className="d-flex align-items-center gap-2 p-2 px-3 rounded shadow-sm" style={{ backgroundColor: admissionResult.boxBg, border: `1px solid ${admissionResult.boxBorder}`, maxWidth: '400px'}}>
+                          <div className="fs-3 lh-1">{admissionResult.icon}</div>
+                          <div>
+                              <h6 className="mb-0 fw-bold text-uppercase" style={{color: admissionResult.titleColor, fontSize: '13px'}}>{admissionResult.title}</h6>
+                              <div className="fw-bold mt-1" style={{fontSize: '11px', color: admissionResult.hsColor}} dangerouslySetInnerHTML={{__html: admissionResult.hsMsg}}></div>
+                              <div className="fw-bold mt-1" style={{fontSize: '11px', color: '#444'}}>📊 <span dangerouslySetInnerHTML={{__html: admissionResult.diemMsg}}></span></div>
+                          </div>
+                      </div>
+                  )}
+              </div>
+              
+              <div className="flex-shrink-0 order-1 order-md-2 d-flex gap-2">
+                  {isEditMode && (
+                      <button type="button" className="btn btn-secondary px-4 py-2 fw-bold shadow-sm" onClick={handleCancelEdit}>
+                          <i className="bi bi-x-circle me-2"></i> Hủy
+                      </button>
+                  )}
+                  <button type="button" className={`btn ${isEditMode ? 'btn-warning text-dark' : 'btn-primary'} px-4 py-2 fw-bold shadow-sm`} onClick={handleAddRow}>
+                      <i className={`bi ${isEditMode ? 'bi-pencil-square' : 'bi-plus-circle'} me-2`}></i>
+                      {isEditMode ? "Lưu cập nhật vào danh sách" : "Thêm vào danh sách"}
+                  </button>
+              </div>
+          </div>
+        </form>
+
+        {/* CHỈ HIỆN BẢNG KHI CÓ DỮ LIỆU */}
+        {dataList.length > 0 && (
+            <>
+              <h5 className="fw-bold text-primary mb-3 mt-5 border-bottom pb-2">📋 DANH SÁCH CHỜ ĐỒNG BỘ ({dataList.filter(r => r["TRẠNG THÁI ĐẨY"] === "Waiting" || r["TRẠNG THÁI ĐẨY"].includes("Lỗi")).length} hồ sơ)</h5>
+              <div className="table-responsive border rounded mb-3">
+                  <table className="table table-bordered table-hover table-striped mb-0 align-middle" style={{ minWidth: 'max-content', fontSize: '12px', whiteSpace: 'nowrap', borderColor: '#dee2e6' }}>
+                      <thead className="table-light sticky-top">
+                          <tr>
+                              <th className="text-center">STT</th>
+                              <th className="text-center">TRẠNG THÁI</th>
+                              <th className="text-center">KẾT QUẢ SƠ TUYỂN</th>
+                              <th className="text-center">SỐ CCCD</th>
+                              <th>TÊN SINH VIÊN</th>
+                              <th>NGÀY SINH</th>
+                              <th>NGÀNH</th>
+                              <th className="text-center">KHÓA</th>
+                              <th className="text-center">ĐỐI TƯỢNG ƯU TIÊN</th>
+                              <th className="text-center">KHU VỰC ƯU TIÊN</th>
+                              <th className="text-center">ĐỐI TƯỢNG ĐẦU VÀO</th>
+                              <th className="text-center">NĂM XÉT TUYỂN</th>
+                              <th className="text-center">HỆ ĐÀO TẠO</th>
+                              <th className="text-center">HÌNH THỨC ĐÀO TẠO</th>
+                              <th>LINK HỒ SƠ</th>
+                              {ALL_HO_SO_DOCS.map(doc => <th key={doc.id} className="text-center">{doc.short}</th>)}
+                              <th className="text-center">GIẤY ƯU TIÊN</th>
+                              <th className="text-center">PHƯƠNG THỨC XÉT TUYỂN</th>
+                              <th className="text-center">TOÁN</th>
+                              <th className="text-center">VẬT LÍ</th>
+                              <th className="text-center">HÓA HỌC</th>
+                              <th className="text-center">SINH HỌC</th>
+                              <th className="text-center">NGỮ VĂN</th>
+                              <th className="text-center">LỊCH SỬ</th>
+                              <th className="text-center">ĐỊA LÝ</th>
+                              <th className="text-center">TIẾNG ANH</th>
+                              <th className="text-center">TIẾNG TRUNG</th>
+                              <th className="text-center">TIN HỌC</th>
+                              <th className="text-center">GDKTPL</th>
+                              <th className="text-center">ĐIỂM TB HỆ 4</th>
+                              <th className="text-center">ĐIỂM TB HỆ 10</th>
+                              <th className="text-center text-danger">ĐIỂM CỘNG</th>
+                              <th className="text-center" style={{width: '90px'}}>THAO TÁC</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          {dataList.map((row, idx) => {
+                              const isUp = row["TRẠNG THÁI ĐẨY"] === "Uploaded";
+                              return (
+                                  <tr key={idx} className={isUp ? 'table-secondary text-muted' : ''}>
+                                      <td className="text-center fw-bold">{row["STT"]}</td>
+                                      <td className="text-center">
+                                          <span className={`badge ${row["_Action"] === 'UPDATE' ? 'bg-info text-dark' : 'bg-success'} me-1`}>{row["_Action"]}</span>
+                                          <span className={`badge ${isUp ? 'bg-success' : row["TRẠNG THÁI ĐẨY"].includes("Lỗi") ? 'bg-danger' : 'bg-warning text-dark'}`}>{row["TRẠNG THÁI ĐẨY"]}</span>
+                                      </td>
+                                      <td className="text-center fw-bold text-success">{row["KẾT QUẢ SƠ TUYỂN"]}</td>
+                                      <td className="text-center fw-bold text-primary">{row["CĂN CƯỚC"]}</td>
+                                      <td className="fw-bold">{row["TÊN SINH VIÊN"]}</td>
+                                      <td>{row["NGÀY SINH"]}</td>
+                                      <td>{row["NGÀNH"]}</td>
+                                      <td className="text-center">{row["KHÓA"]}</td>
+                                      <td className="text-center">{row["ĐỐI TƯỢNG ƯU TIÊN"]}</td>
+                                      <td className="text-center">{row["KHU VỰC ƯU TIÊN"]}</td>
+                                      <td className="text-center">{row["ĐỐI TƯỢNG ĐẦU VÀO"]}</td>
+                                      <td className="text-center">{row["NĂM XÉT TUYỂN"]}</td>
+                                      <td className="text-center">{row["HỆ ĐÀO TẠO"]}</td>
+                                      <td className="text-center">{row["HÌNH THỨC ĐÀO TẠO"]}</td>
+                                      <td>{row["LINK HỒ SƠ"]}</td>
+                                      {ALL_HO_SO_DOCS.map(doc => <td key={doc.id} className="text-center fw-bold fs-6">{row[doc.name.toUpperCase()] === "TRUE" ? <span className="text-success">✔</span> : <span className="text-danger">✘</span>}</td>)}
+                                      <td className="text-center fw-bold text-primary">{row["GIẤY TỜ ƯU TIÊN"]}</td>
+                                      <td className="text-center fw-bold text-info">{row["PHƯƠNG THỨC XÉT TUYỂN"]}</td>
+                                      <td className="text-center">{row["TOÁN"]}</td>
+                                      <td className="text-center">{row["VẬT LÍ"] || row["VẬT LÝ"]}</td>
+                                      <td className="text-center">{row["HÓA HỌC"]}</td>
+                                      <td className="text-center">{row["SINH HỌC"]}</td>
+                                      <td className="text-center">{row["NGỮ VĂN"]}</td>
+                                      <td className="text-center">{row["LỊCH SỬ"]}</td>
+                                      <td className="text-center">{row["ĐỊA LÝ"] || row["ĐỊA LÍ"]}</td>
+                                      <td className="text-center">{row["TIẾNG ANH"]}</td>
+                                      <td className="text-center">{row["TIẾNG TRUNG"]}</td>
+                                      <td className="text-center">{row["TIN HỌC"]}</td>
+                                      <td className="text-center">{row["GDKTPL"]}</td>
+                                      <td className="text-center">{row["ĐIỂM TB HỆ 4"] || row["ĐIỂM TB TOÀN KHÓA HỆ 4"]}</td>
+                                      <td className="text-center">{row["ĐIỂM TB HỆ 10"] || row["ĐIỂM TB TOÀN KHÓA HỆ 10"]}</td>
+                                      <td className="text-center fw-bold text-danger">{row["ĐIỂM CỘNG"]}</td>
+                                      <td className="text-center">
+                                          {!isUp && (
+                                              <div className="d-flex justify-content-center gap-1">
+                                                  <button className="btn btn-sm btn-outline-primary" onClick={() => handleEditRowLocal(idx)} title="Sửa hồ sơ">✏️</button>
+                                                  <button className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteRow(idx)} title="Xóa hồ sơ">🗑️</button>
+                                              </div>
+                                          )}
+                                      </td>
+                                  </tr>
+                              );
+                          })}
+                      </tbody>
+                  </table>
+              </div>
+
+              <div className="d-flex justify-content-end gap-3 mt-4">
+                  <button className="btn btn-secondary fw-bold" onClick={() => { if(window.confirm("Xóa toàn bộ danh sách?")) setDataList([]); }}>🗑️ Xóa hết</button>
+                  <button className="btn btn-success fw-bold px-4" onClick={handlePushToCloud} disabled={isPushing}>{isPushing ? '⏳ Đang đồng bộ...' : '☁️ Đẩy dữ liệu lên hệ thống'}</button>
+              </div>
+            </>
+        )}
+
+        {/* MODAL IMPORT EXCEL */}
+        {isImportModalOpen && (
+          <div className="modal show d-block" id="import-modal-backdrop" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if(e.target.id === 'import-modal-backdrop') { setIsImportModalOpen(false); setImportFile(null); setImportStatus(""); }}}>
+              <div className="modal-dialog modal-dialog-centered">
+                  <div className="modal-content shadow-lg">
+                      <div className="modal-header bg-info text-white">
+                          <h5 className="modal-title fw-bold">📂 IMPORT DỮ LIỆU TỪ EXCEL</h5>
+                          <button type="button" className="btn-close btn-close-white" onClick={() => {setIsImportModalOpen(false); setImportFile(null); setImportStatus("");}}></button>
+                      </div>
+                      <div className="modal-body p-4">
+                          <button className="btn btn-outline-primary w-100 mb-3 fw-bold" onClick={handleDownloadTemplate}>⬇️ Tải file mẫu</button>
+                          <div className="d-flex align-items-center gap-2 p-2 border rounded bg-light mb-3">
+                              <div className="flex-grow-1 text-truncate text-muted small">{importFile ? importFile.name : "Chọn file dữ liệu..."}</div>
+                              <button className="btn btn-primary btn-sm fw-bold" onClick={() => importFileRef.current.click()}>📁 Chọn file</button>
+                          </div>
+                          <input type="file" ref={importFileRef} accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImportFileChange} />
+                          <div className="alert alert-secondary small mb-0">Chấp nhận file Excel (.xlsx, .xls) hoặc CSV chuẩn. Dòng 2 là hướng dẫn sẽ tự bỏ qua.</div>
+                      </div>
+                      <div className="modal-footer bg-light">
+                          <span className="text-primary fw-bold me-auto small">{importStatus}</span>
+                          <button type="button" className="btn btn-secondary" onClick={() => {setIsImportModalOpen(false); setImportFile(null); setImportStatus("");}}>Hủy</button>
+                          <button type="button" className="btn btn-success fw-bold" onClick={executeImport} disabled={!importFile || !!importStatus}>⬆️ Upload</button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+        )}
+
+        {/* MODAL TÌM KIẾM HỒ SƠ CŨ */}
+        {isSearchModalOpen && (
+          <div className="modal show d-block" id="search-modal-backdrop" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if(e.target.id === 'search-modal-backdrop') closeSearchModal(); }}>
+              <div className="modal-dialog modal-lg modal-dialog-centered">
+                  <div className="modal-content shadow-lg">
+                      <div className="modal-header bg-info text-white">
+                          <h5 className="modal-title fw-bold">🔍 TÌM HỒ SƠ CŨ (TỪ FILE TRUNG GIAN)</h5>
+                          <button type="button" className="btn-close btn-close-white" onClick={closeSearchModal}></button>
+                      </div>
+                      <div className="modal-body p-4">
+                          <div className="d-flex gap-2 mb-4">
+                              <input type="text" className="form-control" placeholder="Nhập Họ tên hoặc vài số CCCD..." 
+                                     value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} 
+                                     onKeyDown={e => e.key === 'Enter' && executeSearchCandidate()} />
+                              <button className="btn btn-warning fw-bold text-dark px-4" onClick={executeSearchCandidate} disabled={isSearching}>{isSearching ? '⏳...' : 'Tìm kiếm'}</button>
+                          </div>
+                          
+                          <div className="table-responsive border rounded" style={{ maxHeight: '300px' }}>
+                              <table className="table table-hover mb-0 align-middle" style={{fontSize: '13px'}}>
+                                  <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center">TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
+                                  <tbody>
+                                      {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Nhập từ khóa và bấm Tìm kiếm...</td></tr>) : (
+                                          searchResults.map((item, index) => (
+                                              <tr key={index}>
+                                                  <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td><td className="text-center"><span className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}>{item.trangThai}</span></td>
+                                                  <td className="text-center"><button className="btn btn-sm btn-outline-primary fw-bold" onClick={() => loadOldCandidate(item)}>✏️ Sửa</button></td>
+                                              </tr>
+                                          ))
+                                      )}
+                                  </tbody>
+                              </table>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
