@@ -3,6 +3,17 @@
    ======================================================== */
 .home-wrapper {
   padding: 8px 4px 24px;
+  /* Không cần position/overflow/min-height gì đặc biệt nữa — .home-page-backdrop giờ
+     dùng position: fixed (tự bám khung nhìn trình duyệt), không phụ thuộc kích
+     thước hay vị trí của .home-wrapper nữa. Xem chi tiết ở cuối file. */
+}
+
+.home-welcome {
+  /* ĐÃ THÊM: giữ câu chào nổi trên ảnh nền — vùng này đã được fade trắng gần như
+     tuyệt đối (xem HOME_BG_FADE trong Home.jsx) nên KHÔNG cần thêm khung nền gì
+     phía sau chữ nữa, chữ tự đọc rõ trên nền trắng. */
+  position: relative;
+  z-index: 1;
 }
 
 .home-welcome h3 {
@@ -13,6 +24,9 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 20px;
+  /* ĐÃ THÊM: giữ lưới thẻ nổi trên ảnh nền (.home-page-backdrop ở z-index thấp hơn). */
+  position: relative;
+  z-index: 1;
 }
 
 /* Mỗi thẻ có nền là gradient màu riêng (gán qua style inline) + 1 icon lớn mờ
@@ -98,16 +112,33 @@
 }
 
 /* ========================================================
-   ĐÃ THÊM: ẢNH TRANG TRÍ PHÍA DƯỚI LƯỚI THẺ
-   Là 1 khối bình thường trong dòng chảy trang (không absolute) — nằm SAU lưới thẻ
-   nên không bao giờ đè lên dòng chào hay bất kỳ thẻ nào. Ảnh rõ nét nhất ở nửa
-   dưới của chính khối này; mép TRÊN tự mờ dần từ trắng (đúng màu nền trang phía
-   trên nó) xuống ảnh, để không bị đường ranh giới cứng ngay chỗ giáp lưới thẻ.
+   ĐÃ SỬA (lần 4): ẢNH NỀN THẬT — position: fixed, LUÔN khớp CHÍNH XÁC khung nhìn
+   (viewport) của trình duyệt, không cần đo/đoán chiều cao Header + Navbar bằng
+   px nữa (mấy lần trước ước lượng sai gây hụt/dư, kéo dư tay lại gây thanh cuộn
+   thừa). Vì position: fixed lấy mốc là VIEWPORT (không phải .home-wrapper hay
+   bất kỳ khối cha nào), nên:
+   - top/left: 0, width/height: 100vw/100vh -> phủ kín TOÀN BỘ màn hình, kể cả
+     phần "đè" lên Header + Navbar phía trên — nhưng KHÔNG thấy được đoạn đó vì
+     Header (nền trắng) và Navbar (nền xanh #037683) đều vẽ nền ĐẶC che kín ở
+     trên, nên nhìn ảnh NHƯ THỂ chỉ nằm gọn trong khoảng trống giữa topbar và
+     đáy màn hình — đúng ý muốn "fill vào khoảng trống ở giữa", không cần biết
+     Header/Navbar cao bao nhiêu px.
+   - z-index: -1 -> luôn nằm SAU cả Header/Navbar lẫn nội dung trang, không cần
+     z-index: 1 thủ công cho từng khối nội dung (dù vẫn giữ ở trên cho chắc).
+   - pointer-events: none -> không chặn click/thao tác gì trên trang.
+   - Không tạo thanh cuộn: phần tử fixed bị loại khỏi luồng tài liệu (document
+     flow) hoàn toàn nên không cộng thêm vào chiều cao cuộn của trang, khác hẳn
+     kiểu position: absolute kéo dư ra ngoài khung cha ở bản trước.
+   Độ trắng/rõ của ảnh theo chiều dọc do HOME_BG_FADE (Home.jsx) quyết định.
    ======================================================== */
-.home-bg-banner {
-  margin-top: 28px;
-  height: clamp(200px, 26vw, 320px);
-  border-radius: 16px;
+.home-page-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   background-size: cover;
   background-position: center;
+  z-index: -1;
+  pointer-events: none;
 }

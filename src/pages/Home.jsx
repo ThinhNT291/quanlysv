@@ -107,17 +107,36 @@ const Home = ({ currentUser }) => {
   // sáng hay tối — đậm dần xuống phía dưới, đúng chỗ đặt tiêu đề/mô tả.
   const PHOTO_SCRIM = 'linear-gradient(180deg, rgba(15,23,42,0.30) 0%, rgba(15,23,42,0.50) 45%, rgba(15,23,42,0.82) 100%)';
 
-  // ĐÃ SỬA: lúc trước để banner CHE lên đầu trang (trên dòng chào) rồi fade DẦN
-  // XUỐNG, thành ra ảnh rõ ở TRÊN, trắng ở DƯỚI — ngược ý ông muốn. Giờ đổi lại:
-  // banner nằm Ở DƯỚI lưới thẻ (không đè lên dòng chào hay thẻ nào cả, chỉ là 1
-  // khối trang trí thêm vào SAU cùng), ảnh rõ nét nhất ở phần dưới của chính nó,
-  // mép TRÊN của banner mới là chỗ fade mờ dần từ trắng (hoà vào màu nền trắng
-  // của cả trang phía trên nó) xuống ảnh — để không bị đường ranh giới cứng ngay
-  // chỗ tiếp giáp với lưới thẻ.
-  const HOME_BG_FADE = 'linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.7) 18%, rgba(255,255,255,0.25) 40%, rgba(255,255,255,0) 65%)';
+  // ĐÃ SỬA (lần 4): trước đây tính chiều cao/vị trí banner bằng cách ƯỚC LƯỢNG
+  // px của Header+Navbar (min-height: calc(100vh - 170px)) rồi kéo dư 4 phía —
+  // vừa không chính xác (hụt/dư tuỳ máy) vừa gây thanh cuộn thừa khi kéo dư v ượt
+  // khỏi khung .home-wrapper thật. Giờ đổi cách hoàn toàn: banner dùng position:
+  // fixed, LUÔN đúng bằng khung nhìn (viewport) thật — không cần đo/đoán px của
+  // Header/Navbar nữa, không bao giờ lệch, cũng không tạo thanh cuộn (phần tử
+  // fixed không tính vào chiều cao cuộn trang). Ảnh nằm dưới cùng (z-index âm),
+  // phần trùng lên Header/Navbar không thấy được vì 2 khối đó có nền đặc (trắng/
+  // xanh) vẽ đè lên trên — nên nhìn NHƯ THỂ ảnh chỉ nằm trong khoảng trống giữa
+  // topbar và cạnh dưới màn hình, đúng ý ông. Điểm dừng gradient (đọc từ 0% =
+  // đỉnh màn hình, kể cả phần bị Header/Navbar che, xuống 100% = đáy màn hình):
+  //   - 0% -> 20%: trắng gần như tuyệt đối — vùng này phần lớn bị Header/Navbar
+  //     che khuất rồi nên không cần lo, chỉ cần đủ trắng cho đoạn vừa lộ ra ngay
+  //     dưới Navbar (chỗ đặt câu chào).
+  //   - 20% -> 48%: trắng tinh 100% — phủ kín khu vực câu chào + lưới thẻ.
+  //   - 65% -> 100%: giảm dần độ trắng, tới đáy màn hình thì trong suốt hẳn
+  //     (ảnh hiện rõ nét 100%).
+  const HOME_BG_FADE = 'linear-gradient(180deg, rgba(255,255,255,0.85) 0%, #ffffff 20%, #ffffff 48%, rgba(255,255,255,0.5) 65%, rgba(255,255,255,0.12) 85%, rgba(255,255,255,0) 100%)';
 
   return (
     <div className="home-wrapper">
+      {/* ĐÃ THÊM: ảnh nền thật — position: fixed nên tự động khớp CHÍNH XÁC khung
+          nhìn trình duyệt (xem giải thích chi tiết ở HOME_BG_FADE bên trên), nằm
+          SAU câu chào + lưới thẻ (z-index âm) nên không chặn click/che chữ. */}
+      <div
+        className="home-page-backdrop"
+        style={{ backgroundImage: `${HOME_BG_FADE}, url(${imgHomeBg})` }}
+        aria-hidden="true"
+      ></div>
+
       <div className="home-welcome mb-4">
         <h3 className="fw-bold mb-1">Chào {displayName} 👋</h3>
         <p className="text-muted mb-0">Chọn một chức năng bên dưới để bắt đầu làm việc.</p>
@@ -148,15 +167,6 @@ const Home = ({ currentUser }) => {
       {visibleCards.length === 0 && (
         <div className="alert alert-warning">Tài khoản của bạn chưa được phân quyền sử dụng chức năng nào.</div>
       )}
-
-      {/* ĐÃ THÊM: banner ảnh trang trí SAU cùng, nằm dưới lưới thẻ theo dòng chảy
-          bình thường (không absolute, không đè lên gì) — ảnh rõ nét ở nửa dưới,
-          mép trên tự mờ hoà vào nền trắng phía trên nó. */}
-      <div
-        className="home-bg-banner"
-        style={{ backgroundImage: `${HOME_BG_FADE}, url(${imgHomeBg})` }}
-        aria-hidden="true"
-      ></div>
     </div>
   );
 };
