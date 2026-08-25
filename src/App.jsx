@@ -168,6 +168,23 @@ const App = () => {
                   // thật sự nhận và lưu token mới khi Google gia hạn thành công.
                   window.google.accounts.id.initialize({
                       client_id: GOOGLE_CLIENT_ID_RENEWAL,
+                      // ĐÃ THÊM: bật FedCM cho prompt() — đây chính là nguyên nhân thật của lỗi
+                      // "[GSI_LOGGER]: The given origin is not allowed for the given client ID."
+                      // dù origin ĐÃ khai báo đúng trong Console. Khi prompt() gọi mà KHÔNG bật
+                      // FedCM, Google dùng cơ chế cũ: 1 iframe ẩn gọi XHR tới
+                      // accounts.google.com/gsi/status để tự kiểm tra origin — cơ chế này cần
+                      // cookie bên thứ 3 (third-party cookie) gửi kèm iframe đó. Trình duyệt hiện
+                      // đại (đặc biệt Chrome ở chế độ Ẩn danh mà ông vừa test, hoặc Chrome thường
+                      // đã bật chặn cookie bên thứ 3 theo lộ trình Privacy Sandbox) chặn cookie
+                      // này -> request tới gsi/status coi như "không có phiên hợp lệ" và trả về
+                      // y hệt lỗi origin-not-allowed, DÙ origin khai báo hoàn toàn chính xác. Bật
+                      // use_fedcm_for_prompt: true thì trình duyệt tự xác thực bằng API FedCM gốc
+                      // của Chrome (không qua iframe/cookie bên thứ 3 nữa) -> hết bị lỗi giả này.
+                      // Lưu ý: nút đăng nhập Google (LoginPage.jsx, có useOneTap) CŨNG đi qua
+                      // đúng cơ chế prompt() này nên nhiều khả năng cũng đang âm thầm gặp lỗi y
+                      // hệt lúc đăng nhập — chỉ là không lộ ra vì nút "Đăng nhập bằng Google" vẫn
+                      // bấm tay được qua cơ chế popup riêng (không phải prompt) nên che mất lỗi.
+                      use_fedcm_for_prompt: true,
                       callback: (response) => {
                           window.isRenewing = false;
                           setCurrentUser(prev => {
@@ -269,7 +286,7 @@ const App = () => {
                 không bị vỡ dòng, tránh phải xuống 2 dòng hay tách cột trên di động. */}
             <span className="navbar-brand fw-bold d-flex align-items-center" style={{ color: '#0dcaf0', letterSpacing: '1px' }}>
               <img src={logoPhuXuan} alt="Phú Xuan University" className="app-logo me-2" />
-              <i className="bi bi-mortarboard-fill me-2"></i>QUẢN LÝ TUYỂN SINH
+              <i className="bi bi-mortarboard-fill me-2"></i> HỆ THỐNG TUYỂN SINH
             </span>
 
             {/* CỤM TÀI KHOẢN — ĐÃ KÉO RA KHỎI navbar-collapse: trước đây nằm chung trong menu
