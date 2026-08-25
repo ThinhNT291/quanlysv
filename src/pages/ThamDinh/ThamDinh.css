@@ -129,14 +129,14 @@
    Bootstrap (2 ô/hàng) như cũ để không vỡ layout trên điện thoại.
    ======================================================== */
 @media (min-width: 768px) {
-  .thamdinh-filter-row .td-col-quick           { flex: 0 0 11.111%; max-width: 11.111%; } /* Tìm nhanh */
-  .thamdinh-filter-row .td-col-date            { flex: 0 0 8%;      max-width: 8%; }      /* Từ ngày / Đến ngày */
+  .thamdinh-filter-row .td-col-quick           { flex: 0 0 14.5%; max-width: 14.5%; } /* Tìm nhanh */
+  .thamdinh-filter-row .td-col-date            { flex: 0 0 9.5%;    max-width: 9.5%; }    /* Từ ngày / Đến ngày */
   .thamdinh-filter-row .td-col-nganh           { flex: 0 0 12.5%;   max-width: 12.5%; }   /* Ngành đào tạo */
   .thamdinh-filter-row .td-col-doituong        { flex: 0 0 15%;     max-width: 15%; }     /* Đối tượng đầu vào */
-  .thamdinh-filter-row .td-col-reset           { flex: 0 0 5%;      max-width: 5%; }      /* nút Xóa lọc */
+  .thamdinh-filter-row .td-col-reset           { flex: 0 0 8%;      max-width: 8%; }      /* nút Xóa lọc */
   .thamdinh-filter-row .td-col-hoso-status     { flex: 0 0 7.5%;    max-width: 7.5%; }    /* Trạng thái hồ sơ */
   .thamdinh-filter-row .td-col-thamdinh-status { flex: 0 0 11.25%;  max-width: 11.25%; }  /* Trạng thái thẩm định */
-  .thamdinh-filter-row .td-col-sort            { flex: 0 0 9.375%;  max-width: 9.375%; }  /* Sắp xếp */
+  .thamdinh-filter-row .td-col-sort            { flex: 0 0 12%;  max-width: 12%; }  /* Sắp xếp */
 }
 
 /* Nút "Xóa lọc" — bình thường trung tính (không màu nổi bật), chỉ chuyển cam nhạt

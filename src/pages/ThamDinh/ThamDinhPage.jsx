@@ -647,7 +647,7 @@ const ThamDinhPage = () => {
           <div className="row g-2 align-items-end thamdinh-filter-row">
             <div className="col-6 td-col-quick">
               <label className="form-label small fw-bold mb-1">Tìm nhanh</label>
-              <input type="search" className="form-control form-control-sm" placeholder="🔎 Mã SV / Căn cước / Họ và tên..."
+              <input type="search" className="form-control form-control-sm" placeholder="🔎 Mã SV / CCCD / Họ tên..."
                 value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
             </div>
             <div className="col-6 td-col-date">
@@ -672,7 +672,18 @@ const ThamDinhPage = () => {
                 {doiTuongOptions.map(dt => <option key={dt} value={dt}>{dt}</option>)}
               </select>
             </div>
-           
+
+            <div className="col-6 td-col-hoso-status">
+              <label className="form-label small fw-bold mb-1">Trạng thái hồ sơ</label>
+              <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
+                <option value="">-- Tất cả --</option>
+                <option value="Đủ">Đủ hồ sơ</option>
+                <option value="Thiếu">Thiếu hồ sơ</option>
+              </select>
+            </div>
+            {/* ĐÃ SỬA: lọc theo Trạng thái thẩm định — không còn bằng bề rộng ô Trạng thái hồ
+                sơ nữa (2 tỉ lệ khác nhau ở đợt sửa này), nên tách thành class riêng
+                td-col-thamdinh-status (trước đây dùng chung td-col-status). */}
             <div className="col-6 td-col-thamdinh-status">
               <label className="form-label small fw-bold mb-1">Trạng thái thẩm định</label>
               <select className="form-select form-select-sm" value={filterThamDinh} onChange={e => { setFilterThamDinh(e.target.value); setCurrentPage(1); }}>
@@ -692,10 +703,7 @@ const ThamDinhPage = () => {
                 <option value="status">Theo trạng thái</option>
               </select>
             </div>
-          </div>
-        </div>
-      </div>
- {/* ĐÃ SỬA: nút "Xoá bộ lọc" trước đây chỉ có icon (bi-x-circle) -> trên máy
+                        {/* ĐÃ SỬA: nút "Xoá bộ lọc" trước đây chỉ có icon (bi-x-circle) -> trên máy
                 không tải được font icon thì trông như 1 ô trắng trống trơn. Giờ luôn có
                 chữ "Xóa lọc" rõ ràng; màu mặc định trung tính (không nổi bật), tự động
                 chuyển cam nhạt khi isFilterActive = true (đang có ít nhất 1 điều kiện lọc
@@ -709,17 +717,10 @@ const ThamDinhPage = () => {
                 <i className="bi bi-x-circle me-1"></i>Xóa lọc
               </button>
             </div>
-            <div className="col-6 td-col-hoso-status">
-              <label className="form-label small fw-bold mb-1">Trạng thái hồ sơ</label>
-              <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
-                <option value="">-- Tất cả --</option>
-                <option value="Đủ">Đủ hồ sơ</option>
-                <option value="Thiếu">Thiếu hồ sơ</option>
-              </select>
-            </div>
-            {/* ĐÃ SỬA: lọc theo Trạng thái thẩm định — không còn bằng bề rộng ô Trạng thái hồ
-                sơ nữa (2 tỉ lệ khác nhau ở đợt sửa này), nên tách thành class riêng
-                td-col-thamdinh-status (trước đây dùng chung td-col-status). */}
+          </div>
+        </div>
+      </div>
+
       {selectedKeys.size > 0 && (
         <div className="card border-0 shadow-sm mb-3 bg-light">
           <div className="card-body py-2 d-flex flex-wrap align-items-center gap-2">

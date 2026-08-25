@@ -976,7 +976,7 @@ const XetTuyenPage = () => {
       <div className="container-fluid xettuyen-main-card p-4 position-relative">
         <div className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
           <h3 className="fw-bold" style={{ color: '#008080' }}>
-            <i className="bi bi-journal-text me-2"></i>{isEditMode ? "SỬA HỒ SƠ (UPDATE)" : "NHẬP LIỆU HỒ SƠ"}
+            <i className="bi bi-journal-text me-2"></i>{isEditMode ? "SỬA HỒ SƠ (UPDATE)" : "NHẬP LIỆU HỒ SƠ TUYỂN SINH"}
           </h3>
           <div className="d-none d-md-flex gap-2">
               {!isEditMode && (
