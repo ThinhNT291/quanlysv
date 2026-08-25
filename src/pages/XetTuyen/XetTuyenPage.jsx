@@ -107,9 +107,46 @@ const addYearsIso = (isoDate, years) => {
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 };
 
+// ĐÃ THÊM (yêu cầu #4): input type="date" luôn cho/nhận yyyy-mm-dd (chuẩn HTML, không
+// đổi được) nhưng cột "NGÀY SINH" trên dataList + sheet trung gian phải là dd/mm/yyyy
+// (đồng bộ với các cột ngày khác trong hệ thống). 2 hàm dưới đây đổi 2 chiều ngay tại
+// biên — bên trong formData vẫn luôn là yyyy-mm-dd, chỉ đổi khi ĐƯA VÀO dataList/sheet
+// và khi ĐỌC NGƯỢC LẠI từ dataList/sheet vào formData.
+// yyyy-mm-dd (formData.ngaysinh) -> dd/mm/yyyy (dataList + sheet trung gian).
+const isoToDmy = (isoDate) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || '').trim());
+    if (!m) return isoDate || '';
+    const [, y, mo, d] = m;
+    return `${d}/${mo}/${y}`;
+};
+// dd/mm/yyyy (đọc từ dataList/sheet) -> yyyy-mm-dd (để nạp lại vào input type="date").
+// Dự phòng 2 trường hợp khác: (1) hồ sơ CŨ đẩy lên TRƯỚC khi vá bug này, cột NGÀY SINH
+// trên sheet vẫn còn ở dạng yyyy-mm-dd -> giữ nguyên, không đổi sai; (2) trường hợp
+// Google Sheet tự nhận diện cell là kiểu Date rồi trả về kèm timestamp đầy đủ (VD
+// "2005-03-15T00:00:00.000Z") -> chỉ lấy đúng phần yyyy-mm-dd đứng đầu.
+const dmyToIso = (dateVal) => {
+    const str = String(dateVal || '').trim();
+    if (!str) return '';
+    const isoMatch = /^(\d{4}-\d{2}-\d{2})/.exec(str);
+    if (isoMatch) return isoMatch[1];
+    const dmyMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(str);
+    if (dmyMatch) {
+        const [, d, mo, y] = dmyMatch;
+        return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return str; // không nhận diện được định dạng -> trả nguyên, tránh làm rỗng dữ liệu lạ
+};
+
 const getToken = () => {
     const user = JSON.parse(localStorage.getItem('tuyensinh_user'));
-    return user?.token || user?.credential || user?.idToken || localStorage.getItem('gg_id_token');
+    // ĐÃ VÁ BUG: thiếu "|| ''" ở cuối -> khi tài khoản nội bộ (không có token Google
+    // nào cả) gọi hàm này, kết quả là `null` (JS). Object null này khi đưa vào
+    // `URLSearchParams.append('idToken', null)` (dùng ở handlePushToCloud và đoạn
+    // check trùng import) bị TỰ ĐỘNG CHUYỂN THÀNH CHUỖI "null" (có nội dung, không
+    // rỗng) — backend nhận idToken="null", tưởng có token Google thật nên cố xác
+    // minh qua Google -> luôn thất bại -> báo "Phiên đăng nhập đã hết hạn." dù
+    // sessionToken tài khoản nội bộ vẫn hợp lệ và được gửi kèm ngay sau đó.
+    return user?.token || user?.credential || user?.idToken || localStorage.getItem('gg_id_token') || '';
 };
 
 // ĐÃ THÊM: lấy phiên đăng nhập tài khoản nội bộ (sessionToken) — trước đây trang này
@@ -376,7 +413,7 @@ const XetTuyenPage = () => {
         "STT": dataList.length + 1, "TRẠNG THÁI ĐẨY": "Waiting", 
         "_Action": isEditMode ? "UPDATE" : "INSERT", 
         "KẾT QUẢ SƠ TUYỂN": admissionResult ? admissionResult.title : "",
-        "CĂN CƯỚC": formData.cccd.trim(), "TÊN SINH VIÊN": formData.hoten.trim(), "NGÀY SINH": formData.ngaysinh,
+        "CĂN CƯỚC": formData.cccd.trim(), "TÊN SINH VIÊN": formData.hoten.trim(), "NGÀY SINH": isoToDmy(formData.ngaysinh),
         "NGÀNH": formData.nganh, "KHÓA": formData.khoa, "ĐỐI TƯỢNG ƯU TIÊN": formData.doituonguutien,
         "KHU VỰC ƯU TIÊN": formData.khuvucuutien, "ĐỐI TƯỢNG ĐẦU VÀO": formData.doituongdauvao,
         "NĂM XÉT TUYỂN": formData.namtt, "HỆ ĐÀO TẠO": formData.hedaotao, "HÌNH THỨC ĐÀO TẠO": formData.htdaotao,
@@ -399,7 +436,7 @@ const XetTuyenPage = () => {
         "ĐIỂM CHUẨN": formData.diem_chuan, 
         
         "PHƯƠNG THỨC XÉT TUYỂN": formData.loai_diem === 'THI_THPT' ? 'Điểm thi THPT' : (formData.loai_diem === 'HOC_BA' ? 'Điểm học bạ' : (formData.loai_diem === 'HOC_BA_2025' ? 'Điểm học bạ (TBTS 2025)' : '')),
-        "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "Mới bổ sung" : "Chưa thẩm định",
+        "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "Mới bổ sung" : "Đang chờ duyệt",
         
         "TIME": isEditMode ? (formData.time_goc || currentTimestamp) : currentTimestamp,
         "NGÀY CẬP NHẬT HỒ SƠ": isEditMode ? currentTimestamp : "",
@@ -450,7 +487,7 @@ const XetTuyenPage = () => {
         hoten: row["TÊN SINH VIÊN"] || "",
         cccd: String(row["CĂN CƯỚC"] || "").replace(/'/g, ''),
         nganh: row["NGÀNH"] || "",
-        ngaysinh: row["NGÀY SINH"] || "",
+        ngaysinh: dmyToIso(row["NGÀY SINH"]),
         khoa: row["KHÓA"] || "",
         khuvucuutien: row["KHU VỰC ƯU TIÊN"] || "",
         doituonguutien: row["ĐỐI TƯỢNG ƯU TIÊN"] || "",
@@ -558,8 +595,13 @@ const XetTuyenPage = () => {
       const file = e.target.files[0];
       if (!file) return;
 
+      // ĐÃ VÁ BUG: điều kiện cũ chỉ check getToken() (token Google) -> tài khoản nội bộ
+      // (canbo/tuyensinh, đăng nhập bằng sessionToken chứ không có idToken Google) luôn
+      // bị chặn ngay từ đây dù backend đã hỗ trợ sessionToken cho action "scanDocument".
+      // Giờ chỉ chặn khi CẢ HAI đều rỗng (chưa đăng nhập bằng cách nào cả).
       const token = getToken();
-      if (!token) { alert("Lỗi xác thực: Vui lòng đăng nhập lại Google để sử dụng AI!"); e.target.value = ""; return; }
+      const sessTok = getSessionToken();
+      if (!token && !sessTok) { alert("Lỗi xác thực: Vui lòng đăng nhập lại để sử dụng AI!"); e.target.value = ""; return; }
 
       setScanStatus("⏳ Đang phân tích bằng AI...");
       const img = new Image();
@@ -610,8 +652,10 @@ const XetTuyenPage = () => {
   const executeSearchCandidate = async () => {
       if (!searchKeyword.trim()) return;
       setIsSearching(true);
+      // ĐÃ VÁ BUG (giống processCCCDImage): chỉ chặn khi thiếu CẢ idToken lẫn sessionToken.
       const token = getToken();
-      if (!token) { alert("Lỗi xác thực: Vui lòng đăng nhập lại Google!"); setIsSearching(false); return; }
+      const sessTok = getSessionToken();
+      if (!token && !sessTok) { alert("Lỗi xác thực: Vui lòng đăng nhập lại!"); setIsSearching(false); return; }
 
       try {
           const payloadParams = new URLSearchParams();
@@ -657,7 +701,7 @@ const XetTuyenPage = () => {
           hoten: normData["TÊN SINH VIÊN"] || normData["HỌ VÀ TÊN"] || "",
           cccd: String(normData["CĂN CƯỚC"] || normData["CCCD"] || "").replace(/'/g, ''), 
           nganh: normData["NGÀNH"] || "",
-          ngaysinh: normData["NGÀY SINH"] || "",
+          ngaysinh: dmyToIso(normData["NGÀY SINH"]),
           khoa: normData["KHÓA"] || "", 
           khuvucuutien: normData["KHU VỰC ƯU TIÊN"] || normData["KHU VỰC"] || "",
           doituonguutien: normData["ĐỐI TƯỢNG ƯU TIÊN"] || "", 
@@ -791,7 +835,10 @@ const XetTuyenPage = () => {
                           "STT": sttBase + importedCount + 1, "TRẠNG THÁI ĐẨY": "Waiting", "_Action": "INSERT",
                           "KẾT QUẢ SƠ TUYỂN": getField(rowArr, ["KẾT QUẢ SƠ TUYỂN", "KẾT QUẢ"]),
                           "CĂN CƯỚC": cccdVal, "TÊN SINH VIÊN": getField(rowArr, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]),
-                          "NGÀY SINH": getField(rowArr, ["NGÀY SINH"]), "NGÀNH": nganhVal,
+                          // ĐÃ SỬA: phòng trường hợp file Excel có sẵn NGÀY SINH ở dạng yyyy-mm-dd
+                          // (VD xuất lại từ hệ thống cũ) -> isoToDmy() tự đổi sang dd/mm/yyyy cho
+                          // đồng bộ; nếu cột Excel đã sẵn dd/mm/yyyy thì hàm này không đổi gì (no-op).
+                          "NGÀY SINH": isoToDmy(getField(rowArr, ["NGÀY SINH"])), "NGÀNH": nganhVal,
                           "KHÓA": getField(rowArr, ["KHÓA"]), "ĐỐI TƯỢNG ƯU TIÊN": getField(rowArr, ["ĐỐI TƯỢNG ƯU TIÊN"]),
                           "KHU VỰC ƯU TIÊN": getField(rowArr, ["KHU VỰC ƯU TIÊN", "KHU VỰC"]), "ĐỐI TƯỢNG ĐẦU VÀO": getField(rowArr, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐẦU VÀO"]),
                           "NĂM XÉT TUYỂN": getField(rowArr, ["NĂM XÉT TUYỂN", "NĂM TRÚNG TUYỂN"]), "HỆ ĐÀO TẠO": getField(rowArr, ["HỆ ĐÀO TẠO", "HỆ"]),
@@ -806,7 +853,7 @@ const XetTuyenPage = () => {
                           "ĐIỂM TB HỆ 4": getField(rowArr, ["HỆ 4", "ĐIỂM TB TOÀN KHÓA HỆ 4"]), "ĐIỂM TB HỆ 10": getField(rowArr, ["HỆ 10", "ĐIỂM TB TOÀN KHÓA HỆ 10"]), "ĐIỂM CỘNG": getField(rowArr, ["ĐIỂM CỘNG"]),
                           "ĐIỂM CHUẨN": getField(rowArr, ["ĐIỂM CHUẨN"]), 
                           
-                          "TRẠNG THÁI THẨM ĐỊNH": "Chưa thẩm định",
+                          "TRẠNG THÁI THẨM ĐỊNH": "Đang chờ duyệt",
                           "TIME": currentTimestamp,
                           "NGÀY CẬP NHẬT HỒ SƠ": "",
                           "TÀI KHOẢN NHẬP LIỆU": getUserEmail(),
@@ -892,6 +939,38 @@ const XetTuyenPage = () => {
     </div>
   );
 
+  // ĐÃ THÊM: render nửa bảng điểm TBTS 2025 (dùng chung cho 2 khối trái/phải,
+  // yêu cầu #3 — chia đôi danh sách môn thành 2 bảng nằm cạnh nhau).
+  const renderHK2025TableHalf = (subjList) => (
+    <div className="table-responsive border rounded">
+      <table className="table table-bordered table-sm align-middle text-center mb-0">
+        <thead className="table-light">
+          <tr>
+            <th style={{width: '110px'}} className="text-primary">MÔN</th>
+            <th>HK1-11</th>
+            <th>HK1-12</th>
+            <th>HK2-12</th>
+            <th className="text-danger" style={{width: '90px'}}>TB</th>
+          </tr>
+        </thead>
+        <tbody>
+          {subjList.map(subj => {
+            const avg = getSubjectAverage(subj.id, formData);
+            return (
+              <tr key={subj.id}>
+                <td className="fw-bold text-primary">{subj.label}</td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk1_11`} value={formData[`diem_${subj.id}_hk1_11`]} onChange={handleChange} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk1_12`} value={formData[`diem_${subj.id}_hk1_12`]} onChange={handleChange} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk2_12`} value={formData[`diem_${subj.id}_hk2_12`]} onChange={handleChange} placeholder="-" /></td>
+                <td className="fw-bold text-danger bg-light">{avg > 0 ? avg : '-'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <div className="xettuyen-wrapper">
       <div className="container-fluid xettuyen-main-card p-4 position-relative">
@@ -899,7 +978,7 @@ const XetTuyenPage = () => {
           <h3 className="fw-bold" style={{ color: '#008080' }}>
             <i className="bi bi-journal-text me-2"></i>{isEditMode ? "SỬA HỒ SƠ (UPDATE)" : "NHẬP LIỆU HỒ SƠ"}
           </h3>
-          <div className="d-flex gap-2">
+          <div className="d-none d-md-flex gap-2">
               {!isEditMode && (
                   <button className="btn btn-sm btn-outline-purple fw-bold" style={{color: '#7b1fa2', borderColor: '#7b1fa2'}} onClick={() => setIsImportModalOpen(true)}>
                       <i className="bi bi-file-earmark-excel me-1"></i> Import Excel
@@ -913,6 +992,23 @@ const XetTuyenPage = () => {
               </button>
               <input type="file" ref={fileInputRef} onChange={processCCCDImage} accept="image/*" style={{ display: 'none' }} />
           </div>
+        </div>
+
+        {/* Bản sao 3 nút thao tác nhanh — CHỈ hiện trên di động/màn hình nhỏ (< md), nằm
+            ngay dưới header "NHẬP LIỆU HỒ SƠ". Bản gốc trên header đã đổi sang
+            d-none d-md-flex để tự ẩn ở mobile, tránh 2 bộ nút cùng hiện 1 lúc. */}
+        <div className="d-flex d-md-none flex-wrap gap-2 mb-3">
+            {!isEditMode && (
+                <button type="button" className="btn btn-sm btn-outline-purple fw-bold" style={{color: '#7b1fa2', borderColor: '#7b1fa2'}} onClick={() => setIsImportModalOpen(true)}>
+                    <i className="bi bi-file-earmark-excel me-1"></i> Import Excel
+                </button>
+            )}
+            <button type="button" className="btn btn-sm btn-warning fw-bold text-dark" onClick={() => setIsSearchModalOpen(true)}>
+                <i className="bi bi-search me-1"></i> Tìm hồ sơ cũ
+            </button>
+            <button type="button" className="btn btn-sm btn-success fw-bold" onClick={() => fileInputRef.current.click()}>
+                <i className="bi bi-camera me-1"></i> Quét CCCD/Hộ chiếu
+            </button>
         </div>
 
         <form>
@@ -1025,68 +1121,52 @@ const XetTuyenPage = () => {
           <div className="score-container">
               {formData.doituongdauvao === 'Tốt nghiệp THPT' ? (
                   <div className="score-group border-primary pb-2">
-                      <div className="d-flex align-items-center gap-4 mb-3 border-bottom pb-2">
+                      <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2 gap-md-4 mb-3 border-bottom pb-2">
                           <h6 className="mb-0 text-primary fw-bold">📊 Phương thức xét điểm:</h6>
-                          <label className="checkbox-item mb-0">
-                              <input type="checkbox" name="check_thi_thpt" 
-                                     checked={formData.loai_diem === 'THI_THPT'} 
-                                     onChange={handleChange} />
-                              <span className="fw-bold">Điểm thi THPT</span>
-                          </label>
-                          <label className="checkbox-item mb-0">
-                              <input type="checkbox" name="check_hoc_ba" 
-                                     checked={formData.loai_diem === 'HOC_BA'} 
-                                     onChange={handleChange} />
-                              <span className="fw-bold">Điểm học bạ</span>
-                          </label>
-                          <label className="checkbox-item mb-0 ms-3">
-                              <input type="checkbox" name="check_hoc_ba_2025" 
-                                     checked={formData.loai_diem === 'HOC_BA_2025'} 
-                                     onChange={handleChange} />
-                              <span className="fw-bold text-danger">TBTS 2025 (3 HK)</span>
-                          </label>
+                          <div className="d-flex flex-wrap align-items-center gap-2 gap-md-3">
+                              <label className="checkbox-item mb-0">
+                                  <input type="checkbox" name="check_thi_thpt"
+                                         checked={formData.loai_diem === 'THI_THPT'}
+                                         onChange={handleChange} />
+                                  <span className="fw-bold">Điểm thi THPT</span>
+                              </label>
+                              <label className="checkbox-item mb-0">
+                                  <input type="checkbox" name="check_hoc_ba"
+                                         checked={formData.loai_diem === 'HOC_BA'}
+                                         onChange={handleChange} />
+                                  <span className="fw-bold">Điểm học bạ</span>
+                              </label>
+                              <label className="checkbox-item mb-0">
+                                  <input type="checkbox" name="check_hoc_ba_2025"
+                                         checked={formData.loai_diem === 'HOC_BA_2025'}
+                                         onChange={handleChange} />
+                                  <span className="fw-bold text-danger">TBTS 2025 (3 HK)</span>
+                              </label>
+                          </div>
                       </div>
 
                       {formData.loai_diem === 'HOC_BA_2025' ? (
-                          <div className="table-responsive mt-3 border rounded position-relative">
-                              <table className="table table-bordered table-sm align-middle text-center mb-0">
-                                  <thead className="table-light">
-                                      <tr>
-                                          <th style={{width: '120px'}} className="text-primary">MÔN</th>
-                                          <th>HK1-11</th>
-                                          <th>HK1-12</th>
-                                          <th>HK2-12</th>
-                                          <th className="text-danger" style={{width: '100px'}}>TRUNG BÌNH</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody>
-                                      {SUBJECTS_UI.map(subj => {
-                                          const avg = getSubjectAverage(subj.id, formData);
-                                          return (
-                                              <tr key={subj.id}>
-                                                  <td className="fw-bold text-primary">{subj.label}</td>
-                                                  <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk1_11`} value={formData[`diem_${subj.id}_hk1_11`]} onChange={handleChange} placeholder="-" /></td>
-                                                  <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk1_12`} value={formData[`diem_${subj.id}_hk1_12`]} onChange={handleChange} placeholder="-" /></td>
-                                                  <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk2_12`} value={formData[`diem_${subj.id}_hk2_12`]} onChange={handleChange} placeholder="-" /></td>
-                                                  <td className="fw-bold text-danger bg-light">{avg > 0 ? avg : '-'}</td>
-                                              </tr>
-                                          );
-                                      })}
-                                      <tr>
-                                          <td colSpan={5} className="bg-white p-2 border-top border-danger border-opacity-25">
-                                              <div className="d-flex justify-content-between align-items-center px-1">
-                                                  <button type="button" className="btn btn-sm btn-outline-danger fw-bold shadow-sm" onClick={handleClearHK2025}>
-                                                      <i className="bi bi-trash"></i> Xóa hết điểm 3 HK
-                                                  </button>
-                                                  <div className="d-flex align-items-center gap-2">
-                                                      <label className="form-label small fw-bold mb-0 text-danger">ĐIỂM CỘNG:</label>
-                                                      <input type="text" className="form-control form-control-sm border-danger" style={{width: '80px'}} name="diem_cong" value={formData.diem_cong} onChange={handleChange} placeholder="0.0" />
-                                                  </div>
-                                              </div>
-                                          </td>
-                                      </tr>
-                                  </tbody>
-                              </table>
+                          <div className="mt-3 position-relative">
+                              {/* ĐÃ SỬA (yêu cầu #3): chia danh sách môn làm 2 nửa, mỗi nửa 1 bảng,
+                                  đặt cạnh nhau bằng col-md-6 — Bootstrap tự dồn xuống 1 cột trên
+                                  màn hình nhỏ (< md) mà không cần thêm media query. */}
+                              <div className="row g-3">
+                                  <div className="col-md-6">
+                                      {renderHK2025TableHalf(SUBJECTS_UI.slice(0, 6))}
+                                  </div>
+                                  <div className="col-md-6">
+                                      {renderHK2025TableHalf(SUBJECTS_UI.slice(6))}
+                                  </div>
+                              </div>
+                              <div className="d-flex justify-content-between align-items-center px-1 py-2 mt-2 bg-white border rounded border-danger border-opacity-25">
+                                  <button type="button" className="btn btn-sm btn-outline-danger fw-bold shadow-sm" onClick={handleClearHK2025}>
+                                      <i className="bi bi-trash"></i> Xóa hết điểm 3 HK
+                                  </button>
+                                  <div className="d-flex align-items-center gap-2">
+                                      <label className="form-label small fw-bold mb-0 text-danger">ĐIỂM CỘNG:</label>
+                                      <input type="text" className="form-control form-control-sm border-danger" style={{width: '80px'}} name="diem_cong" value={formData.diem_cong} onChange={handleChange} placeholder="0.0" />
+                                  </div>
+                              </div>
                           </div>
                       ) : (
                           <div className="score-grid mt-3">
@@ -1125,7 +1205,7 @@ const XetTuyenPage = () => {
           </div>
 
           <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mt-4 mb-4">
-                            <div className="flex-grow-1 order-2 order-md-1">
+              <div className="flex-grow-1 order-2 order-md-1">
                   {admissionResult && formData.nganh && formData.doituongdauvao && (
                       <div className="d-flex align-items-center gap-2 p-2 px-3 rounded shadow-sm" style={{ backgroundColor: admissionResult.boxBg, border: `1px solid ${admissionResult.boxBorder}`, maxWidth: '400px'}}>
                           <div className="fs-3 lh-1">{admissionResult.icon}</div>
@@ -1157,7 +1237,8 @@ const XetTuyenPage = () => {
             <>
               <h5 className="fw-bold text-primary mb-3 mt-5 border-bottom pb-2">📋 DANH SÁCH CHỜ ĐỒNG BỘ ({dataList.filter(r => r["TRẠNG THÁI ĐẨY"] === "Waiting" || r["TRẠNG THÁI ĐẨY"].includes("Lỗi")).length} hồ sơ)</h5>
               <div className="table-responsive border rounded mb-3">
-                  <table className="table table-bordered table-hover table-striped mb-0 align-middle" style={{ minWidth: 'max-content', fontSize: '11px', whiteSpace: 'nowrap', borderColor: '#dee2e6' }}>                      <thead className="table-light sticky-top">
+                  <table className="table table-bordered table-hover table-striped mb-0 align-middle" style={{ minWidth: 'max-content', fontSize: '11px', whiteSpace: 'nowrap', borderColor: '#dee2e6' }}>
+                      <thead className="table-light sticky-top">
                           <tr>
                               <th className="text-center">STT</th>
                               <th className="text-center">TRẠNG THÁI</th>
@@ -1302,7 +1383,8 @@ const XetTuyenPage = () => {
                           </div>
                           
                           <div className="table-responsive border rounded" style={{ maxHeight: '300px' }}>
-                              <table className="table table-hover mb-0 align-middle" style={{fontSize: '12px'}}>                                  <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center">TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
+                              <table className="table table-hover mb-0 align-middle" style={{fontSize: '12px'}}>
+                                  <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center">TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
                                   <tbody>
                                       {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Nhập từ khóa và bấm Tìm kiếm...</td></tr>) : (
                                           searchResults.map((item, index) => (

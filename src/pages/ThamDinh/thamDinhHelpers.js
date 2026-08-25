@@ -97,10 +97,25 @@ export function getRawScoreNumber(row) {
   return parseFloat(score.value) || 0;
 }
 
+// ĐÃ VÁ BUG (nguyên nhân hồ sơ MỚI đẩy lên không hiện trong bảng Thẩm định): cột
+// "TIME" thực tế đang lưu theo thứ tự GIỜ TRƯỚC NGÀY — "hh:mm:ss dd/mm/yyyy" (đúng
+// như yêu cầu giữ nguyên, KHÔNG đổi định dạng lưu). Code cũ lấy .split(' ')[0] —
+// token ĐẦU TIÊN — tưởng đó là phần ngày, nhưng token đầu thực ra là "hh:mm:ss"
+// (chỉ có dấu ':', không có '/' lẫn '-') -> if/else if bên dưới luôn rớt xuống
+// "return 0". Ở filteredData (ThamDinhPage.jsx), rowDateMs === 0 bị coi là "không
+// có ngày hợp lệ" và LOẠI HẲN dòng đó khỏi bảng mỗi khi có bộ lọc ngày đang áp dụng
+// — mà bộ lọc ngày mặc định LUÔN bật (7 ngày trước -> hôm nay), nên mọi hồ sơ mới
+// đẩy lên đều biến mất, trong khi 1 số hồ sơ cũ (có thể do cột TIME của chúng từng
+// bị Google Sheet tự nhận thành kiểu Date, được backend getThamDinhData tự format
+// lại thành "dd/mm/yyyy" không có giờ) lại tình cờ parse đúng nên vẫn hiện ra.
+// Giờ tìm ĐÚNG token có chứa '/' hoặc '-' ở bất kỳ vị trí nào trong chuỗi (không
+// giả định thứ tự) — vừa fix hồ sơ mới, vừa tương thích ngược với hồ sơ cũ.
 export function getRawDateNumber(row) {
-  const timeStr = getVal(row, ["TIME", "NGÀY NỘP", "NGÀY XỬ LÝ"]).split(' ')[0];
-  if (timeStr.includes('-')) { const p = timeStr.split('-'); return new Date(p[0], p[1] - 1, p[2]).getTime(); }
-  else if (timeStr.includes('/')) { const p = timeStr.split('/'); return new Date(p[2], p[1] - 1, p[0]).getTime(); }
+  const raw = getVal(row, ["TIME", "NGÀY NỘP", "NGÀY XỬ LÝ"]).trim();
+  if (!raw) return 0;
+  const dateToken = raw.split(' ').find(p => p.includes('/') || p.includes('-')) || '';
+  if (dateToken.includes('-')) { const p = dateToken.split('-'); return new Date(p[0], p[1] - 1, p[2]).getTime(); }
+  if (dateToken.includes('/')) { const p = dateToken.split('/'); return new Date(p[2], p[1] - 1, p[0]).getTime(); }
   return 0;
 }
 

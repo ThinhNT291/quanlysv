@@ -1,0 +1,98 @@
+/* ========================================================
+   TRANG CHỦ SAU ĐĂNG NHẬP — LƯỚI THẺ CHỨC NĂNG
+   ======================================================== */
+.home-wrapper {
+  padding: 8px 4px 24px;
+}
+
+.home-welcome h3 {
+  color: #212529;
+}
+
+.home-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+/* Mỗi thẻ có nền là gradient màu riêng (gán qua style inline) + 1 icon lớn mờ
+   mờ làm "hình nền" trang trí — không phụ thuộc ảnh ngoài, luôn hiển thị được
+   dù offline, đồng bộ với bộ icon Bootstrap Icons đã dùng sẵn toàn app. */
+.home-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  /* ĐÃ SỬA: trước đây chỉ có min-height: 170px cố định còn chiều rộng co giãn tự do
+     theo lưới (auto-fit) -> tỉ lệ khung hình của thẻ đổi liên tục theo bề ngang màn
+     hình (màn rộng thì thẻ vừa rộng vừa lùn, ảnh chỉ lộ 1 dải mỏng ở giữa). Giờ khoá
+     cứng tỉ lệ 3:2 (rộng:cao) — mọi kích thước màn hình đều cùng 1 tỉ lệ, ông cứ crop
+     ảnh nguồn theo đúng 3:2, cắt vào giữa khung sẽ khớp thật (xem hướng dẫn cụ thể). */
+  aspect-ratio: 3 / 2;
+  padding: 22px;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+  user-select: none;
+}
+
+.home-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* Thẻ có ảnh nền thật: ảnh phủ kín thẻ, giữ khung hình vuông ông đã crop sẵn khi
+   xử lý ảnh, hơi zoom nhẹ lúc hover cho sống động. */
+.home-card.has-photo {
+  background-size: cover;
+  background-position: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-size 0.25s ease;
+}
+
+.home-card.has-photo:hover {
+  background-size: 108%;
+}
+
+.home-card:focus-visible {
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.6), 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* Hiệu ứng "chọn đáp án" khi bấm: nhún nhẹ + viền sáng nổi lên trước khi chuyển
+   trang (đổi trang được delay 180ms bên JS để hiệu ứng kịp thấy). */
+.home-card:active,
+.home-card.is-selected {
+  transform: scale(0.96);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.55), 0 8px 20px rgba(0, 0, 0, 0.25);
+}
+
+.home-card-icon-bg {
+  position: absolute;
+  right: -14px;
+  bottom: -20px;
+  font-size: 7.5rem;
+  opacity: 0.16;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.home-card-body {
+  position: relative;
+  z-index: 1;
+}
+
+.home-card-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.home-card-desc {
+  font-size: 0.85rem;
+  opacity: 0.92;
+  margin-bottom: 0;
+  line-height: 1.4;
+}
+
+@media (max-width: 576px) {
+  .home-card-grid { grid-template-columns: 1fr; }
+}

@@ -9,7 +9,9 @@
 .doc-group h4, .score-group h4 { margin: 0 0 6px 0; color: #0277bd; font-size: 13px; border-bottom: 1px solid #b2ebf2; padding-bottom: 5px; font-weight: bold; }
 
 .checkbox-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; row-gap: 8px; margin-bottom: 15px; }
-.score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 15px; }
+/* ĐÃ SỬA (lại lần nữa — bản trước bị mất do áp nhầm 1 bản CSS cũ đè lên): 6 cột
+   thay vì 4 -> 11 môn + ô ĐIỂM CỘNG dồn lên còn 2 hàng. */
+.score-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 15px; }
 
 .checkbox-item { display: flex; align-items: center; background: #ffffff; padding: 6px 10px; margin: 0; border-radius: 4px; border: 1px solid #d0e8e6; cursor: pointer; transition: all 0.2s; }
 .checkbox-item:hover { background: #e0f2f1; border-color: #008080; }

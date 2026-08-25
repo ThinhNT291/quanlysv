@@ -35,6 +35,63 @@
   white-space: nowrap;
 }
 
+/* ========================================================
+   ĐÃ THÊM: làm nổi bật modal chi tiết hồ sơ (yêu cầu mới)
+   ======================================================== */
+
+/* Thanh tiêu đề modal — nền nhạt màu (thay vì trắng trơn), ăn theo tông teal
+   #037683 vốn là màu chủ đạo của trang Thẩm định, để tách rõ với phần thân bên dưới. */
+.thamdinh-detail-modal .modal-header {
+  background-color: #e3f2f3;
+}
+
+/* Khung chứa bảng thông tin (Mã SV...Link hồ sơ) — nền xám nhạt + hoạ tiết caro kẻ
+   chéo 45 độ mờ (2 lớp repeating-linear-gradient bắt chéo vuông góc nhau ở ±45°),
+   giúp tách khối này khỏi phần khảo sát ngành/điểm số bên dưới. CHỈ áp dụng trong
+   khung này (không lan ra toàn modal-body) theo đúng yêu cầu.
+   Lưu ý: 9px lặp lại + line 1px, opacity rất thấp (0.05) -> hoạ tiết mờ, không
+   gây rối mắt hay đè lên chữ. */
+.thamdinh-info-box {
+  background-color: #eceff1;
+  background-image:
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 9px),
+    repeating-linear-gradient(-45deg, rgba(0,0,0,0.05) 0, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 9px);
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+/* Mỗi dòng trong bảng thông tin có 1 đường kẻ mỏng, nhạt phía dưới để tách rõ từng
+   mục (bảng vẫn giữ table-borderless của Bootstrap để tự kiểm soát màu/độ đậm viền
+   thay vì dùng viền mặc định). Kẻ trên th/td (không kẻ trực tiếp trên tr) vì browser
+   không luôn hiện border đặt trên <tr> khi bảng dùng border-collapse. */
+.thamdinh-info-table tr > th,
+.thamdinh-info-table tr > td {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.thamdinh-info-table tr:last-child > th,
+.thamdinh-info-table tr:last-child > td {
+  border-bottom: none;
+}
+
+/* ĐÃ SỬA theo góp ý: chỉ tô đỏ nhạt ô GIÁ TRỊ bên phải (nơi có chữ "Thiếu...") —
+   không tô cả dòng như bản trước. Cặp màu nền/chữ lấy đúng từ Bootstrap
+   alert-danger (đã kiểm chứng đạt chuẩn tương phản WCAG AA, ~6.7:1), chữ in đậm để
+   nổi rõ trên nền. Đủ hồ sơ thì không gắn class này -> ô giữ nền mặc định (hoạ tiết
+   caro của khung ngoài lộ ra), không tô gì thêm. */
+.thamdinh-info-table .hoso-thieu-cell {
+  background-color: #f8d7da;
+  color: #842029;
+  font-weight: 700;
+}
+
+/* Mã SV (tự sinh) — in đậm, màu đỏ boóc-đô (burgundy) để nổi bật vì đây là mã định
+   danh chính của hồ sơ. */
+.thamdinh-info-table .masv-value {
+  font-weight: 700;
+  color: #7a1f2b;
+}
+
 /* Thu nhỏ font trong modal 1-2 nấc. Bảng tổ hợp và bảng điểm các môn quét AI
    đã tự set fontSize:12 bằng inline style ngay trong JSX -> inline style luôn
    thắng class CSS nên KHÔNG bị ảnh hưởng bởi các rule dưới đây (đúng yêu cầu

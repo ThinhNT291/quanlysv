@@ -28,10 +28,19 @@ const AddStudentModal = ({ onClose, onSave, isPending, initialData }) => {
     HeDT: 'Đại học', LinkHoSo: '', TrangThai: 1, GiayTo: []
   });
 
+  // ĐÃ SỬA: chỉ cắt lấy phần yyyy-mm-dd trực tiếp từ chuỗi backend trả về, KHÔNG dựng
+  // lại new Date(...).toISOString() nữa — cách cũ quy đổi qua UTC nên bị lùi 1 ngày so
+  // với ngày sinh thật (GMT+7), và mỗi lần sửa hồ sơ sẽ lưu đè ngày sai đó vào sheet.
+  const normalizeNgaySinh = (val) => {
+    if (!val) return '';
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(val).trim());
+    return m ? m[1] : '';
+  };
+
   useEffect(() => {
     if (initialData) {
-      const formattedDate = initialData.NgaySinh ? new Date(initialData.NgaySinh).toISOString().split('T')[0] : '';
-      
+      const formattedDate = normalizeNgaySinh(initialData.NgaySinh);
+
       // Chuyển chuỗi GiayTo từ Sheet (VD: "Học bạ, CCCD") thành mảng để check vào ô
       const giayToMang = initialData.GiayTo ? initialData.GiayTo.split(',').map(item => item.trim()) : [];
       

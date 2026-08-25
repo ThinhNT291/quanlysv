@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { sendFeedback } from './api/studentApi';
-import AdmissionsPage from './pages/Admissions/AdmissionsPage'; 
+import './App.css';
+import logoPhuXuan from './assets/logo-phuxuan.png'; // ĐÃ THÊM: logo trường, đặt góc trên-trái navbar
+import Home from './pages/Home'; // ĐÃ THÊM: trang chủ dạng thẻ chức năng sau đăng nhập
+import AdmissionsPage from './pages/Admissions/AdmissionsPage';
 import SettingsPage from './pages/Settings/SettingsPage'; 
 import LoginPage from './pages/Auth/LoginPage'; 
 import UserStatsPage from './pages/Settings/UserStatsPage'; 
@@ -72,7 +75,27 @@ const App = () => {
   
   // State quản lý Đóng/Mở menu tài khoản
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
-  
+  const userDropdownRef = useRef(null);
+
+  // ĐÃ THÊM: tự đóng dropdown tài khoản khi bấm ra ngoài hoặc nhấn Esc.
+  useEffect(() => {
+    if (!isUserDropdownOpen) return;
+    const handleClickOutside = (e) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) {
+        setIsUserDropdownOpen(false);
+      }
+    };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setIsUserDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isUserDropdownOpen]);
+
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = localStorage.getItem('tuyensinh_user');
     return savedUser ? normalizeUserInfo(JSON.parse(savedUser)) : null;
@@ -231,18 +254,81 @@ const App = () => {
         
         <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top">
           <div className="container-fluid px-4">
-            <span className="navbar-brand fw-bold" style={{ color: '#0dcaf0', letterSpacing: '1px' }}>
+            {/* ĐÃ THÊM: logo trường ở góc trên-trái, đứng cùng dòng với tên hệ thống — logo
+                tự thu nhỏ ở màn hình hẹp (xem .app-logo trong App.css) để cụm thương hiệu
+                không bị vỡ dòng, tránh phải xuống 2 dòng hay tách cột trên di động. */}
+            <span className="navbar-brand fw-bold d-flex align-items-center" style={{ color: '#0dcaf0', letterSpacing: '1px' }}>
+              <img src={logoPhuXuan} alt="Phú Xuan University" className="app-logo me-2" />
               <i className="bi bi-mortarboard-fill me-2"></i> HỆ THỐNG TUYỂN SINH
             </span>
-            
+
+            {/* CỤM TÀI KHOẢN — ĐÃ KÉO RA KHỎI navbar-collapse: trước đây nằm chung trong menu
+                ☰ nên trên di động phải mở hẳn menu mới thấy đang đăng nhập là ai / mới đăng
+                xuất được. Giờ luôn hiển thị ngang hàng ngay cạnh thương hiệu, nhờ ms-auto +
+                flex-wrap sẵn có của .navbar nên màn quá hẹp sẽ tự xuống dòng chứ không tràn. */}
+            <div className="nav-item dropdown d-flex align-items-center flex-shrink-0 position-relative ms-auto me-2 me-lg-3 mt-2 mt-lg-0 order-lg-2" ref={userDropdownRef}>
+              <a
+                className="nav-link dropdown-toggle text-light d-flex align-items-center p-0"
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setIsUserDropdownOpen(!isUserDropdownOpen);
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                {currentUser.avatar ? (
+                  <img src={currentUser.avatar} alt="avatar" className="rounded-circle me-2" width="32" height="32" />
+                ) : (
+                  <i className="bi bi-person-circle fs-4 me-2"></i>
+                )}
+                <div className="d-flex flex-column lh-1 text-start me-1">
+                  <span className="fw-bold small">{displayName}</span>
+                  <span className="small opacity-75" style={{ fontSize: '0.75rem' }}>{currentUser.role}</span>
+                </div>
+              </a>
+
+              <ul
+                className={`dropdown-menu dropdown-menu-end shadow border-0 mt-2 ${isUserDropdownOpen ? 'show' : ''}`}
+                style={{ position: 'absolute', right: 0, top: '100%' }}
+              >
+                <li>
+                  <NavLink
+                    to="/user-stats"
+                    className="dropdown-item py-2"
+                    onClick={() => {
+                      setIsNavCollapsed(true);
+                      setIsUserDropdownOpen(false);
+                    }}
+                  >
+                    <i className="bi bi-graph-up-arrow me-2 text-primary"></i> Thống kê cá nhân
+                  </NavLink>
+                </li>
+                <li><hr className="dropdown-divider" /></li>
+                <li>
+                  <button className="dropdown-item text-danger py-2" onClick={handleLogoutClick}>
+                    <i className="bi bi-box-arrow-right me-2"></i> Đăng xuất
+                  </button>
+                </li>
+              </ul>
+            </div>
+
             <button className="navbar-toggler border-0 shadow-none" type="button" onClick={() => setIsNavCollapsed(!isNavCollapsed)}>
               <span className="navbar-toggler-icon"></span>
             </button>
 
-            <div className={`${isNavCollapsed ? 'collapse' : ''} navbar-collapse`} id="navbarNav">
-              
+            <div className={`${isNavCollapsed ? 'collapse' : ''} navbar-collapse app-nav-collapse order-lg-1`} id="navbarNav">
+
               {/* MENU CHÍNH: Đã bọc điều kiện ẩn/hiện theo quyền */}
               <ul className="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-4 gap-2">
+                {/* ĐÃ THÊM: lối về Trang chủ — trước đây "/" chỉ redirect thẳng sang Quản lý
+                    hồ sơ nên rời trang đó là không còn cách nào quay lại màn hình chọn
+                    chức năng nữa. */}
+                <li className="nav-item">
+                  <NavLink to="/" end onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
+                    <i className="bi bi-house-door-fill me-1"></i> Trang chủ
+                  </NavLink>
+                </li>
+
                 {/* MENU QUẢN LÝ HỒ SƠ: Dành cho CanBo và Admin */}
                 {hasAnyRole(currentUser.roles, ['CanBo', 'Admin']) && (
                   <li className="nav-item">
@@ -279,53 +365,6 @@ const App = () => {
                   </li>
                 )}
               </ul>
-              
-              {/* DROPDOWN USER MENU */}
-              <div className="nav-item dropdown d-flex align-items-center mt-3 mt-lg-0 position-relative">
-                <a 
-                  className="nav-link dropdown-toggle text-light d-flex align-items-center p-0" 
-                  href="#" 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setIsUserDropdownOpen(!isUserDropdownOpen);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {currentUser.avatar ? (
-                    <img src={currentUser.avatar} alt="avatar" className="rounded-circle me-2" width="32" height="32" />
-                  ) : (
-                    <i className="bi bi-person-circle fs-4 me-2"></i>
-                  )}
-                  <div className="d-flex flex-column lh-1 text-start me-1">
-                    <span className="fw-bold small">{displayName}</span>
-                    <span className="small opacity-75" style={{ fontSize: '0.75rem' }}>{currentUser.role}</span>
-                  </div>
-                </a>
-                
-                <ul 
-                  className={`dropdown-menu dropdown-menu-end shadow border-0 mt-2 ${isUserDropdownOpen ? 'show' : ''}`} 
-                  style={{ position: 'absolute', right: 0, top: '100%' }}
-                >
-                  <li>
-                    <NavLink 
-                      to="/user-stats" 
-                      className="dropdown-item py-2" 
-                      onClick={() => {
-                        setIsNavCollapsed(true);
-                        setIsUserDropdownOpen(false);
-                      }}
-                    >
-                      <i className="bi bi-graph-up-arrow me-2 text-primary"></i> Thống kê cá nhân
-                    </NavLink>
-                  </li>
-                  <li><hr className="dropdown-divider" /></li>
-                  <li>
-                    <button className="dropdown-item text-danger py-2" onClick={handleLogoutClick}>
-                      <i className="bi bi-box-arrow-right me-2"></i> Đăng xuất
-                    </button>
-                  </li>
-                </ul>
-              </div>
 
             </div>
           </div>
@@ -334,9 +373,10 @@ const App = () => {
         <div className="p-2 p-md-3">
           {/* VÙNG ĐỊNH TUYẾN CHÍNH (Chỉ giữ 1 khối Routes duy nhất) */}
           <Routes>
-            {/* Nhóm 1: Cán bộ — ĐÃ ĐỔI TÊN đường dẫn "/" -> "/thu-ho-so-nhap-hoc" theo quy hoạch
-                4 route: thu-ho-so-nhap-hoc / xet-tuyen / settings / tham-dinh (sắp thêm) */}
-            <Route path="/" element={<Navigate to="/thu-ho-so-nhap-hoc" replace />} />
+            {/* ĐÃ SỬA: "/" trước đây redirect thẳng sang Quản lý hồ sơ (Navigate replace),
+                giờ trỏ về Trang chủ dạng thẻ chức năng — mỗi thẻ tự lọc theo quyền của
+                currentUser (xem Home.jsx), không cần bọc thêm ProtectedRoute ở đây. */}
+            <Route path="/" element={<Home currentUser={currentUser} />} />
             <Route path="/thu-ho-so-nhap-hoc" element={
               <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo']}>
                 <AdmissionsPage />

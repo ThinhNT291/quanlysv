@@ -66,7 +66,12 @@ const handleGoogleSuccess = async (credentialResponse) => {
     setIsLoading(true);
     try {
       const userInfo = await loginUser(credentials.username, credentials.password);
-      userInfo.name = userInfo.username; // Lấy username làm tên hiển thị
+      // ĐÃ VÁ BUG: dòng cũ `userInfo.name = userInfo.username;` LUÔN ghi đè tên hiển
+      // thị bằng username/email, bất kể backend (action 'login' trong Quanlysv.gs)
+      // đã trả đúng "name" lấy từ cột HoTen trong sheet TaiKhoan rồi — vì vậy tài
+      // khoản nội bộ luôn hiện email thay vì họ tên. Giờ chỉ dùng username làm tên
+      // hiển thị khi backend KHÔNG trả về name (dự phòng, không còn ghi đè vô điều kiện).
+      userInfo.name = userInfo.name || userInfo.username;
       localStorage.setItem('tuyensinh_last_username', credentials.username); // ĐÃ THÊM: nhớ cho lần sau
       onLoginSuccess(userInfo);
     } catch (error) {

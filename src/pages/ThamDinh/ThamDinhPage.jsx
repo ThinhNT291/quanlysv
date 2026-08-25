@@ -12,6 +12,7 @@ import {
 } from './thamDinhHelpers';
 import { DICT_NGANH } from './thamDinhConfig';
 import './ThamDinh.css';
+
 // ===================================================================
 // TRANG BAN THẨM ĐỊNH — Pha 3 (KPI/bộ lọc/bảng, chỉ đọc) + Pha 4 (Duyệt trúng
 // tuyển, Báo thiếu hồ sơ, Lưu CSDL, Bàn giao Đào tạo, thao tác hàng loạt) + Pha 5
@@ -541,7 +542,7 @@ const ThamDinhPage = () => {
         </div>
       </div>
 
-            <div className="card border-0 shadow-sm mb-3">
+      <div className="card border-0 shadow-sm mb-3">
         <div className="card-body py-2">
           <div className="row g-2 align-items-end">
             <div className="col-md-3 col-xl-2">
@@ -611,7 +612,7 @@ const ThamDinhPage = () => {
 
       <div className="card border-0 shadow-sm">
         <div className="table-responsive">
-           <table className="table table-hover align-middle mb-0" style={{ fontSize: '12px' }}>
+          <table className="table table-hover align-middle mb-0" style={{ fontSize: '12px' }}>
             <thead className="table-light">
               <tr>
                 <th style={{ width: 34 }}></th>
@@ -648,7 +649,10 @@ const ThamDinhPage = () => {
                         onChange={e => toggleSelect(key, e.target.checked)} />
                     </td>
                     <td className="text-center">{index + 1}</td>
-                    <td className="text-center fw-bold">{getVal(row, ["TIME"]).split(' ')[0]}</td>
+                    {/* ĐÃ VÁ BUG: cột "TIME" lưu theo thứ tự "hh:mm:ss dd/mm/yyyy" (giờ trước
+                        ngày) — .split(' ')[0] cũ lấy token đầu tiên nên hiện ra "hh:mm:ss" thay
+                        vì ngày. Giờ tìm đúng token có chứa '/' (phần ngày) thay vì giả định vị trí. */}
+                    <td className="text-center fw-bold">{getVal(row, ["TIME"]).split(' ').find(p => p.includes('/') || p.includes('-')) || ''}</td>
                     <td style={{ color: '#d84315', fontWeight: 'bold' }}>{generateMaSV(row)}</td>
                     <td className="fw-bold">{cccdStr}</td>
                     <td className="fw-bold">{getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"])}</td>
@@ -734,7 +738,7 @@ const ThamDinhPage = () => {
         const btnSaveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : saveMutation.isPending ? '⏳ Đang lưu...' : saved ? '💾 Đã lưu hồ sơ vào CSDL' : '💾 LƯU VÀO CSDL';
 
         return (
-                    <div className="modal show d-block thamdinh-detail-modal" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) setViewingIndex(null); }}>
+          <div className="modal show d-block thamdinh-detail-modal" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) setViewingIndex(null); }}>
             <div className="modal-dialog modal-lg modal-dialog-scrollable">
               <div className="modal-content">
                 <div className="modal-header">
@@ -746,35 +750,49 @@ const ThamDinhPage = () => {
                   <button type="button" className="btn-close ms-3" onClick={() => setViewingIndex(null)}></button>
                 </div>
                 <div className="modal-body">
-                  <table className="table table-sm table-borderless mb-2 thamdinh-info-table">
-                    <tbody>
-                      <tr><th style={{ width: 230 }}>Mã SV (tự sinh)</th><td>{generateMaSV(row)}</td></tr>
-                      <tr><th>Số CCCD</th><td>{getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '')}</td></tr>
-                      <tr><th>Hệ / Hình thức đào tạo</th><td>{getVal(row, ["HỆ ĐÀO TẠO"])} / {getVal(row, ["HÌNH THỨC ĐÀO TẠO"])}</td></tr>
-                      <tr><th>Đối tượng đầu vào</th><td>{getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"])}</td></tr>
-                      <tr><th>Khu vực / Đối tượng ưu tiên</th><td>{getVal(row, ["KHU VỰC ƯU TIÊN"])} / {getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"])}</td></tr>
-                      <tr><th>Trạng thái thẩm định</th><td>{state}</td></tr>
-                      <tr>
-                        <th>Hồ sơ</th>
-                        <td className={missing.length > 0 ? 'text-danger' : 'text-success'}>
-                          {missing.length > 0 ? `⚠️ Thiếu: ${missing.join(', ')}` : '✅ Đã nộp đủ hồ sơ hợp lệ'}
-                        </td>
-                      </tr>
-                      {missingTQ.length > 0 && (
-                        <tr><th className="text-danger">Thiếu hồ sơ TIÊN QUYẾT</th><td className="text-danger fw-bold">{missingTQ.join(', ')}</td></tr>
-                      )}
-                      <tr className="link-row" title={linkOk ? linkHoSo : 'Không có link hợp lệ'}>
-                        <th>Link hồ sơ</th>
-                        <td>
-                          {linkOk ? (
-                            <a href={linkHoSo} target="_blank" rel="noopener noreferrer">📎 Mở hồ sơ Drive</a>
-                          ) : (
-                            <span className="text-muted">Không có link hồ sơ hợp lệ</span>
-                          )}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  {/* ĐÃ THÊM: bọc bảng thông tin trong 1 khung riêng (nền xám nhạt + hoạ tiết
+                      caro kẻ chéo 45 độ) để tách khối này khỏi phần khảo sát ngành/điểm số
+                      bên dưới — hoạ tiết CHỈ áp dụng trong khung này, không lan ra cả modal. */}
+                  <div className="thamdinh-info-box">
+                    <table className="table table-sm table-borderless mb-0 thamdinh-info-table">
+                      <tbody>
+                        <tr>
+                          <th style={{ width: 230 }}>Mã SV (tự sinh)</th>
+                          {/* ĐÃ SỬA: thêm class "masv-value" -> in đậm, màu đỏ boóc-đô (xem ThamDinh.css) */}
+                          <td className="masv-value">{generateMaSV(row)}</td>
+                        </tr>
+                        <tr><th>Số CCCD</th><td>{getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '')}</td></tr>
+                        <tr><th>Hệ / Hình thức đào tạo</th><td>{getVal(row, ["HỆ ĐÀO TẠO"])} / {getVal(row, ["HÌNH THỨC ĐÀO TẠO"])}</td></tr>
+                        <tr><th>Đối tượng đầu vào</th><td>{getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"])}</td></tr>
+                        <tr><th>Khu vực / Đối tượng ưu tiên</th><td>{getVal(row, ["KHU VỰC ƯU TIÊN"])} / {getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"])}</td></tr>
+                        <tr><th>Trạng thái thẩm định</th><td>{state}</td></tr>
+                        {/* ĐÃ SỬA theo góp ý: chỉ tô đỏ nhạt ô BÊN PHẢI (ô chứa chữ "Thiếu...") thay
+                            vì cả dòng — class "hoso-thieu-cell" đặt trực tiếp trên <td>, không còn
+                            đặt trên <tr> nữa. Chữ in đậm, màu đỏ đậm tương phản tốt trên nền đỏ nhạt
+                            (dùng lại đúng cặp màu bg/text của Bootstrap alert-danger — đã kiểm chứng
+                            đạt chuẩn tương phản WCAG AA). */}
+                        <tr>
+                          <th>Hồ sơ</th>
+                          <td className={missing.length > 0 ? 'hoso-thieu-cell' : 'text-success'}>
+                            {missing.length > 0 ? `⚠️ Thiếu: ${missing.join(', ')}` : '✅ Đã nộp đủ hồ sơ hợp lệ'}
+                          </td>
+                        </tr>
+                        {missingTQ.length > 0 && (
+                          <tr><th className="text-danger">Thiếu hồ sơ TIÊN QUYẾT</th><td className="hoso-thieu-cell">{missingTQ.join(', ')}</td></tr>
+                        )}
+                        <tr className="link-row" title={linkOk ? linkHoSo : 'Không có link hợp lệ'}>
+                          <th>Link hồ sơ</th>
+                          <td>
+                            {linkOk ? (
+                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">📎 Mở hồ sơ Drive</a>
+                            ) : (
+                              <span className="text-muted">Không có link hồ sơ hợp lệ</span>
+                            )}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
 
                   {/* Khảo sát ngành khác — đổi ngành tạm thời để xem điểm, KHÔNG ảnh hưởng dữ liệu thật */}
                   <div className="mb-2">
