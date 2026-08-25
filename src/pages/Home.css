@@ -139,6 +139,16 @@
   height: 100vh;
   background-size: cover;
   background-position: center;
-  z-index: -1;
+  /* ĐÃ SỬA: z-index: -1 -> 0. App.jsx bọc CẢ APP trong 1 div có màu nền riêng
+     (backgroundColor: '#f4f6f9') nhưng KHÔNG có position — mà theo quy tắc xếp
+     lớp CSS, nền của 1 khối không định vị luôn được vẽ ĐÈ LÊN các phần tử con có
+     z-index ÂM, bất kể lồng sâu cỡ nào -> đó là lý do ảnh bị nền xám đó che kín
+     hoàn toàn dù vẫn tải thành công. Đổi thành 0 (không âm) để ảnh thắng được
+     lớp nền xám kia. Vẫn an toàn với phần còn lại của trang: thanh điều hướng
+     dùng sticky-top và footer dùng zIndex: 1020 (Bootstrap/inline trong
+     App.jsx) nên vẫn ăn đứt z-index: 0, không bị ảnh đè lên; câu chào + lưới
+     thẻ trong chính trang này đã có z-index: 1 (xem bên trên) nên vẫn nổi trên
+     ảnh bình thường. */
+  z-index: 0;
   pointer-events: none;
 }
