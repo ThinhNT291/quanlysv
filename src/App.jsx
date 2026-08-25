@@ -181,6 +181,16 @@ const App = () => {
                   window.google.accounts.id.prompt((notification) => {
                       // Nếu hệ thống Google KHÔNG THỂ hiển thị popup gia hạn ngầm
                       if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                          // ĐÃ THÊM: log rõ LÝ DO Google từ chối hiện popup — trước đây gặp
+                          // "gia hạn thất bại" là bó tay, không biết vì sao (trình duyệt chặn
+                          // cookie bên thứ 3, Google tự tạm khoá popup do trước đó người dùng
+                          // đã bấm tắt nhiều lần, phiên Google đã đăng xuất, v.v. — mỗi lý do
+                          // sửa một kiểu khác nhau). Mở Console (F12) lúc gặp lỗi để xem đúng
+                          // nguyên nhân, báo lại để xử lý đúng chỗ thay vì đoán mò.
+                          console.warn(
+                              '[Gia hạn phiên Google] Popup không hiển thị được — lý do:',
+                              notification.isNotDisplayed() ? notification.getNotDisplayedReason() : notification.getSkippedReason()
+                          );
                           window.isRenewing = false;
                           if (window.confirm("Phiên đăng nhập sắp hết hạn và hệ thống tự gia hạn thất bại. Đăng xuất ngay để làm mới?")) {
                               handleLogout("Đã đăng xuất để bảo mật dữ liệu.");
@@ -259,7 +269,7 @@ const App = () => {
                 không bị vỡ dòng, tránh phải xuống 2 dòng hay tách cột trên di động. */}
             <span className="navbar-brand fw-bold d-flex align-items-center" style={{ color: '#0dcaf0', letterSpacing: '1px' }}>
               <img src={logoPhuXuan} alt="Phú Xuan University" className="app-logo me-2" />
-              <i className="bi bi-mortarboard-fill me-2"></i> HỆ THỐNG TUYỂN SINH
+              <i className="bi bi-mortarboard-fill me-2"></i>QUẢN LÝ TUYỂN SINH
             </span>
 
             {/* CỤM TÀI KHOẢN — ĐÃ KÉO RA KHỎI navbar-collapse: trước đây nằm chung trong menu

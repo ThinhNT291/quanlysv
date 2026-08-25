@@ -111,3 +111,76 @@
 .thamdinh-detail-modal .modal-footer .btn {
   font-size: 13px;
 }
+
+/* ========================================================
+   ĐÃ SỬA (đợt 2): thu nhỏ tiếp toàn bộ khối bộ lọc theo đúng tỉ lệ mới yêu cầu,
+   tính TƯƠNG ĐỐI so với % của đợt trước (không phải so với % gốc ban đầu):
+   - Tìm nhanh:            16.6667% x 2/3   = 11.111%
+   - Từ ngày / Đến ngày:   20%      x 2/5   = 8%      (mỗi ô)
+   - Ngành đào tạo:        16.6667% x 3/4   = 12.5%   (tách riêng khỏi col-md-2 cũ)
+   - Đối tượng đầu vào:    16.6667% x 0.9   = 15%     (tách riêng khỏi col-md-2 cũ)
+   - Trạng thái hồ sơ:     12.5%    x 0.6   = 7.5%
+   - Trạng thái thẩm định: 12.5%    x 0.9   = 11.25%  (không còn bằng Trạng thái hồ
+     sơ nữa như đợt trước -> tách .td-col-status cũ thành 2 class riêng)
+   - Sắp xếp:              37.5%    x 0.25  = 9.375%
+   - Nút xóa lọc:          10%      x 0.5   = 5%
+   Tổng cộng ~87.74% bề rộng hàng -> vẫn đủ chỗ để dồn toàn bộ 8 ô lên chung 1
+   hàng ngang tại md+ (không phải xuống dòng nữa). Dưới md vẫn dùng col-6 của
+   Bootstrap (2 ô/hàng) như cũ để không vỡ layout trên điện thoại.
+   ======================================================== */
+@media (min-width: 768px) {
+  .thamdinh-filter-row .td-col-quick           { flex: 0 0 11.111%; max-width: 11.111%; } /* Tìm nhanh */
+  .thamdinh-filter-row .td-col-date            { flex: 0 0 8%;      max-width: 8%; }      /* Từ ngày / Đến ngày */
+  .thamdinh-filter-row .td-col-nganh           { flex: 0 0 12.5%;   max-width: 12.5%; }   /* Ngành đào tạo */
+  .thamdinh-filter-row .td-col-doituong        { flex: 0 0 15%;     max-width: 15%; }     /* Đối tượng đầu vào */
+  .thamdinh-filter-row .td-col-reset           { flex: 0 0 5%;      max-width: 5%; }      /* nút Xóa lọc */
+  .thamdinh-filter-row .td-col-hoso-status     { flex: 0 0 7.5%;    max-width: 7.5%; }    /* Trạng thái hồ sơ */
+  .thamdinh-filter-row .td-col-thamdinh-status { flex: 0 0 11.25%;  max-width: 11.25%; }  /* Trạng thái thẩm định */
+  .thamdinh-filter-row .td-col-sort            { flex: 0 0 9.375%;  max-width: 9.375%; }  /* Sắp xếp */
+}
+
+/* Nút "Xóa lọc" — bình thường trung tính (không màu nổi bật), chỉ chuyển cam nhạt
+   khi đang có ít nhất 1 điều kiện lọc khác mặc định (xem isFilterActive trong
+   ThamDinhPage.jsx). Viền/màu chữ mượn đúng tông input Bootstrap mặc định để đứng
+   yên ổn cạnh các ô form khác khi "không có gì để xoá". */
+.thamdinh-reset-btn {
+  background-color: #fff;
+  border: 1px solid #ced4da;
+  color: #495057;
+}
+.thamdinh-reset-btn:hover {
+  background-color: #f1f3f5;
+  border-color: #adb5bd;
+  color: #212529;
+}
+.thamdinh-reset-btn-active {
+  background-color: #ffe8cc;
+  border: 1px solid #ffb366;
+  color: #7a3e00;
+  font-weight: 600;
+}
+.thamdinh-reset-btn-active:hover {
+  background-color: #ffdcb0;
+  border-color: #ff9f40;
+  color: #5c2f00;
+}
+
+/* ========================================================
+   ĐÃ THÊM: BẢNG DATALIST THẨM ĐỊNH — tiêu đề không xuống dòng + màu đậm hơn 1 tý
+   ======================================================== */
+/* Hàng tiêu đề bảng chính (không phải các bảng nhỏ trong modal, những bảng đó vẫn
+   dùng table-light gốc của Bootstrap) — đậm hơn table-light mặc định (#f8f9fa) một
+   chút để nổi rõ dòng tiêu đề lên so với phần thân bảng bên dưới. */
+.thamdinh-list-thead th {
+  background-color: #dde2e6;
+}
+
+/* Chữ tiêu đề + chữ trong nút "THẨM ĐỊNH" không bao giờ tự xuống dòng (đi kèm việc
+   nới rộng cột th tương ứng trong JSX) — bảng đã có sẵn .table-responsive nên nếu
+   màn quá hẹp sẽ cuộn ngang thay vì vỡ dòng tiêu đề. */
+.thamdinh-page .table thead th {
+  white-space: nowrap;
+}
+.thamdinh-page .table tbody td .btn {
+  white-space: nowrap;
+}

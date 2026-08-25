@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
+import html2pdf from 'html2pdf.js';
 import {
   fetchThamDinhData, duyetTrungTuyen, baoThieuHoSo, luuKetQuaThamDinh, banGiaoDaoTao,
   scanTranscriptImage, compareCurriculumAI, exportThamDinhTemplate
@@ -31,6 +32,15 @@ const fmtDateInput = (d) => {
 
 const nowVnDate = () => new Date().toLocaleDateString('vi-VN');
 
+// ĐÃ THÊM: tên file quét bảng điểm quá dài -> hiển thị rút gọn kiểu "đoạn đầu...đoạn
+// cuối" (giữ phần đuôi vì thường chứa đuôi mở rộng .jpg/.pdf), thay vì cắt cụt 1 phía.
+const truncateMiddle = (str, maxLen = 26) => {
+  if (!str || str.length <= maxLen) return str;
+  const headLen = Math.ceil((maxLen - 3) / 2);
+  const tailLen = Math.floor((maxLen - 3) / 2);
+  return `${str.slice(0, headLen)}...${str.slice(str.length - tailLen)}`;
+};
+
 // ĐÃ THÊM (Pha 5): đọc cache quét bảng điểm/đối sánh CTĐT đã lưu từ phiên trước
 // (sessionStorage) — khớp đúng hành vi bản cũ (candidateScanCache + 'td_scan_cache_v1').
 const loadScanCache = () => {
@@ -51,13 +61,21 @@ const ThamDinhPage = () => {
 
   const today = useMemo(() => new Date(), []);
   const sevenDaysAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d; }, []);
+  // ĐÃ THÊM: chốt lại đúng 2 chuỗi ngày mặc định (7 ngày gần nhất) 1 lần duy nhất, dùng
+  // lại cả lúc khởi tạo state lẫn lúc "Xóa bộ lọc" / so sánh xem bộ lọc có đang bị đổi
+  // khác mặc định hay không (xem isFilterActive bên dưới) — tránh 2 nơi tính ra 2 giá
+  // trị lệch nhau do gọi fmtDateInput() ở 2 chỗ khác lúc (dù cùng ngày thì không lệch,
+  // nhưng gộp về 1 biến vẫn rõ ràng và an toàn hơn).
+  const defaultDateFrom = useMemo(() => fmtDateInput(sevenDaysAgo), [sevenDaysAgo]);
+  const defaultDateTo = useMemo(() => fmtDateInput(today), [today]);
 
   const [search, setSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState(fmtDateInput(sevenDaysAgo));
-  const [dateTo, setDateTo] = useState(fmtDateInput(today));
+  const [dateFrom, setDateFrom] = useState(defaultDateFrom);
+  const [dateTo, setDateTo] = useState(defaultDateTo);
   const [filterNganh, setFilterNganh] = useState('');
   const [filterDoiTuong, setFilterDoiTuong] = useState('');
   const [filterHoSo, setFilterHoSo] = useState('');
+  const [filterThamDinh, setFilterThamDinh] = useState(''); // ĐÃ THÊM: lọc theo Trạng thái thẩm định
   const [sortBy, setSortBy] = useState('date_desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
@@ -67,6 +85,26 @@ const ThamDinhPage = () => {
   const [scanCache, setScanCache] = useState(loadScanCache); // { [scanKey]: { transcriptJSON, compareResult, scanFileName } }
   const fileInputRef = useRef(null);
   const [batchPreview, setBatchPreview] = useState(null);
+  // ĐÃ THÊM: cờ đóng/mở menu xổ xuống của nút "Xuất file" trong modal thẩm định chi
+  // tiết — modal được render bằng IIFE gọi có điều kiện (viewingIndex !== null && ...)
+  // nên KHÔNG được khai báo useState bên trong đó (vi phạm Rules of Hooks), phải khai
+  // báo ở cấp cao nhất của component như các state khác.
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false); // trạng thái đang tạo file PDF sơ bộ (html2pdf.js chạy bất đồng bộ, không qua react-query)
+  const exportMenuRef = useRef(null);
+
+  // ĐÃ THÊM: đóng menu "Xuất file" khi bấm ra ngoài — không có Bootstrap JS/react-bootstrap
+  // trong dự án (chỉ CSS Bootstrap qua CDN) nên phải tự bắt sự kiện mousedown, giống hệt
+  // cách dropdown tài khoản ở App.jsx đang làm.
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (exportMenuOpen && exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [exportMenuOpen]);
 
   const [localOverrides, setLocalOverrides] = useState({});
   const getEffectiveState = (row) => localOverrides[getRowKey(row)]?.appState ?? getAppState(row);
@@ -97,6 +135,9 @@ const ThamDinhPage = () => {
       }
       if (filterNganh && getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]) !== filterNganh) return false;
       if (filterDoiTuong && getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"]) !== filterDoiTuong) return false;
+      // ĐÃ THÊM: lọc theo Trạng thái thẩm định (tính cả localOverrides qua getEffectiveState,
+      // giống hệt cách sortBy === "status" đã dùng bên dưới).
+      if (filterThamDinh && getEffectiveState(row) !== filterThamDinh) return false;
       if (qVal) {
         const maSV = generateMaSV(row);
         const cccd = getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '');
@@ -119,7 +160,7 @@ const ThamDinhPage = () => {
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawData, dateFrom, dateTo, filterNganh, filterDoiTuong, filterHoSo, search, sortBy, localOverrides]);
+  }, [rawData, dateFrom, dateTo, filterNganh, filterDoiTuong, filterHoSo, filterThamDinh, search, sortBy, localOverrides]);
 
   const kpi = useMemo(() => ({
     total: filteredData.length,
@@ -135,9 +176,20 @@ const ThamDinhPage = () => {
   const pageRows = filteredData.slice(pageStart, pageStart + pageSize);
 
   const resetFilters = () => {
-    setSearch(''); setDateFrom(''); setDateTo(''); setFilterNganh(''); setFilterDoiTuong('');
-    setFilterHoSo(''); setSortBy('date_desc'); setCurrentPage(1);
+    setSearch('');
+    // ĐÃ SỬA: trước đây bấm "Xóa bộ lọc" xóa 2 ô ngày về RỖNG (hiện tất cả hồ sơ từ
+    // trước tới nay), khác với trạng thái ban đầu lúc mới vào trang (mặc định 7 ngày
+    // gần nhất) — giờ trả về đúng mặc định ban đầu để "Xóa bộ lọc" và "mới vào trang"
+    // luôn là cùng 1 trạng thái, khớp với logic đổi màu nút bên dưới (isFilterActive).
+    setDateFrom(defaultDateFrom); setDateTo(defaultDateTo);
+    setFilterNganh(''); setFilterDoiTuong('');
+    setFilterHoSo(''); setFilterThamDinh(''); setSortBy('date_desc'); setCurrentPage(1);
   };
+
+  // ĐÃ THÊM: có đang khác trạng thái mặc định hay không -> quyết định màu nút "Xóa lọc"
+  // (yêu cầu: bình thường không màu, nổi cam nhạt khi người dùng đã chọn/nhập gì đó).
+  const isFilterActive = search !== '' || dateFrom !== defaultDateFrom || dateTo !== defaultDateTo ||
+    filterNganh !== '' || filterDoiTuong !== '' || filterHoSo !== '' || filterThamDinh !== '' || sortBy !== 'date_desc';
 
   const toggleSelect = (key, checked) => {
     setSelectedKeys(prev => {
@@ -147,11 +199,16 @@ const ThamDinhPage = () => {
     });
   };
 
-  const stateBadge = (state) => {
-    if (state === "Đã duyệt") return { text: "✅ Đã duyệt", cls: "btn-success" };
-    if (state === "Đã báo thiếu") return { text: "⚠️ Đã yêu cầu BS", cls: "btn-warning" };
-    if (state === "Mới bổ sung") return { text: "🔄 Mới bổ sung", cls: "btn-info" };
-    return { text: "🔍 Thẩm định", cls: "btn-outline-primary" };
+  // ĐÃ SỬA: bỏ icon emoji đầu chữ trong cột THẨM ĐỊNH của bảng datalist theo yêu cầu
+  // (chỉ còn chữ, cột không bị chật thêm bởi icon nữa).
+  // ĐÃ THÊM: nếu hồ sơ đã bấm "Lưu vào CSDL" (saved = true, xem getEffectiveSaved) thì
+  // ưu tiên hiển thị "Đã lưu" trước mọi trạng thái khác — kiểm tra saved TRƯỚC state.
+  const stateBadge = (state, saved) => {
+    if (saved) return { text: "Đã lưu", cls: "btn-secondary" };
+    if (state === "Đã duyệt") return { text: "Đã duyệt", cls: "btn-success" };
+    if (state === "Đã báo thiếu") return { text: "Đã yêu cầu BS", cls: "btn-warning" };
+    if (state === "Mới bổ sung") return { text: "Mới bổ sung", cls: "btn-info" };
+    return { text: "Thẩm định", cls: "btn-outline-primary" };
   };
 
   const approveMutation = useMutation({ mutationFn: duyetTrungTuyen });
@@ -259,6 +316,31 @@ const ThamDinhPage = () => {
       Swal.fire({ icon: 'success', title: 'Thành công', text: 'Tải file thành công.' });
     } catch (err) {
       Swal.fire({ icon: 'error', title: 'Lỗi tạo file', text: err.message });
+    }
+  };
+
+  // ĐÃ THÊM: xuất "Bảng thông tin sơ bộ (PDF)" — dùng đúng cơ chế html2pdf.js đã có sẵn
+  // trong dự án (xem PrintModal.jsx: chụp 1 khung html ẩn ngoài màn hình rồi lưu PDF về
+  // máy). Khung html nguồn (#pdf-thamdinh-content) được render ẩn ngay trong modal chi
+  // tiết bên dưới, giữ đúng nội dung + tiêu ngữ dạng thô — ông có thể bổ sung con dấu/chữ
+  // ký/logo sau nếu cần.
+  const handlePdfExport = async (elementId, fileName) => {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    setPdfExporting(true);
+    const opt = {
+      margin: [15, 18, 15, 18],
+      filename: fileName,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    };
+    try {
+      await html2pdf().set(opt).from(element).save();
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Lỗi tạo PDF', text: err.message });
+    } finally {
+      setPdfExporting(false);
     }
   };
 
@@ -491,9 +573,12 @@ const ThamDinhPage = () => {
     <div className="container-fluid py-3 thamdinh-page">
       <div className="row mb-3 align-items-center">
         <div className="col-md-6">
-          <h4 className="text-uppercase fw-bold" style={{ color: '#037683' }}>
+          {/* ĐÃ SỬA: to lên 1 nấc — đổi h4 -> h3, ThamDinh.css đã có sẵn thang cỡ chữ
+              riêng cho trang này (.thamdinh-page h3 = 24px, h4 = 18px) nên chỉ cần đổi
+              thẻ, không cần set font-size tay. */}
+          <h3 className="text-uppercase fw-bold" style={{ color: '#037683' }}>
             <i className="bi bi-clipboard-check me-2"></i>Ban Thẩm định hồ sơ
-          </h4>
+          </h3>
         </div>
         <div className="col-md-6 text-md-end d-flex justify-content-md-end align-items-center gap-2 flex-wrap">
           <span className="small text-muted">
@@ -507,86 +592,99 @@ const ThamDinhPage = () => {
 
       {isError && <div className="alert alert-danger">Lỗi tải dữ liệu: {error?.message}</div>}
 
+      {/* ĐÃ SỬA: cả khối 4 thẻ thống kê giờ chỉ chiếm nửa bề ngang trang (col-md-6),
+          nửa còn lại để trống bên phải theo yêu cầu (đang để dành, chưa quyết định
+          đặt gì vào). 4 thẻ bên trong vẫn giữ đúng tỉ lệ 1/4 NHƯNG tính theo nửa
+          trang đó — nên bề ngang thực tế mỗi thẻ co lại còn một nửa so với trước.
+          Chữ trong từng thẻ (nhãn + số) đều in đậm thêm (fw-bold). */}
       <div className="row mb-3 g-2">
-        <div className="col-6 col-md-3">
-          <div className="card bg-primary text-white border-0 shadow-sm h-100">
-            <div className="card-body py-2 px-3">
-              <div className="small opacity-75">📁 Tổng hồ sơ ({today.getFullYear()})</div>
-              <h3 className="mb-0">{kpi.total}</h3>
+        <div className="col-md-6">
+          <div className="row g-2">
+            <div className="col-6 col-md-3">
+              <div className="card bg-primary text-white border-0 shadow-sm h-100">
+                <div className="card-body py-2 px-3">
+                  <div className="small opacity-75 fw-bold">📁 Tổng hồ sơ ({today.getFullYear()})</div>
+                  <h3 className="mb-0 fw-bold">{kpi.total}</h3>
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body py-2 px-3">
+                  <div className="small text-muted fw-bold">📑 Đủ hồ sơ</div>
+                  <h3 className="mb-0 fw-bold" style={{ color: '#2980b9' }}>{kpi.du}</h3>
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body py-2 px-3">
+                  <div className="small text-muted fw-bold">⚠️ Thiếu hồ sơ</div>
+                  <h3 className="mb-0 fw-bold" style={{ color: '#c0392b' }}>{kpi.thieu}</h3>
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body py-2 px-3">
+                  <div className="small text-muted fw-bold">✅ Đã duyệt</div>
+                  <h3 className="mb-0 fw-bold" style={{ color: '#2e7d32' }}>{kpi.daDuyet}</h3>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <div className="col-6 col-md-3">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-body py-2 px-3">
-              <div className="small text-muted">📑 Đủ hồ sơ</div>
-              <h3 className="mb-0" style={{ color: '#2980b9' }}>{kpi.du}</h3>
-            </div>
-          </div>
-        </div>
-        <div className="col-6 col-md-3">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-body py-2 px-3">
-              <div className="small text-muted">⚠️ Thiếu hồ sơ</div>
-              <h3 className="mb-0" style={{ color: '#c0392b' }}>{kpi.thieu}</h3>
-            </div>
-          </div>
-        </div>
-        <div className="col-6 col-md-3">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-body py-2 px-3">
-              <div className="small text-muted">✅ Đã duyệt</div>
-              <h3 className="mb-0" style={{ color: '#2e7d32' }}>{kpi.daDuyet}</h3>
-            </div>
-          </div>
-        </div>
+        {/* col-md-6 còn lại cố ý để trống — chờ nội dung sau */}
       </div>
 
       <div className="card border-0 shadow-sm mb-3">
         <div className="card-body py-2">
-          <div className="row g-2 align-items-end">
-            <div className="col-md-3 col-xl-2">
-              <label className="form-label small mb-1">Tìm nhanh</label>
+          {/* ĐÃ SỬA: bề rộng từng ô giờ dùng class riêng (td-col-*, định nghĩa trong
+              ThamDinh.css) thay vì col-md-N/col-xl-N của Bootstrap — vì các tỉ lệ yêu
+              cầu (2/3, x1.2, x0.5, x1.5) không khớp số nguyên cột 12 phần của Bootstrap
+              nên tính % trực tiếp cho đúng tỉ lệ. Ở màn hẹp (< md) vẫn dùng col-6 của
+              Bootstrap để xếp 2 ô/hàng như cũ. Nhãn (label) mỗi ô được in đậm thêm. */}
+          <div className="row g-2 align-items-end thamdinh-filter-row">
+            <div className="col-6 td-col-quick">
+              <label className="form-label small fw-bold mb-1">Tìm nhanh</label>
               <input type="search" className="form-control form-control-sm" placeholder="🔎 Mã SV / Căn cước / Họ và tên..."
                 value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
             </div>
-            <div className="col-6 col-md-2 col-xl-1">
-              <label className="form-label small mb-1">Từ ngày</label>
+            <div className="col-6 td-col-date">
+              <label className="form-label small fw-bold mb-1">Từ ngày</label>
               <input type="date" className="form-control form-control-sm" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }} />
             </div>
-            <div className="col-6 col-md-2 col-xl-1">
-              <label className="form-label small mb-1">Đến ngày</label>
+            <div className="col-6 td-col-date">
+              <label className="form-label small fw-bold mb-1">Đến ngày</label>
               <input type="date" className="form-control form-control-sm" value={dateTo} onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }} />
             </div>
-            <div className="col-6 col-md-2 col-xl-2">
-              <label className="form-label small mb-1">Ngành đào tạo</label>
+            <div className="col-6 td-col-nganh">
+              <label className="form-label small fw-bold mb-1">Ngành đào tạo</label>
               <select className="form-select form-select-sm" value={filterNganh} onChange={e => { setFilterNganh(e.target.value); setCurrentPage(1); }}>
                 <option value="">-- Tất cả ngành --</option>
                 {nganhOptions.map(ng => <option key={ng} value={ng}>{ng}</option>)}
               </select>
             </div>
-            <div className="col-6 col-md-2 col-xl-2">
-              <label className="form-label small mb-1">Đối tượng đầu vào</label>
+            <div className="col-6 td-col-doituong">
+              <label className="form-label small fw-bold mb-1">Đối tượng đầu vào</label>
               <select className="form-select form-select-sm" value={filterDoiTuong} onChange={e => { setFilterDoiTuong(e.target.value); setCurrentPage(1); }}>
                 <option value="">-- Tất cả --</option>
                 {doiTuongOptions.map(dt => <option key={dt} value={dt}>{dt}</option>)}
               </select>
             </div>
-            <div className="col-6 col-md-1 col-xl-1">
-              <button className="btn btn-sm btn-outline-secondary w-100" onClick={resetFilters} title="Xoá bộ lọc">
-                <i className="bi bi-x-circle"></i>
-              </button>
-            </div>
-            <div className="col-6 col-md-3 col-xl-2">
-              <label className="form-label small mb-1">Trạng thái hồ sơ</label>
-              <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
+           
+            <div className="col-6 td-col-thamdinh-status">
+              <label className="form-label small fw-bold mb-1">Trạng thái thẩm định</label>
+              <select className="form-select form-select-sm" value={filterThamDinh} onChange={e => { setFilterThamDinh(e.target.value); setCurrentPage(1); }}>
                 <option value="">-- Tất cả --</option>
-                <option value="Đủ">Đủ hồ sơ</option>
-                <option value="Thiếu">Thiếu hồ sơ</option>
+                <option value="Đang chờ duyệt">Đang chờ duyệt</option>
+                <option value="Mới bổ sung">Mới bổ sung</option>
+                <option value="Đã báo thiếu">Đã báo thiếu</option>
+                <option value="Đã duyệt">Đã duyệt</option>
               </select>
             </div>
-            <div className="col-6 col-md-3 col-xl-1">
-              <label className="form-label small mb-1">Sắp xếp</label>
+            <div className="col-6 td-col-sort">
+              <label className="form-label small fw-bold mb-1">Sắp xếp</label>
               <select className="form-select form-select-sm" value={sortBy} onChange={e => setSortBy(e.target.value)}>
                 <option value="date_desc">Ngày nộp mới nhất</option>
                 <option value="date_asc">Ngày nộp cũ nhất</option>
@@ -597,7 +695,31 @@ const ThamDinhPage = () => {
           </div>
         </div>
       </div>
-
+ {/* ĐÃ SỬA: nút "Xoá bộ lọc" trước đây chỉ có icon (bi-x-circle) -> trên máy
+                không tải được font icon thì trông như 1 ô trắng trống trơn. Giờ luôn có
+                chữ "Xóa lọc" rõ ràng; màu mặc định trung tính (không nổi bật), tự động
+                chuyển cam nhạt khi isFilterActive = true (đang có ít nhất 1 điều kiện lọc
+                khác mặc định) — xem 2 class .thamdinh-reset-btn/-active trong CSS. */}
+            <div className="col-6 td-col-reset">
+              <button
+                className={`btn btn-sm w-100 ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
+                onClick={resetFilters}
+                title="Xóa bộ lọc, quay về mặc định"
+              >
+                <i className="bi bi-x-circle me-1"></i>Xóa lọc
+              </button>
+            </div>
+            <div className="col-6 td-col-hoso-status">
+              <label className="form-label small fw-bold mb-1">Trạng thái hồ sơ</label>
+              <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
+                <option value="">-- Tất cả --</option>
+                <option value="Đủ">Đủ hồ sơ</option>
+                <option value="Thiếu">Thiếu hồ sơ</option>
+              </select>
+            </div>
+            {/* ĐÃ SỬA: lọc theo Trạng thái thẩm định — không còn bằng bề rộng ô Trạng thái hồ
+                sơ nữa (2 tỉ lệ khác nhau ở đợt sửa này), nên tách thành class riêng
+                td-col-thamdinh-status (trước đây dùng chung td-col-status). */}
       {selectedKeys.size > 0 && (
         <div className="card border-0 shadow-sm mb-3 bg-light">
           <div className="card-body py-2 d-flex flex-wrap align-items-center gap-2">
@@ -611,9 +733,12 @@ const ThamDinhPage = () => {
       )}
 
       <div className="card border-0 shadow-sm">
+        {/* ĐÃ SỬA: chỉ đổi class thead từ "table-light" mặc định của Bootstrap sang
+            "thamdinh-list-thead" riêng (đậm hơn 1 tý, xem CSS) để KHÔNG ảnh hưởng các
+            bảng table-light khác trong modal chi tiết (bảng tổ hợp điểm, bảng quét AI...). */}
         <div className="table-responsive">
           <table className="table table-hover align-middle mb-0" style={{ fontSize: '12px' }}>
-            <thead className="table-light">
+            <thead className="thamdinh-list-thead">
               <tr>
                 <th style={{ width: 34 }}></th>
                 <th style={{ width: 40 }} className="text-center">STT</th>
@@ -624,8 +749,10 @@ const ThamDinhPage = () => {
                 <th style={{ width: 160 }}>NGÀNH ĐÀO TẠO</th>
                 <th style={{ width: 145 }}>ĐỐI TƯỢNG</th>
                 <th style={{ width: 90 }} className="text-center">ĐIỂM / TỔ HỢP</th>
-                <th>TRẠNG THÁI HỒ SƠ</th>
-                <th style={{ width: 120 }} className="text-center">THẨM ĐỊNH</th>
+                <th style={{ width: 150 }}>TRẠNG THÁI HỒ SƠ</th>
+                {/* ĐÃ SỬA: 120 -> 140px, đủ chỗ cho "Đã yêu cầu BS" không xuống dòng
+                    (bảng đã có white-space: nowrap trên thead lẫn td nút, xem CSS). */}
+                <th style={{ width: 140 }} className="text-center">THẨM ĐỊNH</th>
               </tr>
             </thead>
             <tbody>
@@ -637,10 +764,11 @@ const ThamDinhPage = () => {
                 const index = pageStart + i;
                 const key = getRowKey(row);
                 const state = getEffectiveState(row);
+                const saved = getEffectiveSaved(row);
                 const missing = getMissingDocs(row);
                 const cccdStr = getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '');
                 const score = getBestScore(row);
-                const badge = stateBadge(state);
+                const badge = stateBadge(state, saved);
 
                 return (
                   <tr key={key || index} className={selectedKeys.has(key) ? 'table-primary' : ''}>
@@ -676,7 +804,7 @@ const ThamDinhPage = () => {
                       )}
                     </td>
                     <td className="text-center">
-                      <button className={`btn btn-sm ${badge.cls}`} onClick={() => { setViewingIndex(index); setCrossCheckNganh(''); }}>{badge.text}</button>
+                      <button className={`btn btn-sm ${badge.cls}`} onClick={() => { setViewingIndex(index); setCrossCheckNganh(''); setExportMenuOpen(false); }}>{badge.text}</button>
                     </td>
                   </tr>
                 );
@@ -727,27 +855,27 @@ const ThamDinhPage = () => {
         const btnApproveDisabled = isSurveying || isDuyet || isBaoThieu || missingTQ.length > 0 || approveMutation.isPending;
         const btnApproveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác'
           : approveMutation.isPending ? '⏳ Đang xuất Biên nhận...'
-          : isDuyet ? '✅ Hồ sơ đã duyệt'
+          : isDuyet ? 'Đã duyệt'
           : missingTQ.length > 0 ? '❌ Thiếu HS Tiên Quyết'
           : '✅ DUYỆT TRÚNG TUYỂN';
 
         const btnMissingDisabled = isSurveying || isDuyet || isBaoThieu || missingMutation.isPending;
-        const btnMissingText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : missingMutation.isPending ? '⏳ Đang xử lý...' : isBaoThieu ? '⚠️ Đã yêu cầu bổ sung HS' : '⚠️ Y/C BỔ SUNG HS';
+        const btnMissingText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : missingMutation.isPending ? '⏳ Đang xử lý...' : isBaoThieu ? 'Đã Y/C bổ sung' : '⚠️ Y/C BỔ SUNG HS';
 
         const btnSaveDisabled = isSurveying || saved || saveMutation.isPending;
-        const btnSaveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : saveMutation.isPending ? '⏳ Đang lưu...' : saved ? '💾 Đã lưu hồ sơ vào CSDL' : '💾 LƯU VÀO CSDL';
+        const btnSaveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : saveMutation.isPending ? '⏳ Đang lưu...' : saved ? 'Đã lưu vào CSDL' : '💾 LƯU VÀO CSDL';
 
         return (
-          <div className="modal show d-block thamdinh-detail-modal" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) setViewingIndex(null); }}>
+          <div className="modal show d-block thamdinh-detail-modal" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget) { setViewingIndex(null); setExportMenuOpen(false); } }}>
             <div className="modal-dialog modal-lg modal-dialog-scrollable">
               <div className="modal-content">
                 <div className="modal-header">
                   <button className="btn btn-sm btn-outline-secondary me-2" disabled={viewingIndex === 0}
-                    onClick={() => { setViewingIndex(i => i - 1); setCrossCheckNganh(''); }}>‹ Trước</button>
+                    onClick={() => { setViewingIndex(i => i - 1); setCrossCheckNganh(''); setExportMenuOpen(false); }}>‹ Trước</button>
                   <h5 className="modal-title fw-bold flex-grow-1 text-center">Hồ sơ: {getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"])}</h5>
                   <button className="btn btn-sm btn-outline-secondary ms-2" disabled={viewingIndex >= filteredData.length - 1}
-                    onClick={() => { setViewingIndex(i => i + 1); setCrossCheckNganh(''); }}>Sau ›</button>
-                  <button type="button" className="btn-close ms-3" onClick={() => setViewingIndex(null)}></button>
+                    onClick={() => { setViewingIndex(i => i + 1); setCrossCheckNganh(''); setExportMenuOpen(false); }}>Sau ›</button>
+                  <button type="button" className="btn-close ms-3" onClick={() => { setViewingIndex(null); setExportMenuOpen(false); }}></button>
                 </div>
                 <div className="modal-body">
                   {/* ĐÃ THÊM: bọc bảng thông tin trong 1 khung riêng (nền xám nhạt + hoạ tiết
@@ -765,6 +893,9 @@ const ThamDinhPage = () => {
                         <tr><th>Hệ / Hình thức đào tạo</th><td>{getVal(row, ["HỆ ĐÀO TẠO"])} / {getVal(row, ["HÌNH THỨC ĐÀO TẠO"])}</td></tr>
                         <tr><th>Đối tượng đầu vào</th><td>{getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"])}</td></tr>
                         <tr><th>Khu vực / Đối tượng ưu tiên</th><td>{getVal(row, ["KHU VỰC ƯU TIÊN"])} / {getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"])}</td></tr>
+                        {/* ĐÃ CHUYỂN từ khung "Panel điểm chi tiết" phía dưới lên đây, ngay dưới dòng
+                            Khu vực/Đối tượng ưu tiên, theo yêu cầu. */}
+                        <tr><th>Điểm cộng / Điểm ưu tiên</th><td>{scores.diemCong ?? 0}đ / {(scores.uuTien ?? 0).toFixed ? scores.uuTien.toFixed(2) : scores.uuTien}đ</td></tr>
                         <tr><th>Trạng thái thẩm định</th><td>{state}</td></tr>
                         {/* ĐÃ SỬA theo góp ý: chỉ tô đỏ nhạt ô BÊN PHẢI (ô chứa chữ "Thiếu...") thay
                             vì cả dòng — class "hoso-thieu-cell" đặt trực tiếp trên <td>, không còn
@@ -803,49 +934,53 @@ const ThamDinhPage = () => {
                     </select>
                   </div>
 
-                  {/* Panel điểm chi tiết — port từ calculateAndRenderScores() */}
+                  {/* ĐÃ SỬA: gộp khung "Quét bảng điểm AI / Đối sánh CTĐT" (trái, col-8, đưa lên từ
+                      dưới) và khung điểm chung (phải, col-4) vào chung 1 hàng theo yêu cầu. Khung
+                      "Điểm cộng / Điểm ưu tiên" đã dời lên bảng thông tin phía trên (không lặp lại ở
+                      đây nữa); khung "Điểm chuẩn (15đ)"/ĐẠT-TRƯỢT (nhánh THPT) đã bỏ, gộp thành 1
+                      dòng phụ "/ 15" ngay dưới điểm trúng tuyển; dòng thông báo "tính năng chưa có"
+                      và heading "📑 Quét bảng điểm AI..." cũ cũng đã bỏ vì các tính năng này đã xong. */}
                   <div className="row g-2 mb-2">
-                    <div className="col-4">
-                      <div className="border rounded p-2 text-center h-100">
-                        <div className="small text-muted">Điểm cộng / Điểm ưu tiên</div>
-                        <div className="fw-bold">{scores.diemCong ?? 0}đ / {(scores.uuTien ?? 0).toFixed ? scores.uuTien.toFixed(2) : scores.uuTien}đ</div>
+                    <div className="col-8">
+                      <div className="border rounded p-2 h-100">
+                        <div className="d-flex align-items-center gap-2 flex-wrap">
+                          <input type="file" accept="image/*,application/pdf" ref={fileInputRef} style={{ display: 'none' }}
+                            onChange={e => { const f = e.target.files[0]; e.target.value = ''; handleScanFile(row, f); }} />
+                          <button className="btn btn-sm btn-outline-info" disabled={scanMutation.isPending} onClick={() => fileInputRef.current?.click()}>
+                            {scanMutation.isPending ? '⏳ Đang trích xuất...' : hasTranscript ? 'Scan other' : 'Scan transcript'}
+                          </button>
+                          {hasTranscript && (
+                            <button className="btn btn-sm btn-outline-primary" disabled={compareMutation.isPending}
+                              onClick={() => handleCompare(row, targetNganh, scanEntry.transcriptJSON)}>
+                              {compareMutation.isPending ? '⏳ Đang đối sánh...' : '⚖️ Phân tích & Đối sánh CTĐT'}
+                            </button>
+                          )}
+                        </div>
+                        {/* ĐÃ THÊM: tên file dài quá thì rút gọn kiểu "đầu...cuối" (xem truncateMiddle) */}
+                        {scanEntry.scanFileName && (
+                          <div className="small text-muted mt-1" title={scanEntry.scanFileName}>File: {truncateMiddle(scanEntry.scanFileName)}</div>
+                        )}
                       </div>
                     </div>
-                    {scores.type === 'thpt' ? (
-                      <>
-                        <div className="col-4">
-                          <div className="border rounded p-2 text-center h-100" style={{ background: '#e8f5e9', borderColor: '#81c784' }}>
-                            <div className="small" style={{ color: '#2e7d32' }}>ĐIỂM TRÚNG TUYỂN / TỔ HỢP</div>
-                            {scores.hasScore ? (
+                    <div className="col-4">
+                      {scores.type === 'thpt' ? (
+                        <div className="border rounded p-2 text-center h-100" style={{ background: '#e8f5e9', borderColor: '#81c784' }}>
+                          <div className="small" style={{ color: '#2e7d32' }}>Điểm trúng tuyển / Tổ hợp / Điểm chuẩn</div>
+                          {scores.hasScore ? (
+                            <>
                               <div className="fw-bold" style={{ color: '#2e7d32' }}>{scores.finalTotalScore} <span className="small text-muted">({scores.bestCombo})</span></div>
-                            ) : <div className="small fst-italic text-muted">Chưa đủ dữ liệu điểm</div>}
-                          </div>
+                              <div className="small text-muted">/ 15</div>
+                            </>
+                          ) : <div className="small fst-italic text-muted">Chưa đủ dữ liệu điểm</div>}
                         </div>
-                        <div className="col-4">
-                          <div className="border rounded p-2 text-center h-100">
-                            <div className="small text-muted">Điểm chuẩn (15đ)</div>
-                            {scores.hasScore ? (
-                              <div className={`fw-bold ${scores.dat ? 'text-success' : 'text-danger'}`}>{scores.dat ? 'ĐẠT' : 'TRƯỢT'}</div>
-                            ) : <div className="text-muted">-</div>}
-                          </div>
+                      ) : (
+                        <div className="border rounded p-2 text-center h-100" style={{ background: '#e8f5e9', borderColor: '#81c784' }}>
+                          <div className="small" style={{ color: '#2e7d32' }}>{scores.dtbLabel}</div>
+                          <div className="fw-bold" style={{ color: '#2e7d32' }}>{scores.dtbVal}</div>
+                          <div className="small text-muted">/ {scores.diemChuanText}</div>
                         </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="col-4">
-                          <div className="border rounded p-2 text-center h-100">
-                            <div className="small text-muted">{scores.dtbLabel}</div>
-                            <div className="fw-bold">{scores.dtbVal}</div>
-                          </div>
-                        </div>
-                        <div className="col-4">
-                          <div className="border rounded p-2 text-center h-100" style={{ background: '#e8f5e9', borderColor: '#81c784' }}>
-                            <div className="small" style={{ color: '#2e7d32' }}>Điểm chuẩn</div>
-                            <div className="fw-bold" style={{ color: '#2e7d32' }}>{scores.diemChuanText}</div>
-                          </div>
-                        </div>
-                      </>
-                    )}
+                      )}
+                    </div>
                   </div>
 
                   {scores.type === 'thpt' && scores.comboResults?.length > 0 && (
@@ -869,34 +1004,6 @@ const ThamDinhPage = () => {
                       </table>
                     </div>
                   )}
-
-                  <div className="alert alert-secondary small mb-0">
-                    Tính năng quét bảng điểm AI / đối sánh CTĐT / xuất template chưa có ở bước này.
-                  </div>
-
-                  <hr className="my-3" />
-                  <h6 className="fw-bold text-primary">📑 Quét bảng điểm AI / Đối sánh CTĐT</h6>
-
-                  <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                    <input type="file" accept="image/*,application/pdf" ref={fileInputRef} style={{ display: 'none' }}
-                      onChange={e => { const f = e.target.files[0]; e.target.value = ''; handleScanFile(row, f); }} />
-                    <button className="btn btn-sm btn-outline-info" disabled={scanMutation.isPending} onClick={() => fileInputRef.current?.click()}>
-                      {scanMutation.isPending ? '⏳ Đang trích xuất...' : hasTranscript ? '🔄 Quét lại bảng điểm' : '📷 Quét bảng điểm (ảnh/PDF)'}
-                    </button>
-                    {scanEntry.scanFileName && <span className="small text-muted">File: {scanEntry.scanFileName}</span>}
-                    {hasTranscript && (
-                      <button className="btn btn-sm btn-outline-primary" disabled={compareMutation.isPending}
-                        onClick={() => handleCompare(row, targetNganh, scanEntry.transcriptJSON)}>
-                        {compareMutation.isPending ? '⏳ Đang đối sánh...' : '⚖️ Phân tích & Đối sánh CTĐT'}
-                      </button>
-                    )}
-                    {hasTranscript && (
-                      <button className="btn btn-sm btn-outline-success" disabled={exportMutation.isPending}
-                        onClick={() => handleExportTemplate(row, targetNganh, scanEntry)}>
-                        {exportMutation.isPending ? '⏳ Đang tạo Excel...' : '📥 Xuất Template Excel'}
-                      </button>
-                    )}
-                  </div>
 
                   {hasTranscript && (
                     <div className="table-responsive mb-3" style={{ maxHeight: 220 }}>
@@ -994,11 +1101,95 @@ const ThamDinhPage = () => {
                       </div>
                     );
                   })()}
+
+                  {/* ĐÃ THÊM: khung nguồn để xuất "Bảng thông tin sơ bộ (PDF)" — đặt ngoài màn
+                      hình (position: fixed, left: -9999px) thay vì display:none vì html2canvas
+                      (bên trong html2pdf.js) KHÔNG chụp được phần tử display:none. Nội dung tiêu
+                      ngữ/chữ ký hiện chỉ là bản nháp — ông/tôi có thể chỉnh lại sau. */}
+                  <div style={{ position: 'fixed', top: 0, left: '-9999px', width: '210mm' }}>
+                    <div id="pdf-thamdinh-content" style={{ color: '#000', fontFamily: '"Times New Roman", Times, serif', padding: '10mm', background: '#fff' }}>
+                      <div className="row text-center mb-4 d-flex flex-nowrap">
+                        <div className="col-5">
+                          <h6 className="mb-0 fw-normal fs-6">BỘ GIÁO DỤC VÀ ĐÀO TẠO</h6>
+                          <h6 className="mb-0 fw-bold fs-6">TRƯỜNG ĐẠI HỌC ....................</h6>
+                          <hr className="mt-1 mb-0 mx-auto" style={{ width: '40%', borderTop: '1.5px solid black' }} />
+                        </div>
+                        <div className="col-7">
+                          <h6 className="mb-0 fw-bold fs-6">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</h6>
+                          <h6 className="mb-0 fw-bold fs-6">Độc lập - Tự do - Hạnh phúc</h6>
+                          <hr className="mt-1 mb-0 mx-auto" style={{ width: '50%', borderTop: '1.5px solid black' }} />
+                        </div>
+                      </div>
+
+                      <div className="text-center mt-4 mb-4">
+                        <h4 className="fw-bold mb-1">BẢNG THÔNG TIN SƠ BỘ THẨM ĐỊNH HỒ SƠ</h4>
+                      </div>
+
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '1rem' }}>
+                        <tbody>
+                          <tr><td style={{ padding: '3px 4px', width: '45%' }}>Họ và tên</td><td style={{ padding: '3px 4px', fontWeight: 'bold' }}>{getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"])}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Mã SV (tự sinh)</td><td style={{ padding: '3px 4px', fontWeight: 'bold' }}>{generateMaSV(row)}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Số CCCD</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '')}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Ngành đào tạo</td><td style={{ padding: '3px 4px' }}>{ownNganh}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Hệ / Hình thức đào tạo</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["HỆ ĐÀO TẠO"])} / {getVal(row, ["HÌNH THỨC ĐÀO TẠO"])}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Đối tượng đầu vào</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"])}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Khu vực / Đối tượng ưu tiên</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["KHU VỰC ƯU TIÊN"])} / {getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"])}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Điểm cộng / Điểm ưu tiên</td><td style={{ padding: '3px 4px' }}>{scores.diemCong ?? 0}đ / {(scores.uuTien ?? 0).toFixed ? scores.uuTien.toFixed(2) : scores.uuTien}đ</td></tr>
+                          <tr>
+                            <td style={{ padding: '3px 4px' }}>{scores.type === 'thpt' ? 'Điểm trúng tuyển / Tổ hợp / Điểm chuẩn' : scores.dtbLabel}</td>
+                            <td style={{ padding: '3px 4px', fontWeight: 'bold' }}>
+                              {scores.type === 'thpt'
+                                ? (scores.hasScore ? `${scores.finalTotalScore} (${scores.bestCombo}) / 15` : 'Chưa đủ dữ liệu điểm')
+                                : `${scores.dtbVal} / ${scores.diemChuanText}`}
+                            </td>
+                          </tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Trạng thái thẩm định</td><td style={{ padding: '3px 4px' }}>{state}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Hồ sơ</td><td style={{ padding: '3px 4px' }}>{missing.length > 0 ? `Thiếu: ${missing.join(', ')}` : 'Đã nộp đủ hồ sơ hợp lệ'}</td></tr>
+                        </tbody>
+                      </table>
+
+                      <p className="mt-4" style={{ fontStyle: 'italic' }}>(Tiêu ngữ / chữ ký chính thức sẽ được bổ sung sau)</p>
+
+                      <div className="row mt-5 d-flex flex-nowrap">
+                        <div className="col-6"></div>
+                        <div className="col-6 text-center">
+                          <p className="fst-italic mb-1">......, ngày ..... tháng ..... năm {today.getFullYear()}</p>
+                          <h6 className="fw-bold mb-4 pb-4">CÁN BỘ THẨM ĐỊNH</h6>
+                          <p className="mt-5 pt-3 fst-italic">(Ký và ghi rõ họ tên)</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div className="modal-footer">
                   <button className="btn btn-warning" disabled={btnMissingDisabled} onClick={() => triggerMissing(row)}>{btnMissingText}</button>
                   <button className="btn btn-primary" disabled={btnSaveDisabled} onClick={() => triggerSave(row)}>{btnSaveText}</button>
                   <button className="btn btn-success" disabled={btnApproveDisabled} onClick={() => triggerApprove(row)}>{btnApproveText}</button>
+                  {/* ĐÃ THÊM: nút "Xuất file" — tự dựng menu xổ xuống bằng React state (dự án
+                      không có Bootstrap JS/react-bootstrap, xem ghi chú exportMenuOpen phía trên).
+                      Menu mở LÊN TRÊN (dropup, bottom:100%) vì nút nằm ở footer cuối modal. */}
+                  <div className="dropdown position-relative" ref={exportMenuRef}>
+                    <button className="btn btn-outline-dark dropdown-toggle" type="button"
+                      onClick={() => setExportMenuOpen(o => !o)} disabled={pdfExporting}>
+                      {pdfExporting ? '⏳ Đang tạo PDF...' : '📤 Xuất file'}
+                    </button>
+                    {exportMenuOpen && (
+                      <ul className="dropdown-menu show" style={{ position: 'absolute', bottom: '100%', top: 'auto', right: 0, left: 'auto' }}>
+                        <li>
+                          <button type="button" className="dropdown-item" onClick={() => { setExportMenuOpen(false); handlePdfExport('pdf-thamdinh-content', `PhieuThamDinh_${generateMaSV(row)}.pdf`); }}>
+                            Bảng thông tin sơ bộ (PDF)
+                          </button>
+                        </li>
+                        <li>
+                          <button type="button" className="dropdown-item" disabled={!hasTranscript || exportMutation.isPending}
+                            title={!hasTranscript ? 'Cần quét bảng điểm trước' : ''}
+                            onClick={() => { setExportMenuOpen(false); handleExportTemplate(row, targetNganh, scanEntry); }}>
+                            {exportMutation.isPending ? '⏳ Đang tạo Excel...' : 'Bảng kết quả và đối sánh (Excel)'}
+                          </button>
+                        </li>
+                      </ul>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
