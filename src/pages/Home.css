@@ -96,3 +96,18 @@
 @media (max-width: 576px) {
   .home-card-grid { grid-template-columns: 1fr; }
 }
+
+/* ========================================================
+   ĐÃ THÊM: ẢNH TRANG TRÍ PHÍA DƯỚI LƯỚI THẺ
+   Là 1 khối bình thường trong dòng chảy trang (không absolute) — nằm SAU lưới thẻ
+   nên không bao giờ đè lên dòng chào hay bất kỳ thẻ nào. Ảnh rõ nét nhất ở nửa
+   dưới của chính khối này; mép TRÊN tự mờ dần từ trắng (đúng màu nền trang phía
+   trên nó) xuống ảnh, để không bị đường ranh giới cứng ngay chỗ giáp lưới thẻ.
+   ======================================================== */
+.home-bg-banner {
+  margin-top: 28px;
+  height: clamp(200px, 26vw, 320px);
+  border-radius: 16px;
+  background-size: cover;
+  background-position: center;
+}

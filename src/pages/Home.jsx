@@ -7,6 +7,12 @@ import imgNhapLieu from '../assets/nhaplieu.jpg';
 import imgThamDinh from '../assets/thamdinh.jpg';
 import imgThongKe from '../assets/thongke.jpg';
 import imgCauHinh from '../assets/cauhinh.jpg';
+// ĐÃ THÊM: ảnh nền (banner) phía trên cùng trang chủ. File đang là ảnh placeholder
+// (gradient teal) do tui tạm tạo để code không lỗi — ông chỉ cần THAY THẾ đúng file
+// này (giữ nguyên tên home-bg.jpg, nằm trong src/assets/) bằng ảnh ông chọn là xong,
+// không cần sửa code gì thêm. Ảnh nên nằm ngang (khổ rộng, VD 1600x500 hoặc tỉ lệ gần
+// giống) vì banner chỉ cao ~ khoảng 300px nhưng chạy hết chiều ngang trang.
+import imgHomeBg from '../assets/home-bg.jpg';
 
 // DANH SÁCH THẺ CHỨC NĂNG — mỗi thẻ ứng với 1 route đã có sẵn trong App.jsx, cùng
 // điều kiện phân quyền y hệt menu ngang (hasAnyRole) để Trang chủ không lộ ra
@@ -16,8 +22,8 @@ import imgCauHinh from '../assets/cauhinh.jpg';
 const CARDS = [
   {
     key: 'admissions',
-    title: 'Thu hồ sơ nhập học',
-    desc: 'Tiếp nhận trực tiếp và theo dõi hồ sơ sinh viên trúng tuyển..',
+    title: 'Quản lý hồ sơ nhập học',
+    desc: 'Tiếp nhận, chỉnh sửa và theo dõi hồ sơ sinh viên trúng tuyển.',
     icon: 'bi-people-fill',
     to: '/thu-ho-so-nhap-hoc',
     roles: ['CanBo'],
@@ -27,7 +33,7 @@ const CARDS = [
   {
     key: 'xettuyen',
     title: 'Nhập liệu Xét tuyển',
-    desc: 'Nhập thông tin tuyển sinh, tra cứu, quản lý hồ sơ.',
+    desc: 'Đẩy hồ sơ ứng viên, tra cứu hồ sơ cũ, quét CCCD nhanh.',
     icon: 'bi-card-checklist',
     to: '/xet-tuyen',
     roles: ['TuyenSinh', 'ThamDinh'],
@@ -37,7 +43,7 @@ const CARDS = [
   {
     key: 'thamdinh',
     title: 'Ban Thẩm định',
-    desc: 'Thẩm định hồ sơ, đối sánh chương trình, xét duyệt trúng tuyển.',
+    desc: 'Rà soát hồ sơ, chấm điểm, xét duyệt trúng tuyển.',
     icon: 'bi-clipboard-check',
     to: '/tham-dinh',
     roles: ['ThamDinh'],
@@ -47,7 +53,7 @@ const CARDS = [
   {
     key: 'settings',
     title: 'Cấu hình hệ thống',
-    desc: 'Quản lý danh mục và cài đặt hệ thống.',
+    desc: 'Quản lý danh mục ngành, tài khoản, thiết lập chung.',
     icon: 'bi-gear-fill',
     to: '/settings',
     roles: ['Admin'],
@@ -57,7 +63,7 @@ const CARDS = [
   {
     key: 'stats',
     title: 'Thống kê cá nhân',
-    desc: 'Tổng hợp dữ liệu đã xử lý theo thời gian.',
+    desc: 'Xem lại số liệu thao tác của riêng bạn trên hệ thống.',
     icon: 'bi-graph-up-arrow',
     to: '/user-stats',
     roles: [], // ai đã đăng nhập cũng vào được
@@ -101,6 +107,15 @@ const Home = ({ currentUser }) => {
   // sáng hay tối — đậm dần xuống phía dưới, đúng chỗ đặt tiêu đề/mô tả.
   const PHOTO_SCRIM = 'linear-gradient(180deg, rgba(15,23,42,0.30) 0%, rgba(15,23,42,0.50) 45%, rgba(15,23,42,0.82) 100%)';
 
+  // ĐÃ SỬA: lúc trước để banner CHE lên đầu trang (trên dòng chào) rồi fade DẦN
+  // XUỐNG, thành ra ảnh rõ ở TRÊN, trắng ở DƯỚI — ngược ý ông muốn. Giờ đổi lại:
+  // banner nằm Ở DƯỚI lưới thẻ (không đè lên dòng chào hay thẻ nào cả, chỉ là 1
+  // khối trang trí thêm vào SAU cùng), ảnh rõ nét nhất ở phần dưới của chính nó,
+  // mép TRÊN của banner mới là chỗ fade mờ dần từ trắng (hoà vào màu nền trắng
+  // của cả trang phía trên nó) xuống ảnh — để không bị đường ranh giới cứng ngay
+  // chỗ tiếp giáp với lưới thẻ.
+  const HOME_BG_FADE = 'linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.7) 18%, rgba(255,255,255,0.25) 40%, rgba(255,255,255,0) 65%)';
+
   return (
     <div className="home-wrapper">
       <div className="home-welcome mb-4">
@@ -133,6 +148,15 @@ const Home = ({ currentUser }) => {
       {visibleCards.length === 0 && (
         <div className="alert alert-warning">Tài khoản của bạn chưa được phân quyền sử dụng chức năng nào.</div>
       )}
+
+      {/* ĐÃ THÊM: banner ảnh trang trí SAU cùng, nằm dưới lưới thẻ theo dòng chảy
+          bình thường (không absolute, không đè lên gì) — ảnh rõ nét ở nửa dưới,
+          mép trên tự mờ hoà vào nền trắng phía trên nó. */}
+      <div
+        className="home-bg-banner"
+        style={{ backgroundImage: `${HOME_BG_FADE}, url(${imgHomeBg})` }}
+        aria-hidden="true"
+      ></div>
     </div>
   );
 };
