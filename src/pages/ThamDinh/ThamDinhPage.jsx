@@ -12,7 +12,14 @@ import {
   calculateScores, isSafeDriveUrl, getCandidateScanKey
 } from './thamDinhHelpers';
 import { DICT_NGANH } from './thamDinhConfig';
+import DateRangePicker from './DateRangePicker';
 import './ThamDinh.css';
+
+// ĐÃ THÊM: hồ sơ đến từ trang "Thu hồ sơ nhập học" (kênh "Thu hồ sơ trực tiếp") đã trúng
+// tuyển sẵn khi tạo, KHÔNG đi qua luồng thẩm định/duyệt của Xét tuyển — dùng để (1) ẩn/hiện
+// mặc định trong bảng, (2) khoá các nút Duyệt/Báo thiếu để không ai lỡ tay ghi đè trạng
+// thái "Đã trúng tuyển" của hồ sơ này thành "Đã duyệt"/"Đã báo thiếu".
+const KENH_TRUC_TIEP = "Thu hồ sơ trực tiếp";
 
 // ===================================================================
 // TRANG BAN THẨM ĐỊNH — Pha 3 (KPI/bộ lọc/bảng, chỉ đọc) + Pha 4 (Duyệt trúng
@@ -76,6 +83,10 @@ const ThamDinhPage = () => {
   const [filterDoiTuong, setFilterDoiTuong] = useState('');
   const [filterHoSo, setFilterHoSo] = useState('');
   const [filterThamDinh, setFilterThamDinh] = useState(''); // ĐÃ THÊM: lọc theo Trạng thái thẩm định
+  // ĐÃ THÊM: mặc định ẨN hồ sơ kênh "Thu hồ sơ trực tiếp" (Nhập học) — chủ động bật lên
+  // mới thấy. Đây là filter thuần client-side trên rawData đã tải sẵn nên bật/tắt cập
+  // nhật bảng NGAY, không cần gọi lại server.
+  const [showTrucTiep, setShowTrucTiep] = useState(false);
   const [sortBy, setSortBy] = useState('date_desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
@@ -133,6 +144,8 @@ const ThamDinhPage = () => {
         if (fDate && rowDateMs < fDate.getTime()) return false;
         if (tDate && rowDateMs > tDate.getTime()) return false;
       }
+      // ĐÃ THÊM: mặc định ẩn hồ sơ kênh "Thu hồ sơ trực tiếp" — bật showTrucTiep mới hiện.
+      if (!showTrucTiep && getVal(row, ["KÊNH NỘP"]) === KENH_TRUC_TIEP) return false;
       if (filterNganh && getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]) !== filterNganh) return false;
       if (filterDoiTuong && getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"]) !== filterDoiTuong) return false;
       // ĐÃ THÊM: lọc theo Trạng thái thẩm định (tính cả localOverrides qua getEffectiveState,
@@ -155,12 +168,12 @@ const ThamDinhPage = () => {
     else if (sortBy === "date_asc") result.sort((a, b) => getRawDateNumber(a) - getRawDateNumber(b));
     else if (sortBy === "score_desc") result.sort((a, b) => getRawScoreNumber(b) - getRawScoreNumber(a));
     else if (sortBy === "status") {
-      const statusRank = { "Đang chờ duyệt": 1, "Mới bổ sung": 2, "Đã báo thiếu": 3, "Đã duyệt": 4 };
-      result.sort((a, b) => (statusRank[getEffectiveState(a)] || 5) - (statusRank[getEffectiveState(b)] || 5));
+      const statusRank = { "Đang chờ duyệt": 1, "Mới bổ sung": 2, "Đã báo thiếu": 3, "Đã duyệt": 4, "Đã trúng tuyển": 5 };
+      result.sort((a, b) => (statusRank[getEffectiveState(a)] || 6) - (statusRank[getEffectiveState(b)] || 6));
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawData, dateFrom, dateTo, filterNganh, filterDoiTuong, filterHoSo, filterThamDinh, search, sortBy, localOverrides]);
+  }, [rawData, dateFrom, dateTo, filterNganh, filterDoiTuong, filterHoSo, filterThamDinh, search, sortBy, localOverrides, showTrucTiep]);
 
   const kpi = useMemo(() => ({
     total: filteredData.length,
@@ -184,12 +197,14 @@ const ThamDinhPage = () => {
     setDateFrom(defaultDateFrom); setDateTo(defaultDateTo);
     setFilterNganh(''); setFilterDoiTuong('');
     setFilterHoSo(''); setFilterThamDinh(''); setSortBy('date_desc'); setCurrentPage(1);
+    setShowTrucTiep(false);
   };
 
   // ĐÃ THÊM: có đang khác trạng thái mặc định hay không -> quyết định màu nút "Xóa lọc"
   // (yêu cầu: bình thường không màu, nổi cam nhạt khi người dùng đã chọn/nhập gì đó).
   const isFilterActive = search !== '' || dateFrom !== defaultDateFrom || dateTo !== defaultDateTo ||
-    filterNganh !== '' || filterDoiTuong !== '' || filterHoSo !== '' || filterThamDinh !== '' || sortBy !== 'date_desc';
+    filterNganh !== '' || filterDoiTuong !== '' || filterHoSo !== '' || filterThamDinh !== '' || sortBy !== 'date_desc' ||
+    showTrucTiep !== false;
 
   const toggleSelect = (key, checked) => {
     setSelectedKeys(prev => {
@@ -205,6 +220,8 @@ const ThamDinhPage = () => {
   // ưu tiên hiển thị "Đã lưu" trước mọi trạng thái khác — kiểm tra saved TRƯỚC state.
   const stateBadge = (state, saved) => {
     if (saved) return { text: "Đã lưu", cls: "btn-secondary" };
+    // ĐÃ THÊM: hồ sơ Thu hồ sơ trực tiếp (Nhập học) — nhãn riêng, tách rõ khỏi luồng thẩm định.
+    if (state === "Đã trúng tuyển") return { text: "Đã trúng tuyển (NH)", cls: "btn-dark" };
     if (state === "Đã duyệt") return { text: "Đã duyệt", cls: "btn-success" };
     if (state === "Đã báo thiếu") return { text: "Đã yêu cầu BS", cls: "btn-warning" };
     if (state === "Mới bổ sung") return { text: "Mới bổ sung", cls: "btn-info" };
@@ -344,15 +361,28 @@ const ThamDinhPage = () => {
     }
   };
 
+  // ĐÃ THÊM: gửi kèm kenhNop (cột KÊNH NỘP) — backend (action trungTuyen/baoThieu) giờ
+  // đối chiếu thêm cột này (ngoài CCCD + Ngành) trước khi ghi đè TRẠNG THÁI THẨM ĐỊNH,
+  // để không lỡ ghi đè nhầm sang hồ sơ khác kênh trùng CCCD+Ngành.
   const buildTrungTuyenPayload = (row) => ({
     soCCCD: getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, ''),
     hoTen: getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]),
     nganh: getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]),
     ngaySinh: getVal(row, ["NGÀNH SINH", "NGÀY SINH"]),
     ngayCapNhat: nowVnDate(),
+    kenhNop: getVal(row, ["KÊNH NỘP"]),
   });
 
+  // ĐÃ THÊM: chặn ngay từ đầu nếu lỡ gọi trigger cho hồ sơ kênh "Thu hồ sơ trực tiếp" —
+  // hồ sơ này không thuộc luồng thẩm định Xét tuyển (nút bấm cũng đã bị khoá ở UI, đây
+  // là lớp phòng vệ thứ 2, phòng khi trigger được gọi từ chỗ khác sau này).
+  const isTrucTiepKenh = (row) => getVal(row, ["KÊNH NỘP"]) === KENH_TRUC_TIEP;
+
   const triggerApprove = async (row) => {
+    if (isTrucTiepKenh(row)) {
+      Swal.fire({ icon: 'info', title: 'Không thuộc luồng thẩm định', text: 'Hồ sơ này đến từ trang Thu hồ sơ nhập học (đã trúng tuyển sẵn), không cần và không nên duyệt lại ở đây.' });
+      return;
+    }
     const missingTQ = getMissingTienQuyet(row);
     if (missingTQ.length > 0) {
       Swal.fire({ icon: 'error', title: 'Không được duyệt!', text: `Thí sinh đang nợ HỒ SƠ TIÊN QUYẾT: ${missingTQ.join(', ')}` });
@@ -373,6 +403,10 @@ const ThamDinhPage = () => {
   };
 
   const triggerMissing = async (row) => {
+    if (isTrucTiepKenh(row)) {
+      Swal.fire({ icon: 'info', title: 'Không thuộc luồng thẩm định', text: 'Hồ sơ này đến từ trang Thu hồ sơ nhập học (đã trúng tuyển sẵn), không thuộc diện báo thiếu hồ sơ ở đây.' });
+      return;
+    }
     const hoTen = getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]);
     const missingArray = getMissingDocs(row);
     const defaultText = missingArray.length > 0 ? missingArray.join(', ') : "Bản sao Học bạ THPT";
@@ -389,6 +423,7 @@ const ThamDinhPage = () => {
       soCCCD: getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, ''),
       hoTen, nganh: getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]),
       hosoThieu: "Thiếu: " + hosoThieu, ngayCapNhat: nowVnDate(),
+      kenhNop: getVal(row, ["KÊNH NỘP"]),
     };
     try {
       await missingMutation.mutateAsync([payload]);
@@ -466,11 +501,13 @@ const ThamDinhPage = () => {
       let reason = null;
       const state = getEffectiveState(row);
       if (type === 'duyet') {
-        if (state === "Đã duyệt") reason = "đã duyệt";
+        if (isTrucTiepKenh(row)) reason = "hồ sơ Thu hồ sơ trực tiếp (không thuộc luồng thẩm định)";
+        else if (state === "Đã duyệt") reason = "đã duyệt";
         else if (state === "Đã báo thiếu") reason = "đã báo thiếu";
         else if (getMissingTienQuyet(row).length > 0) reason = "thiếu hồ sơ tiên quyết";
       } else if (type === 'baothieu') {
-        if (state === "Đã duyệt") reason = "đã duyệt";
+        if (isTrucTiepKenh(row)) reason = "hồ sơ Thu hồ sơ trực tiếp (không thuộc luồng thẩm định)";
+        else if (state === "Đã duyệt") reason = "đã duyệt";
         else if (state === "Đã báo thiếu") reason = "đã báo thiếu";
       } else if (type === 'luucsdl') {
         if (getEffectiveSaved(row)) reason = "đã lưu vào CSDL";
@@ -510,6 +547,7 @@ const ThamDinhPage = () => {
           hoTen: getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]),
           nganh: getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]),
           hosoThieu: "Thiếu: " + text, ngayCapNhat: nowVnDate(),
+          kenhNop: getVal(row, ["KÊNH NỘP"]),
         };
       });
     } else {
@@ -650,13 +688,16 @@ const ThamDinhPage = () => {
               <input type="search" className="form-control form-control-sm" placeholder="🔎 Mã SV / CCCD / Họ tên..."
                 value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
             </div>
-            <div className="col-6 td-col-date">
-              <label className="form-label small fw-bold mb-1">Từ ngày</label>
-              <input type="date" className="form-control form-control-sm" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }} />
-            </div>
-            <div className="col-6 td-col-date">
-              <label className="form-label small fw-bold mb-1">Đến ngày</label>
-              <input type="date" className="form-control form-control-sm" value={dateTo} onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }} />
+            {/* ĐÃ SỬA: gộp "Từ ngày"/"Đến ngày" thành 1 ô "Thời gian" — bấm mở lịch tháng,
+                bấm 2 lần chọn 2 mốc của khoảng (không cần đúng thứ tự), kiểu chọn ngày
+                quen thuộc của các trang đặt phòng khách sạn. Xem DateRangePicker.jsx. */}
+            <div className="col-6 td-col-thoigian">
+              <label className="form-label small fw-bold mb-1">Thời gian</label>
+              <DateRangePicker
+                from={dateFrom}
+                to={dateTo}
+                onChange={(lo, hi) => { setDateFrom(lo); setDateTo(hi); setCurrentPage(1); }}
+              />
             </div>
             <div className="col-6 td-col-nganh">
               <label className="form-label small fw-bold mb-1">Ngành đào tạo</label>
@@ -672,7 +713,20 @@ const ThamDinhPage = () => {
                 {doiTuongOptions.map(dt => <option key={dt} value={dt}>{dt}</option>)}
               </select>
             </div>
-
+            {/* ĐÃ SỬA: nút "Xoá bộ lọc" trước đây chỉ có icon (bi-x-circle) -> trên máy
+                không tải được font icon thì trông như 1 ô trắng trống trơn. Giờ luôn có
+                chữ "Xóa lọc" rõ ràng; màu mặc định trung tính (không nổi bật), tự động
+                chuyển cam nhạt khi isFilterActive = true (đang có ít nhất 1 điều kiện lọc
+                khác mặc định) — xem 2 class .thamdinh-reset-btn/-active trong CSS. */}
+            <div className="col-6 td-col-reset">
+              <button
+                className={`btn btn-sm w-100 ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
+                onClick={resetFilters}
+                title="Xóa bộ lọc, quay về mặc định"
+              >
+                <i className="bi bi-x-circle me-1"></i>Xóa lọc
+              </button>
+            </div>
             <div className="col-6 td-col-hoso-status">
               <label className="form-label small fw-bold mb-1">Trạng thái hồ sơ</label>
               <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
@@ -692,6 +746,7 @@ const ThamDinhPage = () => {
                 <option value="Mới bổ sung">Mới bổ sung</option>
                 <option value="Đã báo thiếu">Đã báo thiếu</option>
                 <option value="Đã duyệt">Đã duyệt</option>
+                <option value="Đã trúng tuyển">Đã trúng tuyển (Nhập học)</option>
               </select>
             </div>
             <div className="col-6 td-col-sort">
@@ -703,18 +758,18 @@ const ThamDinhPage = () => {
                 <option value="status">Theo trạng thái</option>
               </select>
             </div>
-                        {/* ĐÃ SỬA: nút "Xoá bộ lọc" trước đây chỉ có icon (bi-x-circle) -> trên máy
-                không tải được font icon thì trông như 1 ô trắng trống trơn. Giờ luôn có
-                chữ "Xóa lọc" rõ ràng; màu mặc định trung tính (không nổi bật), tự động
-                chuyển cam nhạt khi isFilterActive = true (đang có ít nhất 1 điều kiện lọc
-                khác mặc định) — xem 2 class .thamdinh-reset-btn/-active trong CSS. */}
-            <div className="col-6 td-col-reset">
+            {/* ĐÃ THÊM: nút hiện/ẩn hồ sơ kênh "Thu hồ sơ trực tiếp" (trang Nhập học) —
+                mặc định TẮT (ẩn), bấm vào để hiện thêm. Chỉ lọc lại filteredData (đã tải
+                sẵn trong rawData) nên bảng cập nhật ngay, không cần gọi lại server. */}
+            <div className="col-6 td-col-tructiep">
+              <label className="form-label small fw-bold mb-1 d-block">&nbsp;</label>
               <button
-                className={`btn btn-sm w-100 ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
-                onClick={resetFilters}
-                title="Xóa bộ lọc, quay về mặc định"
+                type="button"
+                className={`btn btn-sm w-100 ${showTrucTiep ? 'btn-info text-white' : 'btn-outline-secondary'}`}
+                onClick={() => { setShowTrucTiep(v => !v); setCurrentPage(1); }}
+                title="Hiện/ẩn hồ sơ từ trang Thu hồ sơ nhập học (kênh Thu hồ sơ trực tiếp)"
               >
-                <i className="bi bi-x-circle me-1"></i>Xóa lọc
+                <i className="bi bi-person-check me-1"></i>Nhập học trực tiếp
               </button>
             </div>
           </div>
@@ -840,6 +895,7 @@ const ThamDinhPage = () => {
         const saved = getEffectiveSaved(row);
         const isDuyet = state === "Đã duyệt";
         const isBaoThieu = state === "Đã báo thiếu";
+        const isTrucTiep = isTrucTiepKenh(row);
         const missingTQ = getMissingTienQuyet(row);
         const missing = getMissingDocs(row);
         const scores = calculateScores(row, targetNganh);
@@ -853,15 +909,16 @@ const ThamDinhPage = () => {
         // ĐÃ THÊM (Pha 5): khi đang "khảo sát ngành khác" (targetNganh != ngành đăng ký
         // thật), khoá cả 3 nút hành động — giống hệt bản cũ (isSurveying trong
         // updateModalActionButtons), tránh lỡ tay duyệt/lưu nhầm theo ngành đang xem thử.
-        const btnApproveDisabled = isSurveying || isDuyet || isBaoThieu || missingTQ.length > 0 || approveMutation.isPending;
+        const btnApproveDisabled = isSurveying || isDuyet || isBaoThieu || isTrucTiep || missingTQ.length > 0 || approveMutation.isPending;
         const btnApproveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác'
           : approveMutation.isPending ? '⏳ Đang xuất Biên nhận...'
+          : isTrucTiep ? '— Ngoài luồng thẩm định —'
           : isDuyet ? 'Đã duyệt'
           : missingTQ.length > 0 ? '❌ Thiếu HS Tiên Quyết'
           : '✅ DUYỆT TRÚNG TUYỂN';
 
-        const btnMissingDisabled = isSurveying || isDuyet || isBaoThieu || missingMutation.isPending;
-        const btnMissingText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : missingMutation.isPending ? '⏳ Đang xử lý...' : isBaoThieu ? 'Đã Y/C bổ sung' : '⚠️ Y/C BỔ SUNG HS';
+        const btnMissingDisabled = isSurveying || isDuyet || isBaoThieu || isTrucTiep || missingMutation.isPending;
+        const btnMissingText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : isTrucTiep ? '— Ngoài luồng thẩm định —' : missingMutation.isPending ? '⏳ Đang xử lý...' : isBaoThieu ? 'Đã Y/C bổ sung' : '⚠️ Y/C BỔ SUNG HS';
 
         const btnSaveDisabled = isSurveying || saved || saveMutation.isPending;
         const btnSaveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : saveMutation.isPending ? '⏳ Đang lưu...' : saved ? 'Đã lưu vào CSDL' : '💾 LƯU VÀO CSDL';

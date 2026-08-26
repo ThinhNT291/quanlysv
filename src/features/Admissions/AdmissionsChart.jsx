@@ -9,7 +9,7 @@ const AdmissionsChart = ({ students }) => {
     let chuaNhap = 0;
     
     students.forEach(sv => {
-      if (sv.TrangThai === 'Đã nhập trường' || sv.TrangThai === 1 || sv.TrangThai === 'TRUE' || sv.TrangThai === true) {
+      if (String(sv['TRẠNG THÁI THẨM ĐỊNH'] || '').trim() === 'Đã trúng tuyển') {
         daNhap++;
       } else {
         chuaNhap++;
@@ -28,7 +28,7 @@ const AdmissionsChart = ({ students }) => {
     const counts = {};
     
     students.forEach(sv => {
-      const nganh = sv.Nganh || 'Chưa phân ngành';
+      const nganh = sv['NGÀNH'] || 'Chưa phân ngành';
       counts[nganh] = (counts[nganh] || 0) + 1;
     });
 

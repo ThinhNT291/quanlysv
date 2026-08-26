@@ -129,14 +129,18 @@
    Bootstrap (2 ô/hàng) như cũ để không vỡ layout trên điện thoại.
    ======================================================== */
 @media (min-width: 768px) {
-  .thamdinh-filter-row .td-col-quick           { flex: 0 0 14.5%; max-width: 14.5%; } /* Tìm nhanh */
-  .thamdinh-filter-row .td-col-date            { flex: 0 0 9.5%;    max-width: 9.5%; }    /* Từ ngày / Đến ngày */
+  .thamdinh-filter-row .td-col-quick           { flex: 0 0 11.111%; max-width: 11.111%; } /* Tìm nhanh */
+  /* ĐÃ SỬA: gộp 2 ô "Từ ngày"/"Đến ngày" (8% x 2 = 16%) cũ thành 1 ô "Thời gian" (bộ
+     chọn khoảng, xem DateRangePicker.jsx) — phần rộng dôi ra dành cho nút "Nhập học
+     trực tiếp" mới ở cuối hàng lọc (td-col-tructiep). */
+  .thamdinh-filter-row .td-col-thoigian        { flex: 0 0 11%;     max-width: 11%; }     /* Thời gian (khoảng ngày) */
   .thamdinh-filter-row .td-col-nganh           { flex: 0 0 12.5%;   max-width: 12.5%; }   /* Ngành đào tạo */
   .thamdinh-filter-row .td-col-doituong        { flex: 0 0 15%;     max-width: 15%; }     /* Đối tượng đầu vào */
-  .thamdinh-filter-row .td-col-reset           { flex: 0 0 8%;      max-width: 8%; }      /* nút Xóa lọc */
+  .thamdinh-filter-row .td-col-reset           { flex: 0 0 5%;      max-width: 5%; }      /* nút Xóa lọc */
   .thamdinh-filter-row .td-col-hoso-status     { flex: 0 0 7.5%;    max-width: 7.5%; }    /* Trạng thái hồ sơ */
   .thamdinh-filter-row .td-col-thamdinh-status { flex: 0 0 11.25%;  max-width: 11.25%; }  /* Trạng thái thẩm định */
-  .thamdinh-filter-row .td-col-sort            { flex: 0 0 12%;  max-width: 12%; }  /* Sắp xếp */
+  .thamdinh-filter-row .td-col-sort            { flex: 0 0 9.375%;  max-width: 9.375%; }  /* Sắp xếp */
+  .thamdinh-filter-row .td-col-tructiep        { flex: 0 0 8%;      max-width: 8%; }      /* Nút Nhập học trực tiếp */
 }
 
 /* Nút "Xóa lọc" — bình thường trung tính (không màu nổi bật), chỉ chuyển cam nhạt
@@ -163,6 +167,57 @@
   background-color: #ffdcb0;
   border-color: #ff9f40;
   color: #5c2f00;
+}
+
+/* ========================================================
+   ĐÃ THÊM: BỘ CHỌN KHOẢNG THỜI GIAN (DateRangePicker.jsx) — thay 2 ô Từ ngày/Đến ngày cũ
+   ======================================================== */
+.thamdinh-daterange-trigger {
+  cursor: pointer;
+  background-color: #fff;
+}
+.thamdinh-daterange-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1050;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 10px;
+  width: 260px;
+}
+.thamdinh-daterange-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.thamdinh-daterange-weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6c757d;
+  padding: 2px 0;
+}
+.thamdinh-daterange-day {
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  padding: 5px 0;
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+.thamdinh-daterange-day:hover {
+  background-color: #e3f2f3;
+}
+.thamdinh-daterange-day.in-range {
+  background-color: #d0ebec;
+}
+.thamdinh-daterange-day.edge {
+  background-color: #037683;
+  color: #fff;
+  font-weight: 700;
 }
 
 /* ========================================================

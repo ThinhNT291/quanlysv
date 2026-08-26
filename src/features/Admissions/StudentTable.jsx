@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchStudents, addStudent, deleteStudent, updateStudent, toggleStatusStudent, importStudentsToAdmissions } from '../../api/studentApi';
+import { fetchAdmissions, addAdmission, deleteAdmission, updateAdmission, toggleAdmissionField, importAdmissions } from '../../api/studentApi';
 import moment from 'moment';
 import Swal from 'sweetalert2';
 import * as XLSX from 'xlsx';
@@ -8,55 +8,64 @@ import AddStudentModal from './AddStudentModal';
 import ImportModal from './ImportModal';
 import PrintModal from './PrintModal'; // Kéo cái máy in vào đây
 
+// ĐÃ VIẾT LẠI TOÀN BỘ: trang Thu hồ sơ giờ đọc/ghi thẳng sheet Trung Gian (không còn
+// sheet SinhVien riêng) — key đối tượng sinh viên giờ là TÊN CỘT TRUNG GIAN thật (viết
+// hoa, có dấu, VD "TÊN SINH VIÊN", "MÃ SINH VIÊN"...) thay vì camelCase cũ (HoTen, MaSV...).
+const STATUS_FIELD = 'TRẠNG THÁI THẨM ĐỊNH';
+const STATUS_VALUE = 'Đã trúng tuyển';
+const MASV_FIELD = 'MÃ SINH VIÊN';
+
+const isXnNhapHoc = (sv) => String(sv?.[STATUS_FIELD] || '').trim() === STATUS_VALUE;
+
 const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
   const queryClient = useQueryClient();
-  
+
   const [showModal, setShowModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [printingStudent, setPrintingStudent] = useState(null); // State quản lý việc in
   const [editingStudent, setEditingStudent] = useState(null);
 
-  const [visibleCount, setVisibleCount] = useState(20); 
+  const [visibleCount, setVisibleCount] = useState(20);
   const observerTarget = useRef(null);
 
   const { data: students, isLoading, isError, error } = useQuery({
-    queryKey: ['students'],
-    queryFn: fetchStudents,
+    queryKey: ['admissions'],
+    queryFn: fetchAdmissions,
   });
 
-  const addMutation = useMutation({ mutationFn: addStudent, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); Swal.fire('Thành công!', 'Đã thêm hồ sơ', 'success'); setShowModal(false); }, onError: (err) => Swal.fire('Lỗi', err.message, 'error') });
-  const updateMutation = useMutation({ mutationFn: updateStudent, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); Swal.fire('Thành công!', 'Đã cập nhật', 'success'); setShowModal(false); setEditingStudent(null); }, onError: (err) => Swal.fire('Lỗi', err.message, 'error') });
-  const deleteMutation = useMutation({ mutationFn: deleteStudent, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); Swal.fire('Đã xóa!', 'Hồ sơ đã bị xóa.', 'success'); }, onError: (err) => Swal.fire('Lỗi', err.message, 'error') });
-  
-  const importMutation = useMutation({ 
-    // ĐÃ SỬA: dùng đúng importStudentsToAdmissions (ghi vào sheet SinhVien) thay vì
-    // importStudents cũ (ghi nhầm vào sheet TrungGian của luồng Xét tuyển)
-    mutationFn: importStudentsToAdmissions, 
-    onSuccess: (result) => { 
-      queryClient.invalidateQueries({ queryKey: ['students'] }); 
+  const addMutation = useMutation({ mutationFn: addAdmission, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admissions'] }); Swal.fire('Thành công!', 'Đã thêm hồ sơ', 'success'); setShowModal(false); }, onError: (err) => Swal.fire('Lỗi', err.message, 'error') });
+  const updateMutation = useMutation({ mutationFn: updateAdmission, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admissions'] }); Swal.fire('Thành công!', 'Đã cập nhật', 'success'); setShowModal(false); setEditingStudent(null); }, onError: (err) => Swal.fire('Lỗi', err.message, 'error') });
+  const deleteMutation = useMutation({ mutationFn: deleteAdmission, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admissions'] }); Swal.fire('Đã xóa!', 'Hồ sơ đã bị xóa.', 'success'); }, onError: (err) => Swal.fire('Lỗi', err.message, 'error') });
+
+  const importMutation = useMutation({
+    mutationFn: importAdmissions,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['admissions'] });
       const addedMsg = result ? `Đã thêm ${result.added} hồ sơ mới` + (result.skipped ? `, bỏ qua ${result.skipped} hồ sơ trùng Mã SV.` : '.') : 'Đã nạp danh sách từ Excel';
-      Swal.fire('Thành công!', addedMsg, 'success'); 
-      setShowImportModal(false); 
-    }, 
-    onError: (err) => Swal.fire('Lỗi', err.message, 'error') 
+      Swal.fire('Thành công!', addedMsg, 'success');
+      setShowImportModal(false);
+    },
+    onError: (err) => Swal.fire('Lỗi', err.message, 'error')
   });
 
+  // Toggle nhanh "XN nhập học" ngay trên bảng — dùng chung action toggleAdmissionField
+  // (Field = TRẠNG THÁI THẨM ĐỊNH) như khối Nộp/giấy tờ ở khung bên phải.
   const statusMutation = useMutation({
-    mutationFn: toggleStatusStudent,
+    mutationFn: toggleAdmissionField,
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: ['students'] });
-      const previousStudents = queryClient.getQueryData(['students']);
-      queryClient.setQueryData(['students'], (old) => {
-        return old?.map(sv => sv.MaSV === variables.maSV ? { ...sv, TrangThai: variables.status ? 1 : 0 } : sv);
+      await queryClient.cancelQueries({ queryKey: ['admissions'] });
+      const previousStudents = queryClient.getQueryData(['admissions']);
+      queryClient.setQueryData(['admissions'], (old) => {
+        return old?.map(sv => sv[MASV_FIELD] === variables.maSV ? { ...sv, [STATUS_FIELD]: variables.isChecked ? STATUS_VALUE : '' } : sv);
       });
       return { previousStudents };
     },
     onError: (err, variables, context) => {
-      queryClient.setQueryData(['students'], context.previousStudents);
+      queryClient.setQueryData(['admissions'], context.previousStudents);
       Swal.fire('Lỗi', 'Không thể đổi trạng thái: ' + err.message, 'error');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['students'] });
+      queryClient.invalidateQueries({ queryKey: ['admissions'] });
     }
   });
 
@@ -80,13 +89,13 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
     if (!searchFilters) return true;
     const keywordMaSV_CCCD = searchFilters.maSV.toLowerCase();
     const keywordHoTen = searchFilters.hoTen.toLowerCase();
-    const matchMaSV_CCCD = keywordMaSV_CCCD === '' || (sv.MaSV && sv.MaSV.toString().toLowerCase().includes(keywordMaSV_CCCD)) || (sv.CCCD && sv.CCCD.toString().toLowerCase().includes(keywordMaSV_CCCD));
-    const matchHoTen = keywordHoTen === '' || (sv.HoTen && sv.HoTen.toString().toLowerCase().includes(keywordHoTen));
+    const matchMaSV_CCCD = keywordMaSV_CCCD === '' || (sv[MASV_FIELD] && sv[MASV_FIELD].toString().toLowerCase().includes(keywordMaSV_CCCD)) || (sv['CĂN CƯỚC'] && sv['CĂN CƯỚC'].toString().toLowerCase().includes(keywordMaSV_CCCD));
+    const matchHoTen = keywordHoTen === '' || (sv['TÊN SINH VIÊN'] && sv['TÊN SINH VIÊN'].toString().toLowerCase().includes(keywordHoTen));
     return matchMaSV_CCCD && matchHoTen;
   }) || [];
 
   const tongHoSo = filteredStudents.length;
-  const daNhapHoc = filteredStudents.filter(sv => sv.TrangThai === 'Đã nhập trường' || sv.TrangThai === 1 || sv.TrangThai === 'TRUE' || sv.TrangThai === true).length;
+  const daNhapHoc = filteredStudents.filter(isXnNhapHoc).length;
 
   const observerCallback = useCallback((entries) => {
     if (entries[0].isIntersecting) setVisibleCount(prev => prev + 20);
@@ -114,7 +123,7 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
           <h5 className="card-title mb-0 me-3">Danh sách sinh viên</h5>
           <span className="badge bg-light text-dark border me-2">Tổng: {tongHoSo}</span>
           <span className="badge bg-success me-3">Đã xác nhận: {daNhapHoc}</span>
-          
+
           <div className="btn-group me-2">
             <button className="btn btn-outline-success btn-sm" onClick={handleExport} title="Xuất danh sách">
               <i className="bi bi-download me-1"></i> Xuất
@@ -124,24 +133,24 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
             </button>
           </div>
         </div>
-        
+
         <button className="btn btn-primary btn-sm" onClick={handleAdd}>
           <i className="bi bi-plus-circle me-1"></i> + Thêm đăng ký
         </button>
       </div>
-      
+
       {/* CÁC MODALS TRỢ GIÚP */}
       {showModal && (
-        <AddStudentModal 
+        <AddStudentModal
           onClose={() => { setShowModal(false); setEditingStudent(null); }}
           onSave={(data) => editingStudent ? updateMutation.mutate(data) : addMutation.mutate(data)}
           isPending={addMutation.isPending || updateMutation.isPending}
-          initialData={editingStudent} 
+          initialData={editingStudent}
         />
       )}
 
       {showImportModal && (
-        <ImportModal 
+        <ImportModal
           onClose={() => setShowImportModal(false)}
           onImport={(data) => importMutation.mutate(data)}
           isPending={importMutation.isPending}
@@ -150,7 +159,7 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
 
       {/* MODAL IN GIẤY BÁO */}
       {printingStudent && (
-        <PrintModal 
+        <PrintModal
           student={printingStudent}
           onClose={() => setPrintingStudent(null)}
         />
@@ -178,7 +187,7 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
                 <th>Họ tên</th>
                 <th>Ngày sinh</th>
                 <th>Ngành</th>
-                <th className="text-center">Xác nhận nhập học</th>
+                <th className="text-center">XN nhập học</th>
               </tr>
             </thead>
             <tbody>
@@ -188,35 +197,35 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
                 </tr>
               ) : (
                 displayStudents.map((sv, index) => {
-                  const isChecked = sv.TrangThai === 'Đã nhập trường' || sv.TrangThai === 1 || sv.TrangThai === 'TRUE' || sv.TrangThai === true;
-                  
+                  const isChecked = isXnNhapHoc(sv);
+
                   return (
-                    <tr 
+                    <tr
                       key={index}
                       onClick={() => onSelectStudent(sv)}
-                      className={selectedStudent?.MaSV === sv.MaSV ? 'table-primary' : ''}
+                      className={selectedStudent?.[MASV_FIELD] === sv[MASV_FIELD] ? 'table-primary' : ''}
                       style={{ cursor: 'pointer' }}
                     >
                       <td className="text-center px-2" onClick={(e) => e.stopPropagation()}>
                         <div className="d-flex justify-content-center gap-1">
                           <button className="btn btn-sm btn-outline-secondary p-1 px-2" onClick={() => handlePrint(sv)} title="In hồ sơ">In</button>
                           <button className="btn btn-sm btn-outline-info p-1 px-2" onClick={() => handleEdit(sv)} title="Sửa">Sửa</button>
-                          <button className="btn btn-sm btn-outline-danger p-1 px-2" onClick={() => handleDelete(sv.MaSV)} disabled={deleteMutation.isPending} title="Xóa">Xóa</button>
+                          <button className="btn btn-sm btn-outline-danger p-1 px-2" onClick={() => handleDelete(sv[MASV_FIELD])} disabled={deleteMutation.isPending} title="Xóa">Xóa</button>
                         </div>
                       </td>
-                      <td className="fw-medium text-secondary">{sv.MaSV}</td>
-                      <td>{sv.CCCD}</td>
-                      <td className="fw-bold">{sv.HoTen}</td>
-                      <td>{sv.NgaySinh ? moment(sv.NgaySinh).format('DD/MM/YYYY') : ''}</td>
-                      <td>{sv.Nganh}</td>
+                      <td className="fw-medium text-secondary">{sv[MASV_FIELD]}</td>
+                      <td>{sv['CĂN CƯỚC']}</td>
+                      <td className="fw-bold">{sv['TÊN SINH VIÊN']}</td>
+                      <td>{sv['NGÀY SINH'] ? moment(sv['NGÀY SINH'], ['DD/MM/YYYY', 'YYYY-MM-DD']).format('DD/MM/YYYY') : ''}</td>
+                      <td>{sv['NGÀNH']}</td>
                       <td className="text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="form-check d-flex justify-content-center">
-                          <input 
-                            type="checkbox" 
-                            className="form-check-input fs-5" 
+                          <input
+                            type="checkbox"
+                            className="form-check-input fs-5"
                             style={{ cursor: 'pointer' }}
-                            checked={isChecked} 
-                            onChange={(e) => statusMutation.mutate({ maSV: sv.MaSV, status: e.target.checked })}
+                            checked={isChecked}
+                            onChange={(e) => statusMutation.mutate({ maSV: sv[MASV_FIELD], field: STATUS_FIELD, isChecked: e.target.checked })}
                           />
                         </div>
                       </td>

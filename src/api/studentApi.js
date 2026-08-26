@@ -205,6 +205,19 @@ export const compareCurriculumAI = (nganh, transcript) => postAiAction('compareC
 export const exportThamDinhTemplate = (payload) => postAiAction('exportTemplate', payload);
 
 // Nhập dữ liệu hàng loạt từ file Excel
+// ĐÃ THÊM (rà soát đồng bộ file mẫu 2 trang): lấy danh sách cột file mẫu Excel bên
+// trang Xét tuyển TỪ SERVER (action getXetTuyenHeaders, nguồn XETTUYEN_TEMPLATE_HEADERS
+// trong Quanlysv.gs) — thay cho mảng "headers" hardcode trước đây nằm ngay trong
+// XetTuyenPage.jsx, để đồng bộ cách làm với trang Thu hồ sơ (fetchAdmissionsHeaders).
+export const fetchXetTuyenHeaders = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=getXetTuyenHeaders&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi lấy danh sách cột file mẫu');
+};
+
 export const importStudents = async (studentsArray) => {
   const formData = new URLSearchParams();
   formData.append('action', 'importStudents');
@@ -222,6 +235,8 @@ export const importStudents = async (studentsArray) => {
 
 // ĐÃ THÊM: import Excel RIÊNG cho trang Thu hồ sơ nhập học (AdmissionsPage) — ghi
 // đúng vào sheet SinhVien, khác với importStudents() ở trên (dùng cho Xét tuyển).
+// GIỮ LẠI (không xoá) phòng còn nơi nào tham chiếu — trang Thu hồ sơ giờ dùng
+// importAdmissions() bên dưới, ghi thẳng Trung Gian thay vì sheet SinhVien.
 export const importStudentsToAdmissions = async (studentsArray) => {
   const formData = new URLSearchParams();
   formData.append('action', 'importStudentsAdmissions');
@@ -235,6 +250,144 @@ export const importStudentsToAdmissions = async (studentsArray) => {
     return response.data.data;
   }
   throw new Error(response.data.message || 'Lỗi khi import danh sách Excel');
+};
+
+// ==========================================================
+// ĐÃ THÊM: TRANG "THU HỒ SƠ NHẬP HỌC" — nhóm API mới, đọc/ghi THẲNG sheet Trung Gian
+// (khớp action mới trong Quanlysv.gs: getAdmissionsData/addAdmission/updateAdmission/
+// deleteAdmission/toggleAdmissionField/importAdmissions/getAdmissionsHeaders/
+// getPayments/savePayment). Thay thế fetchStudents/addStudent/updateStudent/
+// deleteStudent/toggleDocument/toggleStatusStudent/importStudentsToAdmissions cho
+// RIÊNG trang này — các hàm cũ ở trên vẫn còn nguyên, không đụng tới.
+// ==========================================================
+
+export const fetchAdmissions = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=getAdmissionsData&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi lấy dữ liệu');
+};
+
+// Danh sách tên cột dùng cho modal Thêm hồ sơ + file mẫu Excel — lấy TỪ SERVER (không
+// hardcode ở frontend) để luôn đồng nhất tuyệt đối với action addAdmission/importAdmissions.
+export const fetchAdmissionsHeaders = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=getAdmissionsHeaders&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi lấy danh sách cột');
+};
+
+export const addAdmission = async (formData_) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'addAdmission');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify(formData_));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi khi thêm hồ sơ');
+};
+
+export const updateAdmission = async (updatedData) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'updateAdmission');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify(updatedData));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi khi cập nhật');
+};
+
+export const deleteAdmission = async (maSV) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'deleteAdmission');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('MaSV', maSV);
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi khi xóa');
+};
+
+// Tick/sửa 1 ô giấy tờ (Field = tên cột Trung Gian, VD "ẢNH THẺ") HOẶC "XN nhập học"
+// (Field = "TRẠNG THÁI THẨM ĐỊNH") — dùng chung 1 action cho cả 2 trường hợp.
+export const toggleAdmissionField = async ({ maSV, field, isChecked, ghiChu = '' }) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'toggleAdmissionField');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('MaSV', maSV);
+  formData.append('Field', field);
+  formData.append('IsChecked', isChecked);
+  formData.append('GhiChu', ghiChu);
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi cập nhật');
+};
+
+export const importAdmissions = async (rowsArray) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'importAdmissions');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify(rowsArray));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi khi import danh sách Excel');
+};
+
+// ---- Nộp tiền (khối bên phải trang Thu hồ sơ) ----
+
+export const fetchPayments = async (maSV) => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=getPayments&MaSV=${encodeURIComponent(maSV)}&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  return [];
+};
+
+export const savePayment = async ({ maSV, loaiPhi, soTien, isChecked }) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'savePayment');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('MaSV', maSV);
+  formData.append('LoaiPhi', loaiPhi);
+  formData.append('SoTien', soTien);
+  formData.append('IsChecked', isChecked);
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi lưu khoản nộp tiền');
 };
 
 // ==========================================

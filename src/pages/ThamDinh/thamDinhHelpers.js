@@ -157,8 +157,13 @@ export function getMissingTienQuyet(row) {
 }
 
 // Xác định trạng thái thẩm định (_appState) từ cột TRẠNG THÁI THẨM ĐỊNH/TRẠNG THÁI
+// ĐÃ THÊM: nhận diện "Đã trúng tuyển" — trạng thái riêng của luồng Thu hồ sơ trực tiếp
+// (trang Nhập học, KÊNH NỘP = "Thu hồ sơ trực tiếp"), KHÔNG qua thẩm định/duyệt như Xét
+// tuyển. Trước đây giá trị này rơi vào default "Đang chờ duyệt" — khiến hồ sơ đã trúng
+// tuyển sẵn hiện lẫn trong hàng chờ duyệt như hồ sơ Xét tuyển mới, dễ bị thao tác nhầm.
 export function getAppState(row) {
   const trangThai = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
+  if (trangThai.includes("Đã trúng tuyển")) return "Đã trúng tuyển";
   if (trangThai.includes("Đã duyệt")) return "Đã duyệt";
   if (trangThai.includes("Đã báo thiếu")) return "Đã báo thiếu";
   if (trangThai.includes("Mới bổ sung")) return "Mới bổ sung";

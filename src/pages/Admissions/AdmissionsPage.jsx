@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query'; 
-import { fetchStudents } from '../../api/studentApi'; 
+import { useQuery } from '@tanstack/react-query';
+import { fetchAdmissions } from '../../api/studentApi';
 
 // NẾU CÁC FILE NÀY NẰM CHUNG THƯ MỤC VỚI NHAU, DÙNG './' THAY VÌ '../../'
 import SearchFilter from '../../features/Admissions/SearchFilter';
@@ -8,17 +8,20 @@ import StudentTable from '../../features/Admissions/StudentTable';
 import DocumentList from '../../features/Admissions/DocumentList';
 import AdmissionsChart from '../../features/Admissions/AdmissionsChart';
 
+// ĐÃ SỬA: đọc thẳng sheet Trung Gian qua fetchAdmissions (chỉ đúng kênh "Thu hồ sơ
+// trực tiếp", nhờ cột KÊNH NỘP lọc ở backend) thay cho fetchStudents (sheet SinhVien cũ)
+// — khớp với StudentTable/DocumentList đã đổi sang key kiểu Trung Gian.
 const AdmissionsPage = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [searchFilters, setSearchFilters] = useState({ maSV: '', hoTen: '' });
 
   const { data: students = [] } = useQuery({
-    queryKey: ['students'],
-    queryFn: fetchStudents,
+    queryKey: ['admissions'],
+    queryFn: fetchAdmissions,
   });
 
   const tongHoSo = students.length;
-  const daNhapHoc = students.filter(sv => sv.TrangThai === 'Đã nhập trường' || sv.TrangThai === 1 || sv.TrangThai === 'TRUE' || sv.TrangThai === true).length;
+  const daNhapHoc = students.filter(sv => String(sv['TRẠNG THÁI THẨM ĐỊNH'] || '').trim() === 'Đã trúng tuyển').length;
   const tyLe = tongHoSo === 0 ? 0 : Math.round((daNhapHoc / tongHoSo) * 100);
 
   return (

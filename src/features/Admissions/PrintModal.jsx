@@ -21,8 +21,8 @@ const PrintModal = ({ student, onClose }) => {
     // FIX LỖI LỀ: html2pdf dùng thứ tự [Trên, Trái, Dưới, Phải]
     // Trên 20, Trái 30, Dưới 20, Phải 20 (Đơn vị: mm)
     const opt = {
-      margin:       [20, 30, 20, 20], 
-      filename:     `GiayBaoTrungTuyen_${student.MaSV}.pdf`,
+      margin:       [20, 30, 20, 20],
+      filename:     `GiayBaoTrungTuyen_${student['MÃ SINH VIÊN']}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, logging: false },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
@@ -75,36 +75,36 @@ const PrintModal = ({ student, onClose }) => {
 
                 <div className="text-center mt-5 mb-4">
                   <h4 className="fw-bold mb-1">GIẤY BÁO TRÚNG TUYỂN VÀ GỌI NHẬP HỌC</h4>
-                  <p className="fst-italic">Năm xét tuyển: {student.NamXetTuyen}</p>
+                  <p className="fst-italic">Năm xét tuyển: {student['NĂM XÉT TUYỂN']}</p>
                 </div>
 
                 <div style={{ fontSize: '1.15rem', lineHeight: '1.6' }}>
                   <p><strong>HIỆU TRƯỞNG TRƯỜNG ĐẠI HỌC PHÚ XUÂN TRÂN TRỌNG THÔNG BÁO:</strong></p>
-                  
+
                   <div className="row mb-2 d-flex flex-nowrap">
-                    <div className="col-7">Anh/Chị: <span className="fw-bold text-uppercase">{student.HoTen}</span></div>
-                    <div className="col-5">Ngày sinh: <span className="fw-bold">{student.NgaySinh ? moment(student.NgaySinh).format('DD/MM/YYYY') : '...'}</span></div>
+                    <div className="col-7">Anh/Chị: <span className="fw-bold text-uppercase">{student['TÊN SINH VIÊN']}</span></div>
+                    <div className="col-5">Ngày sinh: <span className="fw-bold">{student['NGÀY SINH'] ? moment(student['NGÀY SINH'], ['DD/MM/YYYY', 'YYYY-MM-DD']).format('DD/MM/YYYY') : '...'}</span></div>
                   </div>
-                  
+
                   <div className="row mb-2 d-flex flex-nowrap">
-                    <div className="col-7">Số CMND/CCCD: <span className="fw-bold">{student.CCCD || '..............................'}</span></div>
-                    <div className="col-5">Mã SV: <span className="fw-bold">{student.MaSV}</span></div>
+                    <div className="col-7">Số CMND/CCCD: <span className="fw-bold">{student['CĂN CƯỚC'] || '..............................'}</span></div>
+                    <div className="col-5">Mã SV: <span className="fw-bold">{student['MÃ SINH VIÊN']}</span></div>
                   </div>
 
                   <div className="row mb-2 d-flex flex-nowrap">
                     <div className="col-12" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Đã trúng tuyển vào ngành: <span className="fw-bold text-uppercase">{student.Nganh || '..............................'}</span>
+                      Đã trúng tuyển vào ngành: <span className="fw-bold text-uppercase">{student['NGÀNH'] || '..............................'}</span>
                     </div>
                   </div>
 
                   <div className="row mb-3 d-flex flex-nowrap">
-                    <div className="col-6">Khóa nhập học: <span className="fw-bold">{student.KhoaNhapHoc}</span></div>
-                    <div className="col-6">Đối tượng đầu vào: <span className="fw-bold">{student.DoiTuongDauVao}</span></div>
+                    <div className="col-6">Khóa nhập học: <span className="fw-bold">{student['KHÓA']}</span></div>
+                    <div className="col-6">Đối tượng ưu tiên: <span className="fw-bold">{student['ĐỐI TƯỢNG ƯU TIÊN']}</span></div>
                   </div>
-                  
+
                   <div className="row mb-3 d-flex flex-nowrap">
-                    <div className="col-6">Hệ đào tạo: <span className="fw-bold">{student.HeDT}</span></div>
-                    <div className="col-6">Hình thức ĐT: <span className="fw-bold">{student.HinhThucDT}</span></div>
+                    <div className="col-6">Hệ đào tạo: <span className="fw-bold">{student['HỆ ĐÀO TẠO']}</span></div>
+                    <div className="col-6">Hình thức ĐT: <span className="fw-bold">{student['HÌNH THỨC ĐÀO TẠO']}</span></div>
                   </div>
 
                   <p className="mt-4" style={{ whiteSpace: 'normal', textAlign: 'justify' }}>

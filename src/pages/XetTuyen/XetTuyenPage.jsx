@@ -4,7 +4,7 @@ import './XetTuyen.css';
 // ĐÃ THÊM: dùng chung đúng 1 hàm fetchConfig() với studentApi.js (AdmissionsPage/
 // SettingsPage đang dùng, đã chạy ổn) — thay vì tự viết lại 1 bản riêng ở đây. Cả 2
 // nơi giờ gọi CÙNG 1 chỗ, cùng 1 cách xác thực (GET + idToken/sessionToken).
-import { fetchConfig } from '../../api/studentApi';
+import { fetchConfig, fetchXetTuyenHeaders } from '../../api/studentApi';
 
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
@@ -105,36 +105,6 @@ const addYearsIso = (isoDate, years) => {
     const [y, m, d] = isoDate.split('-').map(Number);
     const dt = new Date(y + years, m - 1, d);
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-};
-
-// ĐÃ THÊM (yêu cầu #4): input type="date" luôn cho/nhận yyyy-mm-dd (chuẩn HTML, không
-// đổi được) nhưng cột "NGÀY SINH" trên dataList + sheet trung gian phải là dd/mm/yyyy
-// (đồng bộ với các cột ngày khác trong hệ thống). 2 hàm dưới đây đổi 2 chiều ngay tại
-// biên — bên trong formData vẫn luôn là yyyy-mm-dd, chỉ đổi khi ĐƯA VÀO dataList/sheet
-// và khi ĐỌC NGƯỢC LẠI từ dataList/sheet vào formData.
-// yyyy-mm-dd (formData.ngaysinh) -> dd/mm/yyyy (dataList + sheet trung gian).
-const isoToDmy = (isoDate) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || '').trim());
-    if (!m) return isoDate || '';
-    const [, y, mo, d] = m;
-    return `${d}/${mo}/${y}`;
-};
-// dd/mm/yyyy (đọc từ dataList/sheet) -> yyyy-mm-dd (để nạp lại vào input type="date").
-// Dự phòng 2 trường hợp khác: (1) hồ sơ CŨ đẩy lên TRƯỚC khi vá bug này, cột NGÀY SINH
-// trên sheet vẫn còn ở dạng yyyy-mm-dd -> giữ nguyên, không đổi sai; (2) trường hợp
-// Google Sheet tự nhận diện cell là kiểu Date rồi trả về kèm timestamp đầy đủ (VD
-// "2005-03-15T00:00:00.000Z") -> chỉ lấy đúng phần yyyy-mm-dd đứng đầu.
-const dmyToIso = (dateVal) => {
-    const str = String(dateVal || '').trim();
-    if (!str) return '';
-    const isoMatch = /^(\d{4}-\d{2}-\d{2})/.exec(str);
-    if (isoMatch) return isoMatch[1];
-    const dmyMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(str);
-    if (dmyMatch) {
-        const [, d, mo, y] = dmyMatch;
-        return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
-    }
-    return str; // không nhận diện được định dạng -> trả nguyên, tránh làm rỗng dữ liệu lạ
 };
 
 const getToken = () => {
@@ -413,7 +383,7 @@ const XetTuyenPage = () => {
         "STT": dataList.length + 1, "TRẠNG THÁI ĐẨY": "Waiting", 
         "_Action": isEditMode ? "UPDATE" : "INSERT", 
         "KẾT QUẢ SƠ TUYỂN": admissionResult ? admissionResult.title : "",
-        "CĂN CƯỚC": formData.cccd.trim(), "TÊN SINH VIÊN": formData.hoten.trim(), "NGÀY SINH": isoToDmy(formData.ngaysinh),
+        "CĂN CƯỚC": formData.cccd.trim(), "TÊN SINH VIÊN": formData.hoten.trim(), "NGÀY SINH": formData.ngaysinh,
         "NGÀNH": formData.nganh, "KHÓA": formData.khoa, "ĐỐI TƯỢNG ƯU TIÊN": formData.doituonguutien,
         "KHU VỰC ƯU TIÊN": formData.khuvucuutien, "ĐỐI TƯỢNG ĐẦU VÀO": formData.doituongdauvao,
         "NĂM XÉT TUYỂN": formData.namtt, "HỆ ĐÀO TẠO": formData.hedaotao, "HÌNH THỨC ĐÀO TẠO": formData.htdaotao,
@@ -436,7 +406,7 @@ const XetTuyenPage = () => {
         "ĐIỂM CHUẨN": formData.diem_chuan, 
         
         "PHƯƠNG THỨC XÉT TUYỂN": formData.loai_diem === 'THI_THPT' ? 'Điểm thi THPT' : (formData.loai_diem === 'HOC_BA' ? 'Điểm học bạ' : (formData.loai_diem === 'HOC_BA_2025' ? 'Điểm học bạ (TBTS 2025)' : '')),
-        "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "Mới bổ sung" : "Đang chờ duyệt",
+        "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "Mới bổ sung" : "Chưa thẩm định",
         
         "TIME": isEditMode ? (formData.time_goc || currentTimestamp) : currentTimestamp,
         "NGÀY CẬP NHẬT HỒ SƠ": isEditMode ? currentTimestamp : "",
@@ -487,7 +457,7 @@ const XetTuyenPage = () => {
         hoten: row["TÊN SINH VIÊN"] || "",
         cccd: String(row["CĂN CƯỚC"] || "").replace(/'/g, ''),
         nganh: row["NGÀNH"] || "",
-        ngaysinh: dmyToIso(row["NGÀY SINH"]),
+        ngaysinh: row["NGÀY SINH"] || "",
         khoa: row["KHÓA"] || "",
         khuvucuutien: row["KHU VỰC ƯU TIÊN"] || "",
         doituonguutien: row["ĐỐI TƯỢNG ƯU TIÊN"] || "",
@@ -701,7 +671,7 @@ const XetTuyenPage = () => {
           hoten: normData["TÊN SINH VIÊN"] || normData["HỌ VÀ TÊN"] || "",
           cccd: String(normData["CĂN CƯỚC"] || normData["CCCD"] || "").replace(/'/g, ''), 
           nganh: normData["NGÀNH"] || "",
-          ngaysinh: dmyToIso(normData["NGÀY SINH"]),
+          ngaysinh: normData["NGÀY SINH"] || "",
           khoa: normData["KHÓA"] || "", 
           khuvucuutien: normData["KHU VỰC ƯU TIÊN"] || normData["KHU VỰC"] || "",
           doituonguutien: normData["ĐỐI TƯỢNG ƯU TIÊN"] || "", 
@@ -751,28 +721,22 @@ const XetTuyenPage = () => {
 
   const handleImportFileChange = (e) => { const file = e.target.files[0]; if (file) setImportFile(file); };
 
-  const handleDownloadTemplate = () => {
+  // ĐÃ SỬA (rà soát đồng bộ file mẫu 2 trang): danh sách cột giờ LẤY TỪ SERVER (action
+  // getXetTuyenHeaders, nguồn duy nhất XETTUYEN_TEMPLATE_HEADERS trong Quanlysv.gs) thay
+  // vì mảng "headers" hardcode ngay trong file này — cùng cách làm với file mẫu bên
+  // trang Thu hồ sơ (getAdmissionsHeaders), tránh lệch cột khi có thêm/sửa/xoá sau này
+  // vì chỉ còn 1 nơi cần sửa. executeImport() đọc file theo alias độc lập, không phụ
+  // thuộc mảng này, nên đổi nguồn ở đây không ảnh hưởng logic nhập Excel đã có.
+  const handleDownloadTemplate = async () => {
       setImportStatus("⏳ Đang tạo file mẫu...");
       try {
-          const headers = [
-              "STT", "CĂN CƯỚC", "TÊN SINH VIÊN", "NGÀY SINH", "NGÀNH", "KHÓA",
-              "ĐỐI TƯỢNG ƯU TIÊN", "KHU VỰC ƯU TIÊN", "ĐỐI TƯỢNG ĐẦU VÀO", "NĂM XÉT TUYỂN",
-              "HỆ ĐÀO TẠO", "HÌNH THỨC ĐÀO TẠO", "PHIẾU ĐĂNG KÝ DỰ TUYỂN", "SƠ YẾU LÝ LỊCH",
-              "BẢN SAO ID", "ẢNH THẺ", "GIẤY CHUYỂN NVQS (VỚI NAM)", "BẢN SAO BẰNG THPT/GIẤY BÁO ĐIỂM", "BẢN SAO HỌC BẠ THPT",
-              "BẢN SAO BẰNG TRUNG CẤP", "BẢNG ĐIỂM TRUNG CẤP", "BẰNG THPT/GCN ĐỦ KL KTVH THPT",
-              "BẢN SAO BẰNG TRUNG CẤP TRƯỚC 2022", "BẢNG ĐIỂM TRUNG CẤP TRƯỚC 2022", "GCN HOÀN THÀNH CT GDPT",
-              "BẰNG CAO ĐẲNG", "BẢNG ĐIỂM CAO ĐẲNG", "BẰNG ĐẠI HỌC", "BẢNG ĐIỂM ĐẠI HỌC", "GIẤY TỜ ƯU TIÊN",
-              "PHƯƠNG THỨC XÉT TUYỂN",
-              "TOÁN", "VẬT LÍ", "HÓA HỌC", "SINH HỌC", "NGỮ VĂN", "LỊCH SỬ", "ĐỊA LÝ",
-              "TIẾNG ANH", "TIẾNG TRUNG", "TIN HỌC", "GDKTPL",
-              "ĐIỂM TB HỆ 4", "ĐIỂM TB HỆ 10", "ĐIỂM CỘNG", "ĐIỂM CHUẨN", "LINK HỒ SƠ"
-          ];
+          const headers = await fetchXetTuyenHeaders();
           const ws = XLSX.utils.aoa_to_sheet([headers, ["(Dòng hướng dẫn) Nhập dữ liệu từ dòng số 3..."]]);
           const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, ws, "Mau_Nhap_Lieu");
           XLSX.writeFile(wb, "FileMau_NhapLieu_TuyenSinh.xlsx");
           setImportStatus("");
-      } catch (e) { setImportStatus("❌ Lỗi tạo file"); }
+      } catch (e) { setImportStatus("❌ Lỗi tạo file: " + e.message); }
   };
 
   const executeImport = () => {
@@ -835,10 +799,7 @@ const XetTuyenPage = () => {
                           "STT": sttBase + importedCount + 1, "TRẠNG THÁI ĐẨY": "Waiting", "_Action": "INSERT",
                           "KẾT QUẢ SƠ TUYỂN": getField(rowArr, ["KẾT QUẢ SƠ TUYỂN", "KẾT QUẢ"]),
                           "CĂN CƯỚC": cccdVal, "TÊN SINH VIÊN": getField(rowArr, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]),
-                          // ĐÃ SỬA: phòng trường hợp file Excel có sẵn NGÀY SINH ở dạng yyyy-mm-dd
-                          // (VD xuất lại từ hệ thống cũ) -> isoToDmy() tự đổi sang dd/mm/yyyy cho
-                          // đồng bộ; nếu cột Excel đã sẵn dd/mm/yyyy thì hàm này không đổi gì (no-op).
-                          "NGÀY SINH": isoToDmy(getField(rowArr, ["NGÀY SINH"])), "NGÀNH": nganhVal,
+                          "NGÀY SINH": getField(rowArr, ["NGÀY SINH"]), "NGÀNH": nganhVal,
                           "KHÓA": getField(rowArr, ["KHÓA"]), "ĐỐI TƯỢNG ƯU TIÊN": getField(rowArr, ["ĐỐI TƯỢNG ƯU TIÊN"]),
                           "KHU VỰC ƯU TIÊN": getField(rowArr, ["KHU VỰC ƯU TIÊN", "KHU VỰC"]), "ĐỐI TƯỢNG ĐẦU VÀO": getField(rowArr, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐẦU VÀO"]),
                           "NĂM XÉT TUYỂN": getField(rowArr, ["NĂM XÉT TUYỂN", "NĂM TRÚNG TUYỂN"]), "HỆ ĐÀO TẠO": getField(rowArr, ["HỆ ĐÀO TẠO", "HỆ"]),
@@ -853,7 +814,7 @@ const XetTuyenPage = () => {
                           "ĐIỂM TB HỆ 4": getField(rowArr, ["HỆ 4", "ĐIỂM TB TOÀN KHÓA HỆ 4"]), "ĐIỂM TB HỆ 10": getField(rowArr, ["HỆ 10", "ĐIỂM TB TOÀN KHÓA HỆ 10"]), "ĐIỂM CỘNG": getField(rowArr, ["ĐIỂM CỘNG"]),
                           "ĐIỂM CHUẨN": getField(rowArr, ["ĐIỂM CHUẨN"]), 
                           
-                          "TRẠNG THÁI THẨM ĐỊNH": "Đang chờ duyệt",
+                          "TRẠNG THÁI THẨM ĐỊNH": "Chưa thẩm định",
                           "TIME": currentTimestamp,
                           "NGÀY CẬP NHẬT HỒ SƠ": "",
                           "TÀI KHOẢN NHẬP LIỆU": getUserEmail(),
@@ -976,7 +937,7 @@ const XetTuyenPage = () => {
       <div className="container-fluid xettuyen-main-card p-4 position-relative">
         <div className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
           <h3 className="fw-bold" style={{ color: '#008080' }}>
-            <i className="bi bi-journal-text me-2"></i>{isEditMode ? "SỬA HỒ SƠ (UPDATE)" : "NHẬP LIỆU HỒ SƠ TUYỂN SINH"}
+            <i className="bi bi-journal-text me-2"></i>{isEditMode ? "SỬA HỒ SƠ (UPDATE)" : "NHẬP LIỆU HỒ SƠ"}
           </h3>
           <div className="d-none d-md-flex gap-2">
               {!isEditMode && (
