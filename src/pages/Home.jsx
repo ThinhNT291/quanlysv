@@ -22,8 +22,8 @@ import imgHomeBg from '../assets/home-bg.jpg';
 const CARDS = [
   {
     key: 'admissions',
-    title: 'Quản lý hồ sơ nhập học',
-    desc: 'Tiếp nhận, chỉnh sửa và theo dõi hồ sơ sinh viên trúng tuyển.',
+    title: 'Thu hồ sơ nhập học',
+    desc: 'Tiếp nhận trực tiếp và theo dõi hồ sơ sinh viên trúng tuyển.',
     icon: 'bi-people-fill',
     to: '/thu-ho-so-nhap-hoc',
     roles: ['CanBo'],
@@ -32,8 +32,8 @@ const CARDS = [
   },
   {
     key: 'xettuyen',
-    title: 'Nhập liệu Xét tuyển',
-    desc: 'Đẩy hồ sơ ứng viên, tra cứu hồ sơ cũ, quét CCCD nhanh.',
+    title: 'Nhập liệu hồ sơ tuyển sinh',
+    desc: 'Nhập thông tin hồ sơ thí sinh, tra cứu hồ sơ cũ.',
     icon: 'bi-card-checklist',
     to: '/xet-tuyen',
     roles: ['TuyenSinh', 'ThamDinh'],
@@ -52,8 +52,8 @@ const CARDS = [
   },
   {
     key: 'settings',
-    title: 'Cấu hình hệ thống',
-    desc: 'Quản lý danh mục ngành, tài khoản, thiết lập chung.',
+    title: 'Cài đặt',
+    desc: 'Cài đặt chung.',
     icon: 'bi-gear-fill',
     to: '/settings',
     roles: ['Admin'],
@@ -62,8 +62,8 @@ const CARDS = [
   },
   {
     key: 'stats',
-    title: 'Thống kê cá nhân',
-    desc: 'Xem lại số liệu thao tác của riêng bạn trên hệ thống.',
+    title: 'Thống kê',
+    desc: 'Xem lại số liệu theo thời gian.',
     icon: 'bi-graph-up-arrow',
     to: '/user-stats',
     roles: [], // ai đã đăng nhập cũng vào được
@@ -139,7 +139,7 @@ const Home = ({ currentUser }) => {
 
       <div className="home-welcome mb-4">
         <h3 className="fw-bold mb-1">Chào {displayName} 👋</h3>
-        <p className="text-muted mb-0">Chọn một chức năng bên dưới để bắt đầu làm việc.</p>
+        <p className="text-muted mb-0">Chọn tác vụ của bạn.</p>
       </div>
 
       <div className="home-card-grid">

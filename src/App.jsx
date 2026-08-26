@@ -155,8 +155,15 @@ const App = () => {
       
       if (timeToExpiry <= 0) {
           handleLogout("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
-      } else if (timeToExpiry > 0 && timeToExpiry <= 5 * 60 * 1000) {
-          // Còn dưới 5 phút -> Gọi Google One Tap để cấp lại ngầm
+      } else if (timeToExpiry > 0 && timeToExpiry <= 15 * 60 * 1000) {
+          // ĐÃ SỬA: mốc bắt đầu thử gia hạn kéo sớm ra từ 5 phút -> 15 phút trước khi
+          // hết hạn. Mỗi lần thử cách nhau 30s (tokenCheckInterval bên dưới) nên trước
+          // đây chỉ có ~10 lượt thử trong khung 5 phút — nếu Google tạm chặn/cooldown
+          // one-tap hơi lâu 1 chút (chuyện bình thường bên phía Google, ngoài tầm kiểm
+          // soát của mình) là hết khung luôn, hụt cả 10 lượt thì bung thẳng ra "hết
+          // hạn". Giờ có ~30 lượt thử trong khung 15 phút -> nhiều cơ hội hơn hẳn để
+          // ít nhất 1 lượt thành công trước khi tới hạn thật.
+          // Còn dưới 15 phút -> Gọi Google One Tap để cấp lại ngầm
           if (!window.isRenewing) {
               window.isRenewing = true; // Cờ chặn gọi nhiều lần
               if (window.google && window.google.accounts && window.google.accounts.id) {
@@ -214,6 +221,22 @@ const App = () => {
                           }
                       }
                   });
+              } else {
+                  // ĐÃ SỬA BUG: trước đây window.isRenewing = true được set NGAY TRƯỚC khi
+                  // kiểm tra window.google có sẵn sàng hay chưa — nếu lúc đó window.google
+                  // (script accounts.google.com/gsi/client) CHƯA kịp tải xong hoặc bị chặn
+                  // hẳn (ví dụ trình chặn quảng cáo chặn domain accounts.google.com trên
+                  // tên miền công khai như github.io — khác với localhost lúc dev thường
+                  // được các bộ lọc bỏ qua), khối if() này rơi vào nhánh else và isRenewing
+                  // bị KẸT ở true VĨNH VIỄN — mọi lần checkTokenExpiry() sau đó (mỗi 30s)
+                  // đều bị chặn ngay từ đầu (if (!window.isRenewing) return), không bao giờ
+                  // thử lại, không log gì, không hiện popup xác nhận nào — cứ thế im lặng
+                  // tới khi hết hạn thật thì bung thẳng ra "Phiên đăng nhập đã hết hạn" mà
+                  // không hề thấy bước "gia hạn thất bại" trước đó (đúng hiện tượng gặp trên
+                  // github.io). Giờ reset lại cờ + log rõ lý do để lần sau (30s kế tiếp) có
+                  // cơ hội thử lại, và để biết chính xác window.google có tải được hay không.
+                  console.warn('[Gia hạn phiên Google] window.google.accounts.id chưa sẵn sàng (script accounts.google.com/gsi/client chưa tải xong hoặc bị chặn) — sẽ thử lại sau 30s.');
+                  window.isRenewing = false;
               }
           }
       } else {
