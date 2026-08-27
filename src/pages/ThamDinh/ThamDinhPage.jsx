@@ -718,15 +718,7 @@ const ThamDinhPage = () => {
                 chữ "Xóa lọc" rõ ràng; màu mặc định trung tính (không nổi bật), tự động
                 chuyển cam nhạt khi isFilterActive = true (đang có ít nhất 1 điều kiện lọc
                 khác mặc định) — xem 2 class .thamdinh-reset-btn/-active trong CSS. */}
-            <div className="col-6 td-col-reset">
-              <button
-                className={`btn btn-sm w-100 ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
-                onClick={resetFilters}
-                title="Xóa bộ lọc, quay về mặc định"
-              >
-                <i className="bi bi-x-circle me-1"></i>Xóa lọc
-              </button>
-            </div>
+
             <div className="col-6 td-col-hoso-status">
               <label className="form-label small fw-bold mb-1">Trạng thái hồ sơ</label>
               <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
@@ -746,7 +738,7 @@ const ThamDinhPage = () => {
                 <option value="Mới bổ sung">Mới bổ sung</option>
                 <option value="Đã báo thiếu">Đã báo thiếu</option>
                 <option value="Đã duyệt">Đã duyệt</option>
-                <option value="Đã trúng tuyển">Đã trúng tuyển (Nhập học)</option>
+                <option value="Đã trúng tuyển">Đã trúng tuyển (NHTT)</option>
               </select>
             </div>
             <div className="col-6 td-col-sort">
@@ -767,9 +759,18 @@ const ThamDinhPage = () => {
                 type="button"
                 className={`btn btn-sm w-100 ${showTrucTiep ? 'btn-info text-white' : 'btn-outline-secondary'}`}
                 onClick={() => { setShowTrucTiep(v => !v); setCurrentPage(1); }}
-                title="Hiện/ẩn hồ sơ từ trang Thu hồ sơ nhập học (kênh Thu hồ sơ trực tiếp)"
+                title="Hiện/ẩn hồ sơ thu trực tiếp (đã trúng tuyển)"
               >
-                <i className="bi bi-person-check me-1"></i>Nhập học trực tiếp
+                <i className="bi bi-person-check me-1"></i>NHTT
+              </button>
+            </div>
+                        <div className="col-6 td-col-reset">
+              <button
+                className={`btn btn-sm w-100 ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
+                onClick={resetFilters}
+                title="Xóa bộ lọc, quay về mặc định"
+              >
+                <i className="bi bi-x-circle me-1"></i>Xóa lọc
               </button>
             </div>
           </div>

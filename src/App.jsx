@@ -12,28 +12,6 @@ import UserStatsPage from './pages/Settings/UserStatsPage';
 import XetTuyenPage from './pages/XetTuyen/XetTuyenPage'; 
 import ThamDinhPage from './pages/ThamDinh/ThamDinhPage'; // ĐÃ THÊM (Pha 2 roadmap)
 
-// Dùng để khởi tạo lại GIS ngay trong App.jsx cho việc gia hạn token ngầm (xem useEffect bên dưới)
-// — cùng giá trị Client ID đã dùng ở main.jsx/LoginPage.jsx.
-const GOOGLE_CLIENT_ID_RENEWAL = "311965248456-01ts8h9g6tuj0slob58n8vrfm091c4u7.apps.googleusercontent.com";
-
-// ĐÃ THÊM: hàm này được checkTokenExpiry() gọi tới nhưng CHƯA TỪNG được định nghĩa
-// ở đâu trong file — do bug credential/token (đã sửa ở trên) nên checkTokenExpiry
-// luôn return sớm, dòng gọi parseJwt() không bao giờ chạy tới nên lỗi "parseJwt is
-// not defined" chưa từng lộ ra. Giờ credential đã có thật, phải có hàm này thì mới
-// không bị crash. Chỉ giải mã phần payload của JWT, không cần thư viện ngoài.
-function parseJwt(token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
-    );
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    return null;
-  }
-}
-
 // ĐÃ THÊM: helper so quyền không phân biệt hoa/thường, hỗ trợ 1 tài khoản có
 // nhiều role cùng lúc (userRoles là mảng, khớp với "roles" mảng backend trả về ở
 // action verifyToken/login) — thay cho so trực tiếp 1 chuỗi như bản cũ.
@@ -119,9 +97,11 @@ const App = () => {
   };
 
   // ĐÃ THÊM: lắng nghe sự kiện "app:session-expired" do studentApi.js bắn ra khi bất kỳ
-  // request nào bị GAS trả về code 401 (hết phiên tài khoản nội bộ sau 8 tiếng không
-  // thao tác, hoặc idToken/sessionToken không hợp lệ) — tự đăng xuất + báo lý do ngay,
-  // không cần đợi checkTokenExpiry (cơ chế đó chỉ áp dụng cho JWT Google).
+  // request nào bị GAS trả về code 401 (hết phiên — sessionToken quá 8 tiếng không thao
+  // tác, hoặc idToken/sessionToken không hợp lệ) — tự đăng xuất + báo lý do ngay. Đây là
+  // cơ chế DUY NHẤT xử lý hết phiên nay (tài khoản Google cũng dùng sessionToken sliding
+  // 8 tiếng y hệt tài khoản nội bộ, xem action 'verifyToken' — không còn phụ thuộc Google
+  // tự gia hạn idToken ngầm nữa).
   useEffect(() => {
     const onSessionExpired = (e) => {
       handleLogout(e.detail && e.detail.message ? e.detail.message : "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.");
@@ -131,116 +111,30 @@ const App = () => {
   }, []);
 
 // ====================================================
-  // TÍNH NĂNG TỰ ĐỘNG LOGOUT & CẢNH BÁO / GIA HẠN TOKEN
+  // TÍNH NĂNG TỰ ĐỘNG LOGOUT KHI KHÔNG THAO TÁC (idle timeout)
   // ====================================================
+  // ĐÃ BỎ: toàn bộ cơ chế "gia hạn token ngầm" qua Google One Tap (checkTokenExpiry +
+  // window.google.accounts.id.initialize()/prompt() mỗi 30s). Cơ chế đó vốn mong manh —
+  // phụ thuộc cookie bên thứ 3 hoặc FedCM (không phải trình duyệt nào cũng hỗ trợ đủ,
+  // ví dụ Firefox từng báo "Skipping unsupported feature name identity-credentials-get"),
+  // Google tự khoá popup sau khi bị người dùng từ chối/tắt vài lần, và mỗi lần thử lại
+  // gọi initialize() chồng lên phiên trước gây cảnh báo "initialize() is called multiple
+  // times" cùng các request bị NS_BINDING_ABORTED — dù đã vá nhiều lần vẫn tái diễn "gia
+  // hạn thất bại". Giờ tài khoản Google được cấp sessionToken nội bộ ngay lúc đăng nhập
+  // (xem action 'verifyToken' trong Quanlysv.gs) — sessionToken này TRƯỢT HẠN 8 tiếng mỗi
+  // khi có request thành công (validateSession phía server), y hệt tài khoản nội bộ vốn
+  // đã chạy ổn định — nên không còn cần Google tự gia hạn idToken ngầm nữa. Nếu sessionToken
+  // hết hạn thật (8 tiếng không thao tác), interceptor 401 trong studentApi.js đã tự bắt
+  // và đăng xuất (xem sự kiện 'app:session-expired' ở trên) — không cần thêm cơ chế riêng.
   useEffect(() => {
     let idleTimer;
-    let tokenCheckInterval;
 
     const resetIdleTimer = () => {
       clearTimeout(idleTimer);
       if (currentUser) {
         idleTimer = setTimeout(() => {
           handleLogout("Phiên làm việc hết hạn do không tương tác quá 30 phút.");
-        }, 30 * 60 * 1000); 
-      }
-    };
-
-    const checkTokenExpiry = () => {
-      if (!currentUser?.credential) return;
-      const decoded = parseJwt(currentUser.credential);
-      if (!decoded || !decoded.exp) return;
-      
-      const timeToExpiry = (decoded.exp * 1000) - Date.now();
-      
-      if (timeToExpiry <= 0) {
-          handleLogout("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
-      } else if (timeToExpiry > 0 && timeToExpiry <= 15 * 60 * 1000) {
-          // ĐÃ SỬA: mốc bắt đầu thử gia hạn kéo sớm ra từ 5 phút -> 15 phút trước khi
-          // hết hạn. Mỗi lần thử cách nhau 30s (tokenCheckInterval bên dưới) nên trước
-          // đây chỉ có ~10 lượt thử trong khung 5 phút — nếu Google tạm chặn/cooldown
-          // one-tap hơi lâu 1 chút (chuyện bình thường bên phía Google, ngoài tầm kiểm
-          // soát của mình) là hết khung luôn, hụt cả 10 lượt thì bung thẳng ra "hết
-          // hạn". Giờ có ~30 lượt thử trong khung 15 phút -> nhiều cơ hội hơn hẳn để
-          // ít nhất 1 lượt thành công trước khi tới hạn thật.
-          // Còn dưới 15 phút -> Gọi Google One Tap để cấp lại ngầm
-          if (!window.isRenewing) {
-              window.isRenewing = true; // Cờ chặn gọi nhiều lần
-              if (window.google && window.google.accounts && window.google.accounts.id) {
-                  // ĐÃ SỬA BUG: bản cũ trông cậy vào onSuccess của <GoogleLogin> (chỉ tồn tại ở
-                  // LoginPage, đã unmount sau khi đăng nhập) để "hứng" token mới — nên prompt()
-                  // gọi ra nhưng không có gì nhận kết quả, gia hạn ngầm KHÔNG BAO GIỜ thực sự
-                  // cập nhật currentUser. Giờ initialize() lại NGAY TẠI ĐÂY với callback riêng,
-                  // sống suốt vòng đời App (không phụ thuộc LoginPage còn mount hay không), để
-                  // thật sự nhận và lưu token mới khi Google gia hạn thành công.
-                  window.google.accounts.id.initialize({
-                      client_id: GOOGLE_CLIENT_ID_RENEWAL,
-                      // ĐÃ THÊM: bật FedCM cho prompt() — đây chính là nguyên nhân thật của lỗi
-                      // "[GSI_LOGGER]: The given origin is not allowed for the given client ID."
-                      // dù origin ĐÃ khai báo đúng trong Console. Khi prompt() gọi mà KHÔNG bật
-                      // FedCM, Google dùng cơ chế cũ: 1 iframe ẩn gọi XHR tới
-                      // accounts.google.com/gsi/status để tự kiểm tra origin — cơ chế này cần
-                      // cookie bên thứ 3 (third-party cookie) gửi kèm iframe đó. Trình duyệt hiện
-                      // đại (đặc biệt Chrome ở chế độ Ẩn danh mà ông vừa test, hoặc Chrome thường
-                      // đã bật chặn cookie bên thứ 3 theo lộ trình Privacy Sandbox) chặn cookie
-                      // này -> request tới gsi/status coi như "không có phiên hợp lệ" và trả về
-                      // y hệt lỗi origin-not-allowed, DÙ origin khai báo hoàn toàn chính xác. Bật
-                      // use_fedcm_for_prompt: true thì trình duyệt tự xác thực bằng API FedCM gốc
-                      // của Chrome (không qua iframe/cookie bên thứ 3 nữa) -> hết bị lỗi giả này.
-                      // Lưu ý: nút đăng nhập Google (LoginPage.jsx, có useOneTap) CŨNG đi qua
-                      // đúng cơ chế prompt() này nên nhiều khả năng cũng đang âm thầm gặp lỗi y
-                      // hệt lúc đăng nhập — chỉ là không lộ ra vì nút "Đăng nhập bằng Google" vẫn
-                      // bấm tay được qua cơ chế popup riêng (không phải prompt) nên che mất lỗi.
-                      use_fedcm_for_prompt: true,
-                      callback: (response) => {
-                          window.isRenewing = false;
-                          setCurrentUser(prev => {
-                              if (!prev) return prev;
-                              const updated = { ...prev, credential: response.credential };
-                              localStorage.setItem('tuyensinh_user', JSON.stringify(updated));
-                              return updated;
-                          });
-                      }
-                  });
-                  window.google.accounts.id.prompt((notification) => {
-                      // Nếu hệ thống Google KHÔNG THỂ hiển thị popup gia hạn ngầm
-                      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                          // ĐÃ THÊM: log rõ LÝ DO Google từ chối hiện popup — trước đây gặp
-                          // "gia hạn thất bại" là bó tay, không biết vì sao (trình duyệt chặn
-                          // cookie bên thứ 3, Google tự tạm khoá popup do trước đó người dùng
-                          // đã bấm tắt nhiều lần, phiên Google đã đăng xuất, v.v. — mỗi lý do
-                          // sửa một kiểu khác nhau). Mở Console (F12) lúc gặp lỗi để xem đúng
-                          // nguyên nhân, báo lại để xử lý đúng chỗ thay vì đoán mò.
-                          console.warn(
-                              '[Gia hạn phiên Google] Popup không hiển thị được — lý do:',
-                              notification.isNotDisplayed() ? notification.getNotDisplayedReason() : notification.getSkippedReason()
-                          );
-                          window.isRenewing = false;
-                          if (window.confirm("Phiên đăng nhập sắp hết hạn và hệ thống tự gia hạn thất bại. Đăng xuất ngay để làm mới?")) {
-                              handleLogout("Đã đăng xuất để bảo mật dữ liệu.");
-                          }
-                      }
-                  });
-              } else {
-                  // ĐÃ SỬA BUG: trước đây window.isRenewing = true được set NGAY TRƯỚC khi
-                  // kiểm tra window.google có sẵn sàng hay chưa — nếu lúc đó window.google
-                  // (script accounts.google.com/gsi/client) CHƯA kịp tải xong hoặc bị chặn
-                  // hẳn (ví dụ trình chặn quảng cáo chặn domain accounts.google.com trên
-                  // tên miền công khai như github.io — khác với localhost lúc dev thường
-                  // được các bộ lọc bỏ qua), khối if() này rơi vào nhánh else và isRenewing
-                  // bị KẸT ở true VĨNH VIỄN — mọi lần checkTokenExpiry() sau đó (mỗi 30s)
-                  // đều bị chặn ngay từ đầu (if (!window.isRenewing) return), không bao giờ
-                  // thử lại, không log gì, không hiện popup xác nhận nào — cứ thế im lặng
-                  // tới khi hết hạn thật thì bung thẳng ra "Phiên đăng nhập đã hết hạn" mà
-                  // không hề thấy bước "gia hạn thất bại" trước đó (đúng hiện tượng gặp trên
-                  // github.io). Giờ reset lại cờ + log rõ lý do để lần sau (30s kế tiếp) có
-                  // cơ hội thử lại, và để biết chính xác window.google có tải được hay không.
-                  console.warn('[Gia hạn phiên Google] window.google.accounts.id chưa sẵn sàng (script accounts.google.com/gsi/client chưa tải xong hoặc bị chặn) — sẽ thử lại sau 30s.');
-                  window.isRenewing = false;
-              }
-          }
-      } else {
-          window.isRenewing = false; // Token còn khỏe thì reset cờ
+        }, 30 * 60 * 1000);
       }
     };
 
@@ -248,12 +142,10 @@ const App = () => {
       const events = ['mousemove', 'keydown', 'scroll', 'click'];
       events.forEach(e => window.addEventListener(e, resetIdleTimer));
       resetIdleTimer();
-      tokenCheckInterval = setInterval(checkTokenExpiry, 30000); 
     }
 
     return () => {
       clearTimeout(idleTimer);
-      clearInterval(tokenCheckInterval);
       const events = ['mousemove', 'keydown', 'scroll', 'click'];
       events.forEach(e => window.removeEventListener(e, resetIdleTimer));
     };

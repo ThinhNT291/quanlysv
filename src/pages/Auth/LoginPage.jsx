@@ -42,10 +42,13 @@ const handleGoogleSuccess = async (credentialResponse) => {
             avatar: decoded.picture,
             role: result.data.role, // <--- ĂN TIỀN Ở ĐÂY! Lấy đúng Role (Admin, CanBo...) từ Google Sheets
             roles: result.data.roles, // ĐÃ THÊM: mảng role (chữ thường) để hỗ trợ multi-role, App.jsx dùng cái này để so quyền
-            // ĐÃ SỬA tên field "token" -> "credential": App.jsx đọc currentUser.credential để tính hạn
-            // JWT (checkTokenExpiry) — do lệch tên field, tính năng cảnh báo/gia hạn token trước đây
-            // KHÔNG BAO GIỜ chạy (luôn no-op), user bị lỗi âm thầm sau ~1 tiếng mà không có cảnh báo.
-            credential: credentialResponse.credential
+            credential: credentialResponse.credential,
+            // ĐÃ THÊM: sessionToken nội bộ (trượt hạn 8 tiếng) mà backend (action 'verifyToken')
+            // giờ cấp luôn cho tài khoản Google, y hệt tài khoản thường — studentApi.js
+            // (getAuthParams) sẽ ưu tiên gửi cái này ở MỌI request thay vì phụ thuộc vào
+            // idToken Google (hết hạn cứng sau 1 tiếng, phải nhờ Google tự gia hạn ngầm mới
+            // sống tiếp được — cơ chế đó hay bị "gia hạn thất bại", giờ không cần tới nữa).
+            sessionToken: result.data.sessionToken
         };
         
         if (typeof onLoginSuccess === 'function') {
