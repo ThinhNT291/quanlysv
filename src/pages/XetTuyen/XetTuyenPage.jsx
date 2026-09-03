@@ -5,6 +5,7 @@ import './XetTuyen.css';
 // SettingsPage đang dùng, đã chạy ổn) — thay vì tự viết lại 1 bản riêng ở đây. Cả 2
 // nơi giờ gọi CÙNG 1 chỗ, cùng 1 cách xác thực (GET + idToken/sessionToken).
 import { fetchConfig, fetchXetTuyenHeaders } from '../../api/studentApi';
+import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
 
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
@@ -953,6 +954,12 @@ const XetTuyenPage = () => {
               </button>
               <input type="file" ref={fileInputRef} onChange={processCCCDImage} accept="image/*" style={{ display: 'none' }} />
           </div>
+        </div>
+
+        {/* ĐÃ THÊM (Pha 1·D1): bong bóng thông báo hồ sơ chờ Admin xác nhận định danh — chỉ
+            hiện khi có, không chiếm chỗ lúc không cần thiết. */}
+        <div className="mb-3">
+          <CanXacNhanBadge />
         </div>
 
         {/* Bản sao 3 nút thao tác nhanh — CHỈ hiện trên di động/màn hình nhỏ (< md), nằm

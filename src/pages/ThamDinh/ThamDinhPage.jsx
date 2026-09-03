@@ -14,6 +14,7 @@ import {
 import { DICT_NGANH } from './thamDinhConfig';
 import DateRangePicker from './DateRangePicker';
 import './ThamDinh.css';
+import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
 
 // ĐÃ THÊM: hồ sơ đến từ trang "Thu hồ sơ nhập học" (kênh "Thu hồ sơ trực tiếp") đã trúng
 // tuyển sẵn khi tạo, KHÔNG đi qua luồng thẩm định/duyệt của Xét tuyển — dùng để (1) ẩn/hiện
@@ -619,6 +620,7 @@ const ThamDinhPage = () => {
           </h3>
         </div>
         <div className="col-md-6 text-md-end d-flex justify-content-md-end align-items-center gap-2 flex-wrap">
+          <CanXacNhanBadge />
           <span className="small text-muted">
             {isLoading ? '⏳ Đang tải dữ liệu...' : dataUpdatedAt ? `✔ Đồng bộ: ${new Date(dataUpdatedAt).toLocaleTimeString('vi-VN')}` : ''}
           </span>
@@ -718,7 +720,15 @@ const ThamDinhPage = () => {
                 chữ "Xóa lọc" rõ ràng; màu mặc định trung tính (không nổi bật), tự động
                 chuyển cam nhạt khi isFilterActive = true (đang có ít nhất 1 điều kiện lọc
                 khác mặc định) — xem 2 class .thamdinh-reset-btn/-active trong CSS. */}
-
+            <div className="col-6 td-col-reset">
+              <button
+                className={`btn btn-sm w-100 ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
+                onClick={resetFilters}
+                title="Xóa bộ lọc, quay về mặc định"
+              >
+                <i className="bi bi-x-circle me-1"></i>Xóa lọc
+              </button>
+            </div>
             <div className="col-6 td-col-hoso-status">
               <label className="form-label small fw-bold mb-1">Trạng thái hồ sơ</label>
               <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
@@ -738,7 +748,7 @@ const ThamDinhPage = () => {
                 <option value="Mới bổ sung">Mới bổ sung</option>
                 <option value="Đã báo thiếu">Đã báo thiếu</option>
                 <option value="Đã duyệt">Đã duyệt</option>
-                <option value="Đã trúng tuyển">Đã trúng tuyển (NHTT)</option>
+                <option value="Đã trúng tuyển">Đã trúng tuyển (Nhập học)</option>
               </select>
             </div>
             <div className="col-6 td-col-sort">
@@ -759,18 +769,9 @@ const ThamDinhPage = () => {
                 type="button"
                 className={`btn btn-sm w-100 ${showTrucTiep ? 'btn-info text-white' : 'btn-outline-secondary'}`}
                 onClick={() => { setShowTrucTiep(v => !v); setCurrentPage(1); }}
-                title="Hiện/ẩn hồ sơ thu trực tiếp (đã trúng tuyển)"
+                title="Hiện/ẩn hồ sơ từ trang Thu hồ sơ nhập học (kênh Thu hồ sơ trực tiếp)"
               >
-                <i className="bi bi-person-check me-1"></i>NHTT
-              </button>
-            </div>
-                        <div className="col-6 td-col-reset">
-              <button
-                className={`btn btn-sm w-100 ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
-                onClick={resetFilters}
-                title="Xóa bộ lọc, quay về mặc định"
-              >
-                <i className="bi bi-x-circle me-1"></i>Xóa lọc
+                <i className="bi bi-person-check me-1"></i>Nhập học trực tiếp
               </button>
             </div>
           </div>
@@ -1024,14 +1025,11 @@ const ThamDinhPage = () => {
                     <div className="col-4">
                       {scores.type === 'thpt' ? (
                         <div className="border rounded p-2 text-center h-100" style={{ background: '#e8f5e9', borderColor: '#81c784' }}>
-                          <div className="small" style={{ color: '#2e7d32' }}>Điểm TT / Tổ hợp / Điểm chuẩn</div>
+                          <div className="small" style={{ color: '#2e7d32' }}>Điểm trúng tuyển / Tổ hợp / Điểm chuẩn</div>
                           {scores.hasScore ? (
                             <>
-                          <div className="fw-bold" style={{ color: '#2e7d32' }}>
-                              {scores.finalTotalScore} <span className="small text-muted">({scores.bestCombo})</span>
-                              <span className="small text-muted"> / 15</span>
-                          </div>
-
+                              <div className="fw-bold" style={{ color: '#2e7d32' }}>{scores.finalTotalScore} <span className="small text-muted">({scores.bestCombo})</span></div>
+                              <div className="small text-muted">/ 15</div>
                             </>
                           ) : <div className="small fst-italic text-muted">Chưa đủ dữ liệu điểm</div>}
                         </div>

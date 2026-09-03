@@ -11,6 +11,7 @@ import LoginPage from './pages/Auth/LoginPage';
 import UserStatsPage from './pages/Settings/UserStatsPage'; 
 import XetTuyenPage from './pages/XetTuyen/XetTuyenPage'; 
 import ThamDinhPage from './pages/ThamDinh/ThamDinhPage'; // ĐÃ THÊM (Pha 2 roadmap)
+import XacNhanDinhDanhPage from './pages/DinhDanh/XacNhanDinhDanhPage'; // ĐÃ THÊM (Pha 1·D1 — bước 4)
 
 // ĐÃ THÊM: helper so quyền không phân biệt hoa/thường, hỗ trợ 1 tài khoản có
 // nhiều role cùng lúc (userRoles là mảng, khớp với "roles" mảng backend trả về ở
@@ -298,6 +299,15 @@ const App = () => {
                   </li>
                 )}
 
+                {/* HÀNG ĐỢI XÁC NHẬN ĐỊNH DANH: Chỉ Admin — ĐÃ THÊM (Pha 1·D1 — bước 4) */}
+                {hasAnyRole(currentUser.roles, ['Admin']) && (
+                  <li className="nav-item">
+                    <NavLink to="/xac-nhan-dinh-danh" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
+                      <i className="bi bi-person-fill-exclamation me-1"></i> Xác nhận định danh
+                    </NavLink>
+                  </li>
+                )}
+
                 {/* CẤU HÌNH: Chỉ Admin mới thấy */}
                 {hasAnyRole(currentUser.roles, ['Admin']) && (
                   <li className="nav-item">
@@ -343,6 +353,13 @@ const App = () => {
             <Route path="/settings" element={
               <ProtectedRoute userRoles={currentUser.roles} allowedRoles={[]}>
                 <SettingsPage />
+              </ProtectedRoute>
+            } />
+
+            {/* Hàng đợi xác nhận định danh (Chỉ Admin) — ĐÃ THÊM (Pha 1·D1 — bước 4) */}
+            <Route path="/xac-nhan-dinh-danh" element={
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={[]}>
+                <XacNhanDinhDanhPage />
               </ProtectedRoute>
             } />
             

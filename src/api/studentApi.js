@@ -281,6 +281,53 @@ export const savePayment = async ({ maSV, loaiPhi, soTien, isChecked }) => {
   throw new Error(response.data.message || 'Lỗi lưu khoản nộp tiền');
 };
 
+// ==========================================================
+// PHA 1·D1 (bước 4) — "Hàng đợi xác nhận định danh" (Khóa định danh)
+// Khớp 3 action GAS: dinhDanhDanhSachCanXacNhan (GET, Admin) / dinhDanhSoLuongCanXacNhanCuaToi
+// (GET, mọi role nhập liệu — dùng cho bong bóng thông báo) / dinhDanhXuLyNghiTrung (POST, Admin).
+// ==========================================================
+
+// Danh sách đầy đủ (kèm ứng viên + bộ mã phụ của từng ứng viên) — dùng cho trang Admin.
+export const fetchDanhSachXacNhanDinhDanh = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=dinhDanhDanhSachCanXacNhan&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi lấy danh sách chờ xác nhận định danh');
+};
+
+// Chỉ đếm — dùng cho bong bóng thông báo ở các trang Thu hồ sơ/Xét tuyển/Thẩm định, lỗi thì
+// coi như 0 (không có gì để hiện) thay vì làm phiền người dùng bằng thông báo lỗi vặt.
+export const fetchSoLuongCanXacNhanDinhDanhCuaToi = async () => {
+  try {
+    const auth = getAuthParams();
+    const response = await axios.get(`${GAS_URL}?action=dinhDanhSoLuongCanXacNhanCuaToi&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+    if (response.data && response.data.code === 200) {
+      return response.data.data.soLuong || 0;
+    }
+    return 0;
+  } catch (e) {
+    return 0;
+  }
+};
+
+// hanhDong: 'ganVao' (kèm svKeyChon) hoặc 'taoMoi'.
+export const xuLyNghiTrungDinhDanh = async ({ maSV, hanhDong, svKeyChon }) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'dinhDanhXuLyNghiTrung');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify({ maSV, hanhDong, svKeyChon }));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi xử lý nghi trùng định danh');
+};
+
 // ==========================================
 // PHẦN 4: API CẤU HÌNH HỆ THỐNG
 // ==========================================

@@ -7,6 +7,7 @@ import SearchFilter from '../../features/Admissions/SearchFilter';
 import StudentTable from '../../features/Admissions/StudentTable';
 import DocumentList from '../../features/Admissions/DocumentList';
 import AdmissionsChart from '../../features/Admissions/AdmissionsChart';
+import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
 
 // ĐÃ SỬA: đọc thẳng sheet Trung Gian qua fetchAdmissions (chỉ đúng kênh "Thu hồ sơ
 // trực tiếp", nhờ cột KÊNH NỘP lọc ở backend) thay cho fetchStudents (sheet SinhVien cũ)
@@ -29,6 +30,9 @@ const AdmissionsPage = () => {
       <div className="row mb-3 align-items-center">
         <div className="col-md-6">
           <h4 className="text-uppercase fw-bold" style={{ color: '#037683' }}>Gọi nhập học hồ sơ</h4>
+        </div>
+        <div className="col-md-6 text-md-end mt-2 mt-md-0">
+          <CanXacNhanBadge />
         </div>
       </div>
 
