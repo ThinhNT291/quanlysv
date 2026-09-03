@@ -138,7 +138,7 @@ const Home = ({ currentUser }) => {
       ></div>
 
       <div className="home-welcome mb-4">
-        <h3 className="fw-bold mb-1">Chào {displayName} 👋</h3>
+        <h3 className="fw-bold mb-1">Chào {displayName} </h3>
         <p className="text-muted mb-0">Chọn tác vụ của bạn.</p>
       </div>
 

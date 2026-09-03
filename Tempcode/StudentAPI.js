@@ -37,16 +37,111 @@ const getAuthParams = () => {
   }
 };
 // ==========================================
-// ĐÃ XOÁ: PHẦN 1 (API QUẢN LÝ SINH VIÊN — fetchStudents/addStudent/deleteStudent/
-// updateStudent, ghi thẳng sheet "SinhVien") và PHẦN 2 (API QUẢN LÝ GIẤY TỜ —
-// fetchDocuments/toggleDocument/toggleStatusStudent, ghi thẳng sheet "GiayTo").
-// Đã xác nhận không còn StudentTable.jsx/DocumentList.jsx/component nào import các
-// hàm này nữa — trang Thu hồ sơ giờ dùng nhóm API "Trung Gian" ở PHẦN 3B bên dưới
-// (fetchAdmissions/addAdmission/updateAdmission/deleteAdmission/toggleAdmissionField/
-// importAdmissions). 2 sheet "SinhVien"/"GiayTo" phía Google Sheets có thể đổi tên
-// sang dạng lưu trữ (VD "SinhVien_OLD_ARCHIVE") để giữ 1 thời gian an toàn trước khi
-// xoá hẳn.
+// PHẦN 1: API QUẢN LÝ SINH VIÊN
 // ==========================================
+
+export const fetchStudents = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=getStudents&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi lấy dữ liệu');
+};
+
+export const addStudent = async (newStudent) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'addStudent');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify(newStudent));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi khi thêm sinh viên');
+};
+
+export const deleteStudent = async (maSV) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'deleteStudent');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('MaSV', maSV);
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi khi xóa');
+};
+
+export const updateStudent = async (updatedStudent) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'editStudent');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify(updatedStudent));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi khi cập nhật');
+};
+
+// ==========================================
+// PHẦN 2: API QUẢN LÝ GIẤY TỜ (MASTER-DETAIL)
+// ==========================================
+
+export const fetchDocuments = async (maSV) => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=getDocuments&MaSV=${maSV}&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  return [];
+};
+
+// Đánh dấu nộp / rút giấy tờ HOẶC cập nhật ghi chú
+export const toggleDocument = async ({ maSV, tenGiayTo, isChecked, ghiChu = '' }) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'toggleDocument');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('MaSV', maSV);
+  formData.append('TenGiayTo', tenGiayTo);
+  formData.append('IsChecked', isChecked);
+  formData.append('GhiChu', ghiChu); // Gửi thêm dòng này
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi cập nhật giấy tờ');
+};
+
+// Cập nhật trạng thái nhập học nhanh
+export const toggleStatusStudent = async ({ maSV, status }) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'toggleStatus');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('MaSV', maSV);
+  formData.append('Status', status);
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi cập nhật trạng thái');
+};
 
 // ==========================================
 // PHẦN 3: API TIỆN ÍCH NÂNG CAO
@@ -138,18 +233,32 @@ export const importStudents = async (studentsArray) => {
   throw new Error(response.data.message || 'Lỗi khi import danh sách Excel');
 };
 
-// ĐÃ XOÁ: hàm cũ importStudentsToAdmissions (action 'importStudentsAdmissions', ghi
-// thẳng sheet "SinhVien") — đã xác nhận không còn nơi nào gọi tới, xem importAdmissions
-// bên dưới (ghi thẳng Trung Gian). LƯU Ý: importStudents() ở trên (không có hậu tố
-// "ToAdmissions") là hàm KHÁC, vẫn đang dùng cho trang Xét tuyển — không đụng tới.
+// ĐÃ THÊM: import Excel RIÊNG cho trang Thu hồ sơ nhập học (AdmissionsPage) — ghi
+// đúng vào sheet SinhVien, khác với importStudents() ở trên (dùng cho Xét tuyển).
+// GIỮ LẠI (không xoá) phòng còn nơi nào tham chiếu — trang Thu hồ sơ giờ dùng
+// importAdmissions() bên dưới, ghi thẳng Trung Gian thay vì sheet SinhVien.
+export const importStudentsToAdmissions = async (studentsArray) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'importStudentsAdmissions');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify(studentsArray));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi khi import danh sách Excel');
+};
 
 // ==========================================================
-// TRANG "THU HỒ SƠ NHẬP HỌC" — nhóm API đọc/ghi THẲNG sheet Trung Gian (khớp action
-// trong Quanlysv.gs: getAdmissionsData/addAdmission/updateAdmission/deleteAdmission/
-// toggleAdmissionField/importAdmissions/getAdmissionsHeaders/getPayments/savePayment).
-// ĐÃ THAY THẾ HOÀN TOÀN fetchStudents/addStudent/updateStudent/deleteStudent/
-// toggleDocument/toggleStatusStudent/importStudentsToAdmissions cho RIÊNG trang này —
-// các hàm cũ đã được xoá hẳn (xem PHẦN 1/2 ở trên).
+// ĐÃ THÊM: TRANG "THU HỒ SƠ NHẬP HỌC" — nhóm API mới, đọc/ghi THẲNG sheet Trung Gian
+// (khớp action mới trong Quanlysv.gs: getAdmissionsData/addAdmission/updateAdmission/
+// deleteAdmission/toggleAdmissionField/importAdmissions/getAdmissionsHeaders/
+// getPayments/savePayment). Thay thế fetchStudents/addStudent/updateStudent/
+// deleteStudent/toggleDocument/toggleStatusStudent/importStudentsToAdmissions cho
+// RIÊNG trang này — các hàm cũ ở trên vẫn còn nguyên, không đụng tới.
 // ==========================================================
 
 export const fetchAdmissions = async () => {
