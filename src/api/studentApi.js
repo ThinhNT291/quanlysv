@@ -446,6 +446,96 @@ export const saveConfig = async (configData) => {
   throw new Error(response.data.message || 'Lỗi lưu cấu hình');
 };
 
+// ĐÃ THÊM: Chỉ tiêu tuyển sinh theo năm/ngành (trang Cài đặt) — khác saveConfig ở chỗ
+// GAS chỉ thay thế đúng các dòng của 1 năm đang lưu, giữ nguyên các năm khác (xem
+// action 'saveChiTieu' trong Quanlysv.gs). fetchChiTieu trả về TOÀN BỘ mọi năm luôn
+// (dữ liệu nhỏ), phía trang tự lọc theo năm đang chọn.
+export const fetchChiTieu = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=getChiTieu&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải chỉ tiêu tuyển sinh');
+};
+
+// nam: chuỗi/số năm; items: mảng [{ nganh, chiTieu }] — CHỈ của đúng năm này.
+export const saveChiTieu = async (nam, items) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'saveChiTieu');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify({ nam, items }));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi lưu chỉ tiêu tuyển sinh');
+};
+
+// ĐÃ THÊM: "Kho tra cứu sinh viên" — 1 API DUY NHẤT vừa lọc vừa phân trang NGAY TRÊN
+// SERVER (khớp action 'timKiemKhoSinhVien' trong Quanlysv.gs — gộp Trung Gian + KETQUA
+// + Đào tạo). Khác mọi hàm fetch...Data() khác trong file này (tải hết 1 lần rồi lọc
+// bên React) — ở đây mỗi lần đổi bộ lọc/trang phải GỌI LẠI hàm này với tham số mới,
+// KHÔNG tự lọc mảng cũ trong trình duyệt, để không phải tải lại toàn bộ kho mỗi lần.
+// params: { tuKhoa, nganh, khoa, heDaoTao, hinhThucDaoTao, namXetTuyen, trangThai,
+//           tuNgay, denNgay, trang, kichThuoc } — mọi trường đều optional.
+export const timKiemKhoSinhVien = async (params = {}) => {
+  const auth = getAuthParams();
+  const qs = new URLSearchParams({
+    action: 'timKiemKhoSinhVien',
+    idToken: auth.idToken,
+    sessionToken: auth.sessionToken,
+  });
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.append(k, v);
+  });
+  const response = await axios.get(`${GAS_URL}?${qs.toString()}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data; // { items, tongSo, trang, kichThuoc, tongTrang }
+  }
+  throw new Error(response.data.message || 'Lỗi tìm kiếm kho sinh viên');
+};
+
+// ĐÃ THÊM: bảng thống kê tổng hợp (KPI + biểu đồ) đặt phía trên bảng kết quả ở trang Kho
+// (khớp action 'layThongKeKho' trong Quanlysv.gs). Chỉ có 1 tham số duy nhất — năm xét
+// tuyển (optional, để trống = gộp mọi năm; % so với chỉ tiêu chỉ tính được khi CÓ chọn
+// đúng 1 năm, xem giải thích trong action GAS).
+export const layThongKeKho = async (namXetTuyen = '') => {
+  const auth = getAuthParams();
+  const qs = new URLSearchParams({
+    action: 'layThongKeKho',
+    idToken: auth.idToken,
+    sessionToken: auth.sessionToken,
+  });
+  if (namXetTuyen) qs.append('namXetTuyen', namXetTuyen);
+  const response = await axios.get(`${GAS_URL}?${qs.toString()}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải thống kê kho sinh viên');
+};
+
+// ĐÃ THÊM: trang chi tiết 1 hồ sơ (route con /quan-ly-ho-so-moi/ho-so/:cccd/:nganh, khớp
+// action 'layChiTietHoSoKho'). Đọc trực tiếp, KHÔNG qua cache — luôn lấy bản mới nhất.
+export const layChiTietHoSoKho = async (cccd, nganh) => {
+  const auth = getAuthParams();
+  const qs = new URLSearchParams({
+    action: 'layChiTietHoSoKho',
+    idToken: auth.idToken,
+    sessionToken: auth.sessionToken,
+    cccd: cccd || '',
+    nganh: nganh || '',
+  });
+  const response = await axios.get(`${GAS_URL}?${qs.toString()}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải chi tiết hồ sơ');
+};
+
 // ==========================================
 // PHẦN 5: API XÁC THỰC (AUTHENTICATION)
 // ==========================================

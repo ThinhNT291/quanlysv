@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchConfig, saveConfig } from '../../api/studentApi'; 
+import { fetchConfig, saveConfig, fetchChiTieu, saveChiTieu } from '../../api/studentApi';
 import Swal from 'sweetalert2';
 
 // Khai báo link GAS để fetch Lịch sử (Thay đúng link của ông vào đây)
@@ -110,6 +110,45 @@ const SettingsPage = () => {
 
   const handleSaveAll = () => saveMutation.mutate(localConfig);
 
+  // ĐÃ THÊM: Chỉ tiêu tuyển sinh theo năm/ngành — dùng cho trang "Kho tra cứu sinh
+  // viên" sau này tính % đạt chỉ tiêu (theo từng ngành + theo tổng). Tách sheet/API
+  // riêng (ChiTieuTuyenSinh, action getChiTieu/saveChiTieu) vì bản chất khác CauHinh:
+  // đây là số liệu GẮN VỚI TỪNG NĂM, tích luỹ qua nhiều năm chứ không phải danh mục
+  // "hiện có gì" duy nhất như Ngành/Khóa/Hệ đào tạo ở trên.
+  const { data: chiTieuData = [] } = useQuery({
+    queryKey: ['chiTieuTuyenSinh'],
+    queryFn: fetchChiTieu,
+  });
+  const [chiTieuNam, setChiTieuNam] = useState(String(new Date().getFullYear()));
+  const [chiTieuLocal, setChiTieuLocal] = useState({}); // { [nganh]: chỉ tiêu (số) } — CHỈ của năm đang chọn
+
+  // Các năm đã từng lưu chỉ tiêu — hiện thành nút bấm nhanh, mới nhất trước.
+  const cacNamDaCo = useMemo(() => {
+    const s = new Set(chiTieuData.map(it => it.nam));
+    return [...s].sort((a, b) => b.localeCompare(a));
+  }, [chiTieuData]);
+
+  // Đổi năm (hoặc dữ liệu chỉ tiêu tải xong) -> nạp lại đúng các ô nhập của năm đó.
+  useEffect(() => {
+    const map = {};
+    chiTieuData.filter(it => it.nam === chiTieuNam).forEach(it => { map[it.nganh] = it.chiTieu; });
+    setChiTieuLocal(map);
+  }, [chiTieuData, chiTieuNam]);
+
+  const saveChiTieuMutation = useMutation({
+    mutationFn: () => saveChiTieu(
+      chiTieuNam,
+      Object.entries(chiTieuLocal).map(([nganh, chiTieu]) => ({ nganh, chiTieu: Number(chiTieu) || 0 }))
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chiTieuTuyenSinh'] });
+      Swal.fire('Thành công', `Đã lưu chỉ tiêu tuyển sinh năm ${chiTieuNam}!`, 'success');
+    },
+    onError: (err) => Swal.fire('Lỗi', err.message, 'error'),
+  });
+
+  const tongChiTieuNam = Object.values(chiTieuLocal).reduce((s, v) => s + (Number(v) || 0), 0);
+
   const handleCheckPin = async () => {
     if (pinCode === '291') {
         setShowPinModal(false); setPinCode(''); setShowHistoryModal(true); setIsLoadingLogs(true);
@@ -152,6 +191,88 @@ const SettingsPage = () => {
       <div className="alert alert-info border-0 shadow-sm">
         <i className="bi bi-info-circle-fill me-2"></i>
         Nhập thêm ở ô trống. <strong>Nhấp đúp chuột</strong> (Double-click) vào chữ để sửa đổi, hoặc bấm dấu <strong className="text-danger">X</strong> để xóa.
+      </div>
+
+      {/* ĐÃ THÊM: Chỉ tiêu tuyển sinh — nhập theo từng năm, mỗi năm 1 số cho mỗi ngành.
+          Chọn/gõ năm ở góc phải card, bảng bên dưới tự nạp lại đúng số của năm đó. */}
+      <div className="card border-0 shadow-sm mb-2">
+        <div className="card-header bg-white fw-bold text-secondary d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <span><i className="bi bi-bullseye me-2"></i>Chỉ tiêu tuyển sinh</span>
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <label className="small text-muted mb-0">Năm:</label>
+            <input
+              type="number"
+              className="form-control form-control-sm"
+              style={{ width: 100 }}
+              value={chiTieuNam}
+              onChange={(e) => setChiTieuNam(e.target.value.trim())}
+            />
+            {cacNamDaCo.length > 0 && (
+              <div className="d-flex gap-1 flex-wrap">
+                {cacNamDaCo.map((nam) => (
+                  <button
+                    key={nam}
+                    type="button"
+                    className={`btn btn-sm ${nam === chiTieuNam ? 'btn-primary' : 'btn-outline-secondary'}`}
+                    onClick={() => setChiTieuNam(nam)}
+                  >
+                    {nam}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="card-body">
+          {(localConfig.Nganh || []).length === 0 ? (
+            <div className="text-muted small fst-italic">
+              Chưa có danh mục Ngành — thêm ở khối "Danh mục Ngành học" bên dưới trước khi nhập chỉ tiêu.
+            </div>
+          ) : (
+            <>
+              <div className="table-responsive">
+                <table className="table table-sm align-middle mb-2">
+                  <thead>
+                    <tr>
+                      <th>Ngành</th>
+                      <th style={{ width: 160 }}>Chỉ tiêu năm {chiTieuNam || '—'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {localConfig.Nganh.map((nganh) => (
+                      <tr key={nganh}>
+                        <td>{nganh}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            className="form-control form-control-sm"
+                            value={chiTieuLocal[nganh] ?? ''}
+                            onChange={(e) => setChiTieuLocal(prev => ({ ...prev, [nganh]: e.target.value }))}
+                            placeholder="0"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="fw-bold table-light">
+                      <td>Tổng chỉ tiêu năm {chiTieuNam || '—'}</td>
+                      <td>{tongChiTieuNam}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <button
+                className="btn btn-success btn-sm fw-bold"
+                onClick={() => saveChiTieuMutation.mutate()}
+                disabled={saveChiTieuMutation.isPending || !chiTieuNam}
+              >
+                {saveChiTieuMutation.isPending ? 'Đang lưu...' : <><i className="bi bi-save me-2"></i>Lưu chỉ tiêu năm {chiTieuNam}</>}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="row g-4 mt-1">

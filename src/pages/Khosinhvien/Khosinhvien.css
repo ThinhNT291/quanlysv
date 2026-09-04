@@ -1,0 +1,132 @@
+/* ĐÃ THÊM: trang "Kho tra cứu sinh viên" (route /quan-ly-ho-so-moi). */
+
+/* Nút "Lọc thêm"/"Xóa lọc" mượn đúng 2 class màu đã dùng ở ThamDinhPage.css để đồng bộ
+   giao diện toàn hệ thống (trung tính khi không có gì lọc, cam nhạt khi đang lọc). */
+.kho-reset-btn {
+  background-color: #fff;
+  border: 1px solid #ced4da;
+  color: #495057;
+}
+.kho-reset-btn:hover {
+  background-color: #f1f3f5;
+  border-color: #adb5bd;
+  color: #212529;
+}
+.kho-reset-btn-active {
+  background-color: #ffe8cc;
+  border: 1px solid #ffb366;
+  color: #7a3e00;
+  font-weight: 600;
+}
+.kho-reset-btn-active:hover {
+  background-color: #ffdcb0;
+  border-color: #ff9f40;
+  color: #5c2f00;
+}
+
+.kho-more-filter-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #ff9f40;
+  border: 1px solid #fff;
+}
+
+/* ĐÃ SỬA: trước đây cả dòng <tr> bấm đâu cũng mở modal (.kho-row-clickable trên <tr>) —
+   bị lỗi kéo-chọn-chữ trong dòng cũng bị hiểu nhầm thành bấm mở hồ sơ. Đã đổi sang dùng
+   <Link> thật (mở /quan-ly-ho-so-moi/ho-so/:cccd/:nganh) gắn đúng vào tên — trình duyệt tự
+   phân biệt kéo-chọn-chữ với bấm-để-mở, không cần lớp CSS "cả dòng bấm được" nữa. Giữ style
+   link ở đây cho đồng bộ màu/gạch chân với link hồ sơ khác trong hệ thống. */
+.kho-ten-link {
+  color: #037683;
+  text-decoration: none;
+  font-weight: 600;
+}
+.kho-ten-link:hover {
+  text-decoration: underline;
+  color: #024d56;
+}
+
+/* ĐÃ THÊM: "In nhanh" — dùng window.print() trực tiếp thay vì xuất PDF (đã có kiểu export
+   riêng ở ThamDinhPage) — khi in, ẩn HẾT trang, chỉ để lại đúng phần nội dung đánh dấu bằng
+   class .kho-print-area (trang chi tiết hồ sơ gắn class này ở div ngoài cùng). Phần đánh
+   dấu thêm .kho-hide-on-print (VD khối "Dữ liệu đầy đủ" nguyên trạng, khá dài) sẽ ẩn hẳn
+   khi in cho đỡ tốn giấy — dùng display:none (không phải visibility) để loại khỏi luồng in
+   hẳn, không chỉ ẩn mà vẫn chừa khoảng trắng. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .kho-print-area, .kho-print-area * {
+    visibility: visible;
+  }
+  .kho-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  .kho-print-area .kho-hide-on-print,
+  .kho-print-area .kho-hide-on-print * {
+    display: none !important;
+  }
+}
+
+/* ĐÃ THÊM: timeline dọc 3 bước ở trang chi tiết hồ sơ (Nộp hồ sơ -> Duyệt trúng tuyển ->
+   Bàn giao Đào tạo). Bước "xong" tô xanh, bước "chưa tới" tô xám nhạt. */
+.kho-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.kho-timeline-buoc {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+  padding-bottom: 24px;
+}
+.kho-timeline-buoc:last-child {
+  padding-bottom: 0;
+}
+.kho-timeline-buoc:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 32px;
+  bottom: 0;
+  width: 2px;
+  background-color: #dee2e6;
+}
+.kho-timeline-cham {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  z-index: 1;
+}
+.kho-timeline-xong .kho-timeline-cham {
+  background-color: #198754;
+  color: #fff;
+}
+.kho-timeline-chua .kho-timeline-cham {
+  background-color: #e9ecef;
+  color: #adb5bd;
+}
+.kho-timeline-chua .kho-timeline-noidung {
+  opacity: 0.6;
+}
+
+/* ĐÃ THÊM: khối "Chưa kết nối" (Đào tạo/Khảo thí/Tài chính) — đặt sẵn chỗ cho tương lai,
+   cố tình để nhạt/đứt nét để rõ đây là chỗ CHƯA CÓ dữ liệu, không phải lỗi hiển thị. */
+.kho-placeholder-he-thong {
+  border-style: dashed !important;
+  background-color: #f8f9fa;
+}

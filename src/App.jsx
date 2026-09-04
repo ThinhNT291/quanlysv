@@ -12,6 +12,8 @@ import UserStatsPage from './pages/Settings/UserStatsPage';
 import XetTuyenPage from './pages/XetTuyen/XetTuyenPage'; 
 import ThamDinhPage from './pages/ThamDinh/ThamDinhPage'; // ĐÃ THÊM (Pha 2 roadmap)
 import XacNhanDinhDanhPage from './pages/DinhDanh/XacNhanDinhDanhPage'; // ĐÃ THÊM (Pha 1·D1 — bước 4)
+import KhoSinhVienPage from './pages/KhoSinhVien/KhoSinhVienPage'; // ĐÃ THÊM: "Kho tra cứu sinh viên" — gộp Trung Gian + KETQUA + Đào tạo
+import ChiTietHoSoKhoPage from './pages/KhoSinhVien/ChiTietHoSoKhoPage'; // ĐÃ THÊM: trang chi tiết 1 hồ sơ trong Kho
 
 // ĐÃ THÊM: helper so quyền không phân biệt hoa/thường, hỗ trợ 1 tài khoản có
 // nhiều role cùng lúc (userRoles là mảng, khớp với "roles" mảng backend trả về ở
@@ -74,6 +76,34 @@ const App = () => {
       document.removeEventListener('keydown', handleEscape);
     };
   }, [isUserDropdownOpen]);
+
+  // ĐÃ THÊM: gom menu chính thành 3 nhóm xổ xuống (Tuyển sinh / Thẩm định / Hệ thống) cho
+  // hàng menu đỡ dài — openGroup giữ đúng 1 tên nhóm đang mở ('tuyensinh'|'thamdinh'|
+  // 'hethong') hoặc null. Dùng CHUNG 1 cơ chế đóng khi bấm ra ngoài/Esc như dropdown tài
+  // khoản ở trên, chỉ khác là phải tra đúng ref của nhóm đang mở (mỗi nhóm 1 ref riêng vì
+  // 3 nhóm là 3 khối DOM tách biệt trong <ul className="navbar-nav">).
+  const [openGroup, setOpenGroup] = useState(null);
+  const tuyenSinhRef = useRef(null);
+  const thamDinhRef = useRef(null);
+  const heThongRef = useRef(null);
+
+  useEffect(() => {
+    if (!openGroup) return;
+    const refTheoNhom = { tuyensinh: tuyenSinhRef, thamdinh: thamDinhRef, hethong: heThongRef };
+    const handleClickOutside = (e) => {
+      const ref = refTheoNhom[openGroup];
+      if (ref && ref.current && !ref.current.contains(e.target)) setOpenGroup(null);
+    };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setOpenGroup(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [openGroup]);
 
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = localStorage.getItem('tuyensinh_user');
@@ -199,17 +229,32 @@ const App = () => {
           <div className="container-fluid px-4">
             {/* ĐÃ THÊM: logo trường ở góc trên-trái, đứng cùng dòng với tên hệ thống — logo
                 tự thu nhỏ ở màn hình hẹp (xem .app-logo trong App.css) để cụm thương hiệu
-                không bị vỡ dòng, tránh phải xuống 2 dòng hay tách cột trên di động. */}
-            <span className="navbar-brand fw-bold d-flex align-items-center" style={{ color: '#0dcaf0', letterSpacing: '1px' }}>
+                không bị vỡ dòng, tránh phải xuống 2 dòng hay tách cột trên di động.
+                ĐÃ SỬA: bỏ mục "Trang chủ" khỏi menu chính -> gắn lối về trang chủ ngay vào
+                đây (cả logo lẫn chữ đều bấm được), đổi tên "HỆ THỐNG TUYỂN SINH" 1 dòng
+                thành "HỆ THỐNG / QUẢN LÝ SINH VIÊN" 2 dòng, chữ nhỏ lại, căn giữa. */}
+            <NavLink
+              to="/"
+              end
+              onClick={() => setIsNavCollapsed(true)}
+              className="navbar-brand fw-bold d-flex align-items-center text-decoration-none"
+              style={{ color: '#0dcaf0', letterSpacing: '0.5px' }}
+            >
               <img src={logoPhuXuan} alt="Phú Xuan University" className="app-logo me-2" />
-              <i className="bi bi-mortarboard-fill me-2"></i> HỆ THỐNG TUYỂN SINH
-            </span>
+              <i className="bi bi-mortarboard-fill me-2"></i>
+              <span className="d-flex flex-column text-center lh-1" style={{ fontSize: '0.8rem' }}>
+                <span>HỆ THỐNG</span>
+                <span>QUẢN LÝ SINH VIÊN</span>
+              </span>
+            </NavLink>
 
             {/* CỤM TÀI KHOẢN — ĐÃ KÉO RA KHỎI navbar-collapse: trước đây nằm chung trong menu
                 ☰ nên trên di động phải mở hẳn menu mới thấy đang đăng nhập là ai / mới đăng
                 xuất được. Giờ luôn hiển thị ngang hàng ngay cạnh thương hiệu, nhờ ms-auto +
                 flex-wrap sẵn có của .navbar nên màn quá hẹp sẽ tự xuống dòng chứ không tràn. */}
             <div className="nav-item dropdown d-flex align-items-center flex-shrink-0 position-relative ms-auto me-2 me-lg-3 mt-2 mt-lg-0 order-lg-2" ref={userDropdownRef}>
+              {/* ĐÃ SỬA: ẩn username khỏi nút bấm — giờ chỉ hiện avatar + role, gọn hơn. Tên
+                  tài khoản (displayName) chuyển vào bên trong menu xổ xuống, xem bên dưới. */}
               <a
                 className="nav-link dropdown-toggle text-light d-flex align-items-center p-0"
                 href="#"
@@ -224,16 +269,35 @@ const App = () => {
                 ) : (
                   <i className="bi bi-person-circle fs-4 me-2"></i>
                 )}
-                <div className="d-flex flex-column lh-1 text-start me-1">
-                  <span className="fw-bold small">{displayName}</span>
-                  <span className="small opacity-75" style={{ fontSize: '0.75rem' }}>{currentUser.role}</span>
-                </div>
+                <span className="small fw-bold me-1">{currentUser.role}</span>
               </a>
 
               <ul
                 className={`dropdown-menu dropdown-menu-end shadow border-0 mt-2 ${isUserDropdownOpen ? 'show' : ''}`}
                 style={{ position: 'absolute', right: 0, top: '100%' }}
               >
+                {/* ĐÃ THÊM: dòng username + avatar đầu menu — bấm vào sẽ mở trang hồ sơ cá
+                    nhân của tài khoản đang đăng nhập. Trang đó làm sau (hiện là placeholder
+                    "đang xây dựng", xem route /ho-so-ca-nhan trong Routes bên dưới) nên
+                    KHÔNG hiện lỗi/trắng trang khi bấm vào trước khi trang thật xong. */}
+                <li>
+                  <NavLink
+                    to="/ho-so-ca-nhan"
+                    className="dropdown-item py-2 d-flex align-items-center gap-2"
+                    onClick={() => {
+                      setIsNavCollapsed(true);
+                      setIsUserDropdownOpen(false);
+                    }}
+                  >
+                    {currentUser.avatar ? (
+                      <img src={currentUser.avatar} alt="avatar" className="rounded-circle" width="28" height="28" />
+                    ) : (
+                      <i className="bi bi-person-circle fs-5"></i>
+                    )}
+                    <span className="fw-bold">{displayName}</span>
+                  </NavLink>
+                </li>
+                <li><hr className="dropdown-divider" /></li>
                 <li>
                   <NavLink
                     to="/user-stats"
@@ -261,62 +325,134 @@ const App = () => {
 
             <div className={`${isNavCollapsed ? 'collapse' : ''} navbar-collapse app-nav-collapse order-lg-1`} id="navbarNav">
 
-              {/* MENU CHÍNH: Đã bọc điều kiện ẩn/hiện theo quyền */}
+              {/* MENU CHÍNH: ĐÃ SỬA — gom lại còn đúng 3 nhóm xổ xuống (Tuyển sinh/Thẩm định/
+                  Hệ thống) cho hàng menu đỡ dài, thay vì liệt kê phẳng từng trang như trước.
+                  "Trang chủ" đã bỏ khỏi đây (chuyển sang gắn vào logo/chữ header, xem phía
+                  trên). Mỗi nhóm chỉ hiện nếu tài khoản có quyền với ÍT NHẤT 1 trang bên
+                  trong nhóm đó; từng mục con bên trong vẫn tự kiểm tra quyền riêng như cũ,
+                  phòng trường hợp 1 tài khoản chỉ có quyền 1/2 mục trong nhóm. */}
               <ul className="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-4 gap-2">
-                {/* ĐÃ THÊM: lối về Trang chủ — trước đây "/" chỉ redirect thẳng sang Quản lý
-                    hồ sơ nên rời trang đó là không còn cách nào quay lại màn hình chọn
-                    chức năng nữa. */}
-                <li className="nav-item">
-                  <NavLink to="/" end onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
-                    <i className="bi bi-house-door-fill me-1"></i> Trang chủ
-                  </NavLink>
-                </li>
 
-                {/* MENU QUẢN LÝ HỒ SƠ: CanBo + Admin (sửa được) + ThamDinh (ĐÃ THÊM — chỉ
-                    xem, xem AdmissionsPage.jsx: trang tự khoá mọi nút/ô ghi dữ liệu khi
-                    tài khoản chỉ có role ThamDinh). */}
-                {hasAnyRole(currentUser.roles, ['CanBo', 'ThamDinh', 'Admin']) && (
-                  <li className="nav-item">
-                    <NavLink to="/thu-ho-so-nhap-hoc" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
-                      <i className="bi bi-people-fill me-1"></i> Quản lý hồ sơ
-                    </NavLink>
+                {/* NHÓM 1 — TUYỂN SINH: Quản lý hồ sơ (Nhập học) + Nhập liệu Xét tuyển. */}
+                {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
+                  <li className="nav-item dropdown position-relative" ref={tuyenSinhRef}>
+                    <a
+                      className="nav-link px-3 rounded dropdown-toggle text-light"
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); setOpenGroup(openGroup === 'tuyensinh' ? null : 'tuyensinh'); }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <i className="bi bi-mortarboard-fill me-1"></i> Tuyển sinh
+                    </a>
+                    <ul
+                      className={`dropdown-menu shadow border-0 mt-2 ${openGroup === 'tuyensinh' ? 'show' : ''}`}
+                      style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
+                    >
+                      {hasAnyRole(currentUser.roles, ['CanBo', 'ThamDinh', 'Admin']) && (
+                        <li>
+                          <NavLink
+                            to="/thu-ho-so-nhap-hoc"
+                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
+                          >
+                            <i className="bi bi-people-fill me-2"></i>Quản lý hồ sơ (Nhập học)
+                          </NavLink>
+                        </li>
+                      )}
+                      {hasAnyRole(currentUser.roles, ['TuyenSinh', 'ThamDinh', 'Admin']) && (
+                        <li>
+                          <NavLink
+                            to="/xet-tuyen"
+                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
+                          >
+                            <i className="bi bi-card-checklist me-2"></i>Nhập liệu Xét tuyển
+                          </NavLink>
+                        </li>
+                      )}
+                    </ul>
                   </li>
                 )}
 
-                {/* MENU XÉT TUYỂN: Dành cho TuyenSinh, ThamDinh và Admin */}
-                {hasAnyRole(currentUser.roles, ['TuyenSinh', 'ThamDinh', 'Admin']) && (
-                  <li className="nav-item">
-                    <NavLink to="/xet-tuyen" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
-                      <i className="bi bi-card-checklist me-1"></i> Nhập liệu Xét tuyển
-                    </NavLink>
-                  </li>
-                )}
-
-                {/* MENU THẨM ĐỊNH: Dành cho ThamDinh và Admin — ĐÃ THÊM (Pha 2 roadmap) */}
+                {/* NHÓM 2 — THẨM ĐỊNH: Ban Thẩm định + Xác nhận định danh. */}
                 {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
-                  <li className="nav-item">
-                    <NavLink to="/tham-dinh" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
-                      <i className="bi bi-clipboard-check me-1"></i> Ban Thẩm định
-                    </NavLink>
+                  <li className="nav-item dropdown position-relative" ref={thamDinhRef}>
+                    <a
+                      className="nav-link px-3 rounded dropdown-toggle text-light"
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); setOpenGroup(openGroup === 'thamdinh' ? null : 'thamdinh'); }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <i className="bi bi-clipboard-check me-1"></i> Thẩm định
+                    </a>
+                    <ul
+                      className={`dropdown-menu shadow border-0 mt-2 ${openGroup === 'thamdinh' ? 'show' : ''}`}
+                      style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
+                    >
+                      {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
+                        <li>
+                          <NavLink
+                            to="/tham-dinh"
+                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
+                          >
+                            <i className="bi bi-clipboard-check me-2"></i>Ban Thẩm định
+                          </NavLink>
+                        </li>
+                      )}
+                      {hasAnyRole(currentUser.roles, ['Admin', 'ThamDinh']) && (
+                        <li>
+                          <NavLink
+                            to="/xac-nhan-dinh-danh"
+                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
+                          >
+                            <i className="bi bi-person-fill-exclamation me-2"></i>Xác nhận định danh
+                          </NavLink>
+                        </li>
+                      )}
+                    </ul>
                   </li>
                 )}
 
-                {/* HÀNG ĐỢI XÁC NHẬN ĐỊNH DANH: Admin + ThamDinh — ĐÃ THÊM (Pha 1·D1 — bước 4);
-                    ĐÃ SỬA: trước chỉ Admin, mở thêm cho Ban thẩm định theo yêu cầu. */}
-                {hasAnyRole(currentUser.roles, ['Admin', 'ThamDinh']) && (
-                  <li className="nav-item">
-                    <NavLink to="/xac-nhan-dinh-danh" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
-                      <i className="bi bi-person-fill-exclamation me-1"></i> Xác nhận định danh
-                    </NavLink>
-                  </li>
-                )}
-
-                {/* CẤU HÌNH: Chỉ Admin mới thấy */}
-                {hasAnyRole(currentUser.roles, ['Admin']) && (
-                  <li className="nav-item">
-                    <NavLink to="/settings" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
-                      <i className="bi bi-gear-fill me-1"></i> Cấu hình hệ thống
-                    </NavLink>
+                {/* NHÓM 3 — HỆ THỐNG: Kho tra cứu sinh viên + Cấu hình hệ thống. */}
+                {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
+                  <li className="nav-item dropdown position-relative" ref={heThongRef}>
+                    <a
+                      className="nav-link px-3 rounded dropdown-toggle text-light"
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); setOpenGroup(openGroup === 'hethong' ? null : 'hethong'); }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <i className="bi bi-hdd-stack-fill me-1"></i> Hệ thống
+                    </a>
+                    <ul
+                      className={`dropdown-menu shadow border-0 mt-2 ${openGroup === 'hethong' ? 'show' : ''}`}
+                      style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
+                    >
+                      {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
+                        <li>
+                          <NavLink
+                            to="/quan-ly-ho-so-moi"
+                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
+                          >
+                            <i className="bi bi-archive-fill me-2"></i>Kho tra cứu sinh viên
+                          </NavLink>
+                        </li>
+                      )}
+                      {hasAnyRole(currentUser.roles, ['Admin']) && (
+                        <li>
+                          <NavLink
+                            to="/settings"
+                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
+                          >
+                            <i className="bi bi-gear-fill me-2"></i>Cấu hình hệ thống
+                          </NavLink>
+                        </li>
+                      )}
+                    </ul>
                   </li>
                 )}
               </ul>
@@ -361,6 +497,21 @@ const App = () => {
               </ProtectedRoute>
             } />
 
+            {/* Kho tra cứu sinh viên — ĐÃ THÊM. ProtectedRoute tự OR thêm Admin sẵn. */}
+            <Route path="/quan-ly-ho-so-moi" element={
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh']}>
+                <KhoSinhVienPage />
+              </ProtectedRoute>
+            } />
+            {/* ĐÃ THÊM: trang chi tiết 1 hồ sơ trong Kho — route con, cùng quyền như trang
+                Kho ở trên (không phải trang/file riêng, chỉ là 1 route khác của cùng bundle
+                React — không tốn thêm lưu trữ dù có bao nhiêu hồ sơ). */}
+            <Route path="/quan-ly-ho-so-moi/ho-so/:cccd/:nganh" element={
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh']}>
+                <ChiTietHoSoKhoPage />
+              </ProtectedRoute>
+            } />
+
             {/* Hàng đợi xác nhận định danh (Admin + ThamDinh) — ĐÃ THÊM (Pha 1·D1 — bước 4);
                 ĐÃ SỬA: allowedRoles=['ThamDinh'] — ProtectedRoute tự OR thêm Admin (xem định
                 nghĩa ở trên), nên kết quả là đúng 2 role Admin + ThamDinh được vào. */}
@@ -372,7 +523,19 @@ const App = () => {
             
             {/* Các trang chung ai cũng vào được */}
             <Route path="/user-stats" element={<UserStatsPage />} />
-            
+
+            {/* ĐÃ THÊM: trang hồ sơ cá nhân — mở từ dòng username trong menu tài khoản.
+                PLACEHOLDER tạm thời (trang thật làm sau) — có route thật để bấm vào không
+                bị lỗi/trắng trang, không cần ProtectedRoute vì ai đăng nhập cũng xem được
+                hồ sơ của chính mình, giống /user-stats ở trên. */}
+            <Route path="/ho-so-ca-nhan" element={
+              <div className="d-flex flex-column align-items-center justify-content-center mt-5 pt-5 text-center">
+                <h1 className="text-info display-1"><i className="bi bi-person-badge"></i></h1>
+                <h3 className="text-muted mt-3 fw-bold">Trang hồ sơ cá nhân</h3>
+                <p className="text-secondary">Đang được xây dựng — sẽ sớm ra mắt.</p>
+              </div>
+            } />
+
             {/* Trang báo lỗi 404 */}
             <Route path="*" element={
               <div className="d-flex flex-column align-items-center justify-content-center mt-5 pt-5">
