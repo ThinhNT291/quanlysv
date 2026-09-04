@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
 import { fetchDanhSachXacNhanDinhDanh, xuLyNghiTrungDinhDanh } from '../../api/studentApi';
+import GopHoSoDinhDanhPanel from './GopHoSoDinhDanhPanel';
 
 // ĐÃ THÊM (PHA 1·D1 — bước 4, "Hàng đợi xác nhận định danh"): trang riêng, CHỈ Admin, gom
 // TOÀN BỘ hồ sơ đang "CẦN_XÁC_NHẬN" (do addAdmission/importAdmissions/importStudents/
@@ -187,7 +188,6 @@ const XacNhanDinhDanhPage = () => {
                                   <span className="fw-bold">{uv.ho_ten_chuan_hoa} — {uv.ngay_sinh}</span>
                                   <span className={`badge ${dc.cls}`}>{dc.text}</span>
                                 </div>
-                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>sv_key: {uv.sv_key}</div>
                                 {uv.ma_phu.length > 0 ? (
                                   <div className="mt-1">
                                     {uv.ma_phu.map((m, idx) => (
@@ -221,6 +221,8 @@ const XacNhanDinhDanhPage = () => {
           </div>
         </div>
       )}
+
+      <GopHoSoDinhDanhPanel />
     </div>
   );
 };

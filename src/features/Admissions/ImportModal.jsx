@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import { fetchAdmissionsHeaders } from '../../api/studentApi';
+import { chuanHoaNgaySinhImport } from '../../utils/ngaySinh';
 
 // ĐÃ VIẾT LẠI TOÀN BỘ: file mẫu giờ được DỰNG ĐỘNG từ danh sách cột do server trả về
 // (action getAdmissionsHeaders, cùng bộ ADMISSIONS_DATA_FIELDS/ADMISSIONS_CHECK_FIELDS
@@ -42,6 +43,20 @@ const ImportModal = ({ onClose, onImport, isPending }) => {
     headersInfo.checkFields.forEach(c => { if (c !== 'GIẤY TỜ ƯU TIÊN') vidu[c] = 'x'; });
 
     const ws = XLSX.utils.json_to_sheet([vidu], { header: allCols });
+    // ĐÃ THÊM: khoá cột "NGÀY SINH" ở định dạng CHỮ (Text, number format "@") ngay trong file
+    // mẫu — nếu không, Excel có thể tự ý đổi ô này thành kiểu Date khi người nhập liệu sửa/gõ
+    // tiếp, và tuỳ theo vùng miền (locale) máy của người đó, "15/05/2008" có thể bị hiểu nhầm
+    // sang tháng/ngày thay vì ngày/tháng — hệ thống LUÔN hiểu cột này theo đúng dd/MM/yyyy
+    // (xem chuanHoaNgaySinhImport ở utils/ngaySinh.js, khớp đúng backend DinhDanh.gs).
+    const ngaySinhColIdx = allCols.indexOf('NGÀY SINH');
+    if (ngaySinhColIdx !== -1 && ws['!ref']) {
+      const colLetter = XLSX.utils.encode_col(ngaySinhColIdx);
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let r = 1; r <= range.e.r; r++) { // bỏ dòng 0 (header)
+        const addr = colLetter + (r + 1);
+        if (ws[addr]) { ws[addr].t = 's'; ws[addr].z = '@'; }
+      }
+    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template_ThuHoSo");
     XLSX.writeFile(wb, "File_Mau_Thu_Ho_So_Nhap_Hoc.xlsx");
@@ -60,7 +75,12 @@ const ImportModal = ({ onClose, onImport, isPending }) => {
       const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws);
+      // ĐÃ SỬA: chuẩn hoá "NGÀY SINH" về ISO (yyyy-MM-dd) ngay khi đọc file, để bảng xem
+      // trước hiện đúng NHƯ đã nhập qua form (input type="date"), thay vì để lộ chuỗi/số thô
+      // tuỳ Excel đọc ra — xem chuanHoaNgaySinhImport (utils/ngaySinh.js).
+      const data = XLSX.utils.sheet_to_json(ws).map(row => (
+        row['NGÀY SINH'] === undefined ? row : { ...row, 'NGÀY SINH': chuanHoaNgaySinhImport(row['NGÀY SINH']) }
+      ));
       setPreviewData(data);
     };
     reader.readAsBinaryString(file);

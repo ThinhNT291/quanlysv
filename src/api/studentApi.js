@@ -328,6 +328,51 @@ export const xuLyNghiTrungDinhDanh = async ({ maSV, hanhDong, svKeyChon }) => {
   throw new Error(response.data.message || 'Lỗi xử lý nghi trùng định danh');
 };
 
+// ==========================================================
+// PHA 1·D2 — "Gộp 2 hồ sơ định danh đã tồn tại" (khác với hàng đợi ở trên: 2 sv_key ĐÃ
+// TỒN TẠI SẴN, mỗi cái đã có mã/hồ sơ riêng, phát hiện sau là cùng 1 người). Khớp 3 action
+// GAS: dinhDanhTimKiemHoSo / dinhDanhXemTruocGop (GET, chỉ đọc) / dinhDanhGopHoSo (POST,
+// ghi thật) — cả 3 đều Admin.
+// ==========================================================
+
+// Tìm hồ sơ định danh theo họ tên / sv_key / CCCD / MSV, để chọn làm nguồn hoặc đích.
+export const timKiemHoSoDinhDanh = async (tuKhoa) => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=dinhDanhTimKiemHoSo&tuKhoa=${encodeURIComponent(tuKhoa)}&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tìm kiếm hồ sơ định danh');
+};
+
+// Xem trước 1 cặp gộp (nguồn/đích) — CHỈ ĐỌC, không ghi gì, dùng để hiện số liệu bắt xác
+// nhận tay trước khi gọi gopHoSoDinhDanh().
+export const xemTruocGopDinhDanh = async (svKeyNguon, svKeyDich) => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=dinhDanhXemTruocGop&svKeyNguon=${encodeURIComponent(svKeyNguon)}&svKeyDich=${encodeURIComponent(svKeyDich)}&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi xem trước gộp hồ sơ định danh');
+};
+
+// Gộp thật — svKeyNguon bị đánh dấu "đã gộp" (không xoá), mọi mã/hồ sơ của nguồn chuyển
+// hết sang svKeyDich. Không có API "hoàn tác" — phía UI phải bắt xác nhận tay kỹ trước khi gọi.
+export const gopHoSoDinhDanh = async ({ svKeyNguon, svKeyDich }) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'dinhDanhGopHoSo');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify({ svKeyNguon, svKeyDich }));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi gộp hồ sơ định danh');
+};
+
 // ==========================================
 // PHẦN 4: API CẤU HÌNH HỆ THỐNG
 // ==========================================

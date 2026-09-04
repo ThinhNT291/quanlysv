@@ -6,6 +6,7 @@ import './XetTuyen.css';
 // nơi giờ gọi CÙNG 1 chỗ, cùng 1 cách xác thực (GET + idToken/sessionToken).
 import { fetchConfig, fetchXetTuyenHeaders } from '../../api/studentApi';
 import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
+import { chuanHoaNgaySinhImport } from '../../utils/ngaySinh';
 
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
@@ -800,7 +801,11 @@ const XetTuyenPage = () => {
                           "STT": sttBase + importedCount + 1, "TRẠNG THÁI ĐẨY": "Waiting", "_Action": "INSERT",
                           "KẾT QUẢ SƠ TUYỂN": getField(rowArr, ["KẾT QUẢ SƠ TUYỂN", "KẾT QUẢ"]),
                           "CĂN CƯỚC": cccdVal, "TÊN SINH VIÊN": getField(rowArr, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]),
-                          "NGÀY SINH": getField(rowArr, ["NGÀY SINH"]), "NGÀNH": nganhVal,
+                          // ĐÃ SỬA: chuẩn hoá về ISO (yyyy-MM-dd) ngay khi đọc file — cùng quy
+                          // ước dd/MM/yyyy với ImportModal.jsx và backend (xem
+                          // chuanHoaNgaySinhImport, utils/ngaySinh.js) — để "NGÀY SINH" hiện
+                          // trong danh sách xem trước giống hệt như khi nhập tay qua form.
+                          "NGÀY SINH": chuanHoaNgaySinhImport(getField(rowArr, ["NGÀY SINH"])), "NGÀNH": nganhVal,
                           "KHÓA": getField(rowArr, ["KHÓA"]), "ĐỐI TƯỢNG ƯU TIÊN": getField(rowArr, ["ĐỐI TƯỢNG ƯU TIÊN"]),
                           "KHU VỰC ƯU TIÊN": getField(rowArr, ["KHU VỰC ƯU TIÊN", "KHU VỰC"]), "ĐỐI TƯỢNG ĐẦU VÀO": getField(rowArr, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐẦU VÀO"]),
                           "NĂM XÉT TUYỂN": getField(rowArr, ["NĂM XÉT TUYỂN", "NĂM TRÚNG TUYỂN"]), "HỆ ĐÀO TẠO": getField(rowArr, ["HỆ ĐÀO TẠO", "HỆ"]),
