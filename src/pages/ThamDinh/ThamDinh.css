@@ -113,34 +113,62 @@
 }
 
 /* ========================================================
-   ĐÃ SỬA (đợt 2): thu nhỏ tiếp toàn bộ khối bộ lọc theo đúng tỉ lệ mới yêu cầu,
-   tính TƯƠNG ĐỐI so với % của đợt trước (không phải so với % gốc ban đầu):
-   - Tìm nhanh:            16.6667% x 2/3   = 11.111%
-   - Từ ngày / Đến ngày:   20%      x 2/5   = 8%      (mỗi ô)
-   - Ngành đào tạo:        16.6667% x 3/4   = 12.5%   (tách riêng khỏi col-md-2 cũ)
-   - Đối tượng đầu vào:    16.6667% x 0.9   = 15%     (tách riêng khỏi col-md-2 cũ)
-   - Trạng thái hồ sơ:     12.5%    x 0.6   = 7.5%
-   - Trạng thái thẩm định: 12.5%    x 0.9   = 11.25%  (không còn bằng Trạng thái hồ
-     sơ nữa như đợt trước -> tách .td-col-status cũ thành 2 class riêng)
-   - Sắp xếp:              37.5%    x 0.25  = 9.375%
-   - Nút xóa lọc:          10%      x 0.5   = 5%
-   Tổng cộng ~87.74% bề rộng hàng -> vẫn đủ chỗ để dồn toàn bộ 8 ô lên chung 1
-   hàng ngang tại md+ (không phải xuống dòng nữa). Dưới md vẫn dùng col-6 của
-   Bootstrap (2 ô/hàng) như cũ để không vỡ layout trên điện thoại.
+   ĐÃ SỬA (đợt 4): bộ lọc "ghim" giờ chia 2 HÀNG (.thamdinh-pin-row1/-row2) bên trong
+   .thamdinh-pinned-filters, thay vì dồn hết 1 hàng như đợt 3 — để cân đối chiều cao
+   với khối 4 thẻ thống kê bên trái (đã đôn cao thêm py-3). Hàng 1: Tìm nhanh + Thời
+   gian (giãn hết chỗ còn lại) + Nhập học trực tiếp. Hàng 2: Trạng thái thẩm định +
+   Sắp xếp + Ngành đào tạo (thu ngắn ~nửa) + Lọc thêm + Bỏ lọc (ms-auto đẩy sát phải).
+   Nhóm "Lọc thêm" xổ dưới giờ chỉ còn Đối tượng đầu vào/Trạng thái hồ sơ.
    ======================================================== */
-@media (min-width: 768px) {
-  .thamdinh-filter-row .td-col-quick           { flex: 0 0 11.111%; max-width: 11.111%; } /* Tìm nhanh */
-  /* ĐÃ SỬA: gộp 2 ô "Từ ngày"/"Đến ngày" (8% x 2 = 16%) cũ thành 1 ô "Thời gian" (bộ
-     chọn khoảng, xem DateRangePicker.jsx) — phần rộng dôi ra dành cho nút "Nhập học
-     trực tiếp" mới ở cuối hàng lọc (td-col-tructiep). */
-  .thamdinh-filter-row .td-col-thoigian        { flex: 0 0 12%;     max-width: 12%; }     /* Thời gian (khoảng ngày) */
-  .thamdinh-filter-row .td-col-nganh           { flex: 0 0 13%;     max-width: 13%; }   /* Ngành đào tạo */
-  .thamdinh-filter-row .td-col-doituong        { flex: 0 0 16%;     max-width: 16%; }   /* Đối tượng đầu vào */
-  .thamdinh-filter-row .td-col-reset           { flex: 0 0 6%;      max-width: 6%; }      /* nút Xóa lọc */
-  .thamdinh-filter-row .td-col-hoso-status     { flex: 0 0 8.5%;    max-width: 8.5%; }    /* Trạng thái hồ sơ */
-  .thamdinh-filter-row .td-col-thamdinh-status { flex: 0 0 13%;     max-width: 13.0%; }  /* Trạng thái thẩm định */
-  .thamdinh-filter-row .td-col-sort            { flex: 0 0 12%;     max-width: 12%; }  /* Sắp xếp */
-  .thamdinh-filter-row .td-col-tructiep        { flex: 0 0 8%;      max-width: 8%; }      /* Nút Nhập học trực tiếp */
+.thamdinh-pin-row1 .thamdinh-pin-quick {
+  flex: 1 1 40%;
+  min-width: 90px;
+}
+/* ĐÃ SỬA: ô Thời gian giờ GIÃN hết phần còn lại của hàng 1 (flex-grow) thay vì bề
+   rộng cố định 148px như trước — theo đúng yêu cầu "giãn kích thước ô chọn ngày ra
+   cho vừa 1 dòng". */
+.thamdinh-pin-row1 .thamdinh-pin-daterange {
+  flex: 1 1 45%;
+  min-width: 130px;
+}
+.thamdinh-pin-row1 .thamdinh-pin-daterange .thamdinh-daterange-trigger {
+  width: 100%;
+  font-size: 12px;
+}
+.thamdinh-pin-row1 .thamdinh-pin-tructiep {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.thamdinh-pin-row2 .thamdinh-pin-status {
+  flex: 1 1 130px;
+  min-width: 110px;
+}
+.thamdinh-pin-row2 .thamdinh-pin-sort {
+  flex: 1 1 120px;
+  min-width: 100px;
+}
+/* ĐÃ THÊM: Ngành đào tạo mới chuyển lên hàng ghim — thu ngắn còn ~nửa bề rộng so với
+   2 ô Trạng thái thẩm định/Sắp xếp bên cạnh theo đúng yêu cầu. */
+.thamdinh-pin-row2 .thamdinh-pin-nganh {
+  flex: 0 1 70px;
+  min-width: 60px;
+}
+/* Chấm cam trên nút "Lọc thêm" khi nhóm lọc xổ (Đối tượng/Trạng thái hồ sơ) đang có
+   điều kiện khác mặc định NHƯNG hàng đó đang đóng — nhắc người dùng biết vẫn còn lọc
+   đang áp dụng ở đó dù không thấy ngay trên màn hình. */
+.thamdinh-more-filter-btn {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.thamdinh-more-filter-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #ff9f40;
+  border: 1px solid #fff;
 }
 
 /* Nút "Xóa lọc" — bình thường trung tính (không màu nổi bật), chỉ chuyển cam nhạt

@@ -188,6 +188,12 @@ const XacNhanDinhDanhPage = () => {
                                   <span className="fw-bold">{uv.ho_ten_chuan_hoa} — {uv.ngay_sinh}</span>
                                   <span className={`badge ${dc.cls}`}>{dc.text}</span>
                                 </div>
+                                {/* ĐÃ THÊM LẠI (theo yêu cầu): không lộ nguyên sv_key nữa, chỉ hiện 8 ký tự cuối
+                                    + lúc tạo — đủ để phân biệt 2+ ứng viên trùng tên+ngày sinh chưa có mã phụ
+                                    nào (lúc đó card 2 bên nhìn giống hệt nhau nếu không có gì phân biệt). */}
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>
+                                  Mã: ...{String(uv.sv_key).slice(-8)} · Tạo lúc: {uv.tao_luc}
+                                </div>
                                 {uv.ma_phu.length > 0 ? (
                                   <div className="mt-1">
                                     {uv.ma_phu.map((m, idx) => (

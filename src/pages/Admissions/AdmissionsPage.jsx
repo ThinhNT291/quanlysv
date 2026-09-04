@@ -16,6 +16,22 @@ const AdmissionsPage = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [searchFilters, setSearchFilters] = useState({ maSV: '', hoTen: '' });
 
+  // ĐÃ THÊM: trang này giờ cũng mở cho ThẩmĐịnh vào xem (trước chỉ CanBo/Admin) — nhưng
+  // backend (addAdmission/updateAdmission/deleteAdmission/importAdmissions/
+  // toggleAdmissionField/savePayment) vẫn CHỈ chấp nhận CanBo/Admin, nên ThẩmĐịnh phải ở
+  // chế độ CHỈ XEM (ẩn hết nút/ô bấm sẽ ghi dữ liệu) — không thì bấm vào sẽ dính lỗi 403
+  // khó hiểu. Đọc role trực tiếp từ localStorage, cùng cách CanXacNhanBadge đang làm, để
+  // không phải sửa lại toàn bộ cây props chỉ vì 1 cờ quyền.
+  const chiXem = (() => {
+    try {
+      const saved = localStorage.getItem('tuyensinh_user');
+      const user = saved ? JSON.parse(saved) : null;
+      const roles = Array.isArray(user?.roles) ? user.roles.map(r => String(r).toLowerCase()) : [];
+      const coQuyenSua = roles.includes('canbo') || roles.includes('admin');
+      return !coQuyenSua && roles.includes('thamdinh');
+    } catch (e) { return false; } // không đọc được -> coi như không hạn chế thêm, giữ hành vi cũ
+  })();
+
   const { data: students = [] } = useQuery({
     queryKey: ['admissions'],
     queryFn: fetchAdmissions,
@@ -32,6 +48,7 @@ const AdmissionsPage = () => {
           <h4 className="text-uppercase fw-bold" style={{ color: '#037683' }}>Gọi nhập học hồ sơ</h4>
         </div>
         <div className="col-md-6 text-md-end mt-2 mt-md-0">
+          {chiXem && <span className="badge bg-secondary me-2 align-middle"><i className="bi bi-eye me-1"></i>Chế độ chỉ xem</span>}
           <CanXacNhanBadge />
         </div>
       </div>
@@ -68,14 +85,15 @@ const AdmissionsPage = () => {
       
       <div className="row g-3">
         <div className="col-lg-8">
-          <StudentTable 
-            selectedStudent={selectedStudent} 
-            onSelectStudent={setSelectedStudent} 
-            searchFilters={searchFilters} 
+          <StudentTable
+            selectedStudent={selectedStudent}
+            onSelectStudent={setSelectedStudent}
+            searchFilters={searchFilters}
+            chiXem={chiXem}
           />
         </div>
         <div className="col-lg-4">
-          <DocumentList selectedStudent={selectedStudent} />
+          <DocumentList selectedStudent={selectedStudent} chiXem={chiXem} />
         </div>
       </div>
     </div>

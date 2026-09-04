@@ -22,7 +22,7 @@ const MASV_FIELD = 'MÃ SINH VIÊN';
 // ĐÃ THÊM: danh sách khoản thu (khớp đúng LOAI_PHI trong AddStudentModal.jsx).
 const LOAI_PHI = ['Đồng phục GDTC', 'Bảo hiểm y tế', 'Khám sức khỏe đầu khóa', 'Đoàn phí', 'Học phí', 'Khác'];
 
-const DocumentList = ({ selectedStudent }) => {
+const DocumentList = ({ selectedStudent, chiXem }) => {
   const queryClient = useQueryClient();
   const maSV = selectedStudent?.[MASV_FIELD];
 
@@ -159,8 +159,10 @@ const DocumentList = ({ selectedStudent }) => {
                     <input
                       type="checkbox"
                       className="form-check-input fs-5"
-                      style={{cursor: 'pointer'}}
+                      style={{cursor: chiXem ? 'default' : 'pointer'}}
                       checked={isChecked}
+                      disabled={chiXem}
+                      title={chiXem ? 'Chế độ chỉ xem — không sửa được' : undefined}
                       onChange={(e) => handleCheckboxChange(field, e.target.checked)}
                     />
                   </td>
@@ -178,8 +180,10 @@ const DocumentList = ({ selectedStudent }) => {
                       <input
                         type="checkbox"
                         className="form-check-input fs-5"
-                        style={{cursor: 'pointer'}}
+                        style={{cursor: chiXem ? 'default' : 'pointer'}}
                         checked={isChecked}
+                        disabled={chiXem}
+                        title={chiXem ? 'Chế độ chỉ xem — không sửa được' : undefined}
                         onChange={(e) => handleCheckboxChange(GIAY_TO_UU_TIEN_FIELD, e.target.checked)}
                       />
                     </td>
@@ -194,6 +198,7 @@ const DocumentList = ({ selectedStudent }) => {
                           className="form-control form-control-sm border-primary"
                           placeholder="Nhập loại giấy tờ ưu tiên (VD: Sổ hộ nghèo...)"
                           value={noteUT}
+                          disabled={chiXem}
                           onChange={(e) => setNoteUT(e.target.value)}
                           onBlur={handleNoteBlur}
                         />
@@ -222,8 +227,10 @@ const DocumentList = ({ selectedStudent }) => {
                       <input
                         type="checkbox"
                         className="form-check-input fs-5"
-                        style={{cursor: 'pointer'}}
+                        style={{cursor: chiXem ? 'default' : 'pointer'}}
                         checked={isChecked}
+                        disabled={chiXem}
+                        title={chiXem ? 'Chế độ chỉ xem — không sửa được' : undefined}
                         onChange={(e) => togglePhi(loai, e.target.checked)}
                       />
                     </td>
@@ -239,6 +246,7 @@ const DocumentList = ({ selectedStudent }) => {
                           className="form-control form-control-sm border-primary"
                           placeholder="Số tiền"
                           defaultValue={paid.soTien}
+                          disabled={chiXem}
                           onChange={(e) => setAmountDraft(prev => ({ ...prev, [loai]: e.target.value }))}
                           onBlur={(e) => handleAmountBlur(loai, e.target.value)}
                         />

@@ -17,7 +17,7 @@ const MASV_FIELD = 'MÃ SINH VIÊN';
 
 const isXnNhapHoc = (sv) => String(sv?.[STATUS_FIELD] || '').trim() === STATUS_VALUE;
 
-const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
+const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters, chiXem }) => {
   const queryClient = useQueryClient();
 
   const [showModal, setShowModal] = useState(false);
@@ -42,7 +42,20 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['admissions'] });
       const addedMsg = result ? `Đã thêm ${result.added} hồ sơ mới` + (result.skipped ? `, bỏ qua ${result.skipped} hồ sơ trùng Mã SV.` : '.') : 'Đã nạp danh sách từ Excel';
-      Swal.fire('Thành công!', addedMsg, 'success');
+      // ĐÃ THÊM: backend giờ có thể trả về invalidRows (dòng bị chặn vì NGÀNH/HỆ ĐÀO TẠO/...
+      // không khớp danh sách hợp lệ ở CauHinh — xem kiemTraHopLeCauHinh_ bên Quanlysv.gs) —
+      // hiện rõ danh sách này cho người import biết CHÍNH XÁC dòng nào/lỗi gì để sửa lại,
+      // thay vì chỉ thấy số lượng "added" ít hơn kỳ vọng mà không rõ vì sao.
+      if (result && Array.isArray(result.invalidRows) && result.invalidRows.length > 0) {
+        const dsLoiHtml = result.invalidRows.map(r => `<li>${r.ten || '(chưa rõ tên)'}${r.cccd ? ' — CCCD: ' + r.cccd : ''}: ${r.loi}</li>`).join('');
+        Swal.fire({
+          icon: 'warning',
+          title: 'Nhập Excel — có dòng bị bỏ qua',
+          html: `${addedMsg}<br/><br/><b>${result.invalidRows.length} dòng KHÔNG được ghi vào hệ thống</b> do dữ liệu không khớp danh sách hợp lệ, cần sửa và nhập lại riêng các dòng này:<ul class="text-start">${dsLoiHtml}</ul>`,
+        });
+      } else {
+        Swal.fire('Thành công!', addedMsg, 'success');
+      }
       setShowImportModal(false);
     },
     onError: (err) => Swal.fire('Lỗi', err.message, 'error')
@@ -128,15 +141,22 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
             <button className="btn btn-outline-success btn-sm" onClick={handleExport} title="Xuất danh sách">
               <i className="bi bi-download me-1"></i> Xuất
             </button>
-            <button className="btn btn-outline-primary btn-sm" onClick={() => setShowImportModal(true)}>
-              <i className="bi bi-upload me-1"></i> Nhập Excel
-            </button>
+            {/* ĐÃ SỬA: "Nhập Excel" ghi thẳng dữ liệu (importAdmissions, chỉ CanBo/Admin) —
+                ẩn ở chế độ chỉ xem, giữ nguyên "Xuất" vì đó là thao tác đọc. */}
+            {!chiXem && (
+              <button className="btn btn-outline-primary btn-sm" onClick={() => setShowImportModal(true)}>
+                <i className="bi bi-upload me-1"></i> Nhập Excel
+              </button>
+            )}
           </div>
         </div>
 
-        <button className="btn btn-primary btn-sm" onClick={handleAdd}>
-          <i className="bi bi-plus-circle me-1"></i> + Thêm đăng ký
-        </button>
+        {/* ĐÃ SỬA: ẩn nút "+ Thêm đăng ký" ở chế độ chỉ xem (addAdmission chỉ CanBo/Admin). */}
+        {!chiXem && (
+          <button className="btn btn-primary btn-sm" onClick={handleAdd}>
+            <i className="bi bi-plus-circle me-1"></i> + Thêm đăng ký
+          </button>
+        )}
       </div>
 
       {/* CÁC MODALS TRỢ GIÚP */}
@@ -209,8 +229,14 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
                       <td className="text-center px-2" onClick={(e) => e.stopPropagation()}>
                         <div className="d-flex justify-content-center gap-1">
                           <button className="btn btn-sm btn-outline-secondary p-1 px-2" onClick={() => handlePrint(sv)} title="In hồ sơ">In</button>
-                          <button className="btn btn-sm btn-outline-info p-1 px-2" onClick={() => handleEdit(sv)} title="Sửa">Sửa</button>
-                          <button className="btn btn-sm btn-outline-danger p-1 px-2" onClick={() => handleDelete(sv[MASV_FIELD])} disabled={deleteMutation.isPending} title="Xóa">Xóa</button>
+                          {/* ĐÃ SỬA: "Sửa"/"Xóa" ghi thẳng dữ liệu (chỉ CanBo/Admin) — ẩn ở chế độ
+                              chỉ xem, giữ nguyên "In" vì đó là thao tác đọc, không ghi gì. */}
+                          {!chiXem && (
+                            <>
+                              <button className="btn btn-sm btn-outline-info p-1 px-2" onClick={() => handleEdit(sv)} title="Sửa">Sửa</button>
+                              <button className="btn btn-sm btn-outline-danger p-1 px-2" onClick={() => handleDelete(sv[MASV_FIELD])} disabled={deleteMutation.isPending} title="Xóa">Xóa</button>
+                            </>
+                          )}
                         </div>
                       </td>
                       <td className="fw-medium text-secondary">{sv[MASV_FIELD]}</td>
@@ -223,8 +249,10 @@ const StudentTable = ({ selectedStudent, onSelectStudent, searchFilters }) => {
                           <input
                             type="checkbox"
                             className="form-check-input fs-5"
-                            style={{ cursor: 'pointer' }}
+                            style={{ cursor: chiXem ? 'default' : 'pointer' }}
                             checked={isChecked}
+                            disabled={chiXem}
+                            title={chiXem ? 'Chế độ chỉ xem — không sửa được' : undefined}
                             onChange={(e) => statusMutation.mutate({ maSV: sv[MASV_FIELD], field: STATUS_FIELD, isChecked: e.target.checked })}
                           />
                         </div>

@@ -45,3 +45,40 @@
     font-size: 0.95rem;
   }
 }
+
+/* ========================================================
+   POPUP THÔNG BÁO (SweetAlert2 — Swal.fire) — thu nhỏ đồng bộ trên MỌI trang.
+   File này (App.css) được nạp toàn cục qua App.jsx nên áp dụng luôn cho mọi Swal.fire()
+   gọi rải rác khắp dự án, không cần sửa tay từng chỗ gọi.
+   SweetAlert2 dùng đơn vị em cho hầu hết phần tử con (tiêu đề/nút/nội dung/icon), tính
+   theo font-size của chính .swal2-popup — nên chỉ cần đổi 1 chỗ font-size gốc là toàn bộ
+   modal (kể cả bề rộng popup, vốn cũng đặt bằng em) tự thu nhỏ theo đúng tỉ lệ. Mức 14px
+   chọn khớp thang chữ 12-15px đã dùng nhất quán ở các trang Xét tuyển/Thẩm định (xem
+   XetTuyen.css/ThamDinh.css) thay vì cỡ mặc định 16px hơi to so với phần còn lại của app.
+   ======================================================== */
+.swal2-popup {
+  font-size: 14px !important;
+  padding: 1.25em 1.4em !important;
+}
+.swal2-popup .swal2-title {
+  font-size: 1.35em !important;
+  margin: 0.3em 0 0.5em !important;
+  padding: 0 !important;
+}
+.swal2-popup .swal2-html-container {
+  font-size: 1em !important;
+  line-height: 1.45 !important;
+}
+.swal2-icon {
+  width: 3.4em !important;
+  height: 3.4em !important;
+  margin: 1em auto 1.1em !important;
+}
+.swal2-actions .swal2-styled {
+  font-size: 0.9em !important;
+  padding: 0.45em 1.1em !important;
+}
+.swal2-input, .swal2-textarea, .swal2-select {
+  font-size: 0.9em !important;
+  padding: 0.4em 0.6em !important;
+}

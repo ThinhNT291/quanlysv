@@ -7,6 +7,7 @@ import './XetTuyen.css';
 import { fetchConfig, fetchXetTuyenHeaders } from '../../api/studentApi';
 import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
 import { chuanHoaNgaySinhImport } from '../../utils/ngaySinh';
+import { taiFileMauExcel } from '../../Utils/ExcelTemplate';
 
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
@@ -55,11 +56,24 @@ const DICT_HO_SO = {
         { id: "doc_syll", name: "Sơ yếu lý lịch", short: "SƠ YẾU LÝ LỊCH", optional: false },
         { id: "doc_cccd", name: "Bản sao ID", short: "BẢN SAO CCCD", optional: false },
         { id: "doc_anhthe", name: "Ảnh thẻ", short: "ẢNH THẺ", optional: false },
-        { id: "doc_nvqs", name: "Giấy chuyển NVQS (với nam)", short: "GIẤY NVQS", optional: true }
+        // ĐÃ THÊM "genderOnly" — cờ dùng để sau này TỰ ẨN/HIỆN giấy tờ này theo giới tính
+        // 1 khi cột "Giới tính" được bổ sung vào form/Goc01 (hiện CHƯA có cột này ở đâu
+        // cả, nên isDocApplicable() bên dưới coi cờ này là VÔ HIỆU/bỏ qua khi chưa có dữ
+        // liệu giới tính — hành vi y hệt như trước giờ, luôn hiện + luôn tính vào phần
+        // "không bắt buộc" cho MỌI hồ sơ). Khi thêm cột giới tính thật, chỉ cần gán giá
+        // trị vào formData.gioitinh (đúng 2 giá trị "Nam"/"Nữ", khớp genderOnly bên
+        // dưới) là cơ chế ẩn/hiện sẽ tự chạy đúng, không cần sửa gì thêm ở đây.
+        { id: "doc_nvqs", name: "Giấy chuyển NVQS (với nam)", short: "GIẤY NVQS", optional: true, genderOnly: "Nam" }
     ],
     tien_quyet: {
         "Tốt nghiệp THPT": [ { id: "doc_phieu_dk", name: "Phiếu đăng ký dự tuyển", short: "PHIẾU ĐĂNG KÝ" }, { id: "doc_bang_thpt", name: "Bản sao Bằng THPT/Giấy báo điểm", short: "BẰNG THPT" }, { id: "doc_hocba_thpt", name: "Bản sao Học bạ THPT", short: "HỌC BẠ THPT" } ],
-        "Tốt nghiệp Trung cấp sau 2022": [ { id: "doc_phieu_dk", name: "Phiếu đăng ký dự tuyển", short: "PHIẾU ĐĂNG KÝ" }, { id: "doc_bang_tc", name: "Bản sao Bằng Trung cấp", short: "BẰNG TC" }, { id: "doc_diem_tc", name: "Bảng điểm Trung cấp", short: "ĐIỂM TC" }, { id: "doc_ktvh_thpt", name: "Bằng THPT/GCN đủ KL KTVH THPT", short: "GCN KTVH" } ],
+        // ĐÃ SỬA (rà soát đồng bộ 2 bản sao DICT_HO_SO — bản này và bản trong
+        // thamDinhConfig.js PHẢI đổi tên cùng lúc, vì cùng phải khớp tên cột thật trên
+        // Goc01): "Bản sao Bằng Trung cấp"/"Bảng điểm Trung cấp" -> thêm hậu tố "(sau
+        // 2022)" để phân biệt rõ với bộ hồ sơ "trước 2022" (vốn đã có tên riêng). Giữ
+        // nguyên "short" (chỉ dùng hiển thị gọn + đối chiếu import, không phải tên cột
+        // thật ghi vào Goc01).
+        "Tốt nghiệp Trung cấp sau 2022": [ { id: "doc_phieu_dk", name: "Phiếu đăng ký dự tuyển", short: "PHIẾU ĐĂNG KÝ" }, { id: "doc_bang_tc", name: "Bản sao bằng trung cấp (sau 2022)", short: "BẰNG TC" }, { id: "doc_diem_tc", name: "Bảng điểm trung cấp (sau 2022)", short: "ĐIỂM TC" }, { id: "doc_ktvh_thpt", name: "Bằng THPT/GCN đủ KL KTVH THPT", short: "GCN KTVH" } ],
         "Tốt nghiệp Cao đẳng": [ { id: "doc_phieu_dk", name: "Phiếu đăng ký dự tuyển", short: "PHIẾU ĐĂNG KÝ" }, { id: "doc_bang_cd", name: "Bằng Cao đẳng", short: "BẰNG CĐ" }, { id: "doc_diem_cd", name: "Bảng điểm Cao đẳng", short: "ĐIỂM CĐ" } ],
         "Tốt nghiệp Đại học": [ { id: "doc_phieu_dk", name: "Phiếu đăng ký dự tuyển", short: "PHIẾU ĐĂNG KÝ" }, { id: "doc_bang_dh", name: "Bằng Đại học", short: "BẰNG ĐH" }, { id: "doc_diem_dh", name: "Bảng điểm Đại học", short: "ĐIỂM ĐH" } ],
         "Tốt nghiệp Trung cấp trước 2022": [ { id: "doc_phieu_dk", name: "Phiếu đăng ký dự tuyển", short: "PHIẾU ĐĂNG KÝ" }, { id: "doc_gcn_gdpt", name: "GCN hoàn thành CT GDPT", short: "GCN GDPT" }, { id: "doc_bang_tc_truoc", name: "Bản sao Bằng Trung cấp trước 2022", short: "BẰNG TC (<2022)" }, { id: "doc_diem_tc_truoc", name: "Bảng điểm Trung cấp trước 2022", short: "ĐIỂM TC (<2022)" } ],
@@ -69,6 +83,24 @@ const DICT_HO_SO = {
 
 const ALL_HO_SO_DOCS = [...DICT_HO_SO.chung, ...Object.values(DICT_HO_SO.tien_quyet).flat()]
     .filter((doc, i, arr) => arr.findIndex(d => d.id === doc.id) === i);
+
+// ĐÃ THÊM: cổng ẩn/hiện + không bắt buộc theo giới tính cho các giấy tờ có cờ "genderOnly"
+// (hiện chỉ có "Giấy chuyển NVQS (với nam)") — dựng SẴN cho ngày thêm cột "Giới tính" vào
+// form/Goc01 (xem chú thích tại DICT_HO_SO.chung). Miễn `data.gioitinh` còn rỗng/chưa có
+// (đúng thực trạng hiện tại), hàm này LUÔN trả về true — tức mọi giấy tờ vẫn hiện/tính như
+// trước giờ, không đổi hành vi gì cả cho tới khi cột Giới tính thật sự tồn tại và có dữ
+// liệu.
+const isDocApplicable = (doc, data) => {
+    if (!doc.genderOnly) return true;
+    if (!data || !data.gioitinh) return true;
+    return data.gioitinh === doc.genderOnly;
+};
+
+// ĐÃ THÊM: điểm chuẩn nhánh "Tốt nghiệp THPT" khác nhau theo Phương thức xét tuyển
+// (Điểm thi THPT = 15, Điểm học bạ = 16, Điểm học bạ (TBTS 2025) = 15) — dùng cho bảng
+// xem trước lúc nhập tay. GIỮ ĐỒNG BỘ với DIEM_CHUAN_THPT bên thamDinhHelpers.js (dùng
+// cho chấm điểm chính thức ở Thẩm định) — đổi mức điểm chuẩn thì phải đổi ở CẢ 2 nơi.
+const DIEM_CHUAN_THPT = { THI_THPT: 15, HOC_BA: 16, HOC_BA_2025: 15 };
 
 const initialFormState = {
   hoten: '', cccd: '', ngaysinh: '', khoa: '', nganh: '', khuvucuutien: '', doituonguutien: '', 
@@ -258,7 +290,7 @@ const XetTuyenPage = () => {
 
   const handleSelectAllCommon = () => {
     setFormData(prev => {
-        const allRequiredDocs = DICT_HO_SO.chung.filter(doc => !doc.optional);
+        const allRequiredDocs = DICT_HO_SO.chung.filter(doc => !doc.optional && isDocApplicable(doc, prev));
         const isAllSelected = allRequiredDocs.every(doc => prev[doc.id]);
         const newState = { ...prev };
         allRequiredDocs.forEach(doc => newState[doc.id] = !isAllSelected);
@@ -272,8 +304,8 @@ const XetTuyenPage = () => {
 
     let missingChung = []; let missingTienQuyet = [];
     
-    DICT_HO_SO.chung.forEach(doc => { 
-        if (!doc.optional && !formData[doc.id]) missingChung.push(doc.name); 
+    DICT_HO_SO.chung.forEach(doc => {
+        if (!doc.optional && isDocApplicable(doc, formData) && !formData[doc.id]) missingChung.push(doc.name);
     });
     const dsTienQuyet = DICT_HO_SO.tien_quyet[doituongdauvao] || [];
     dsTienQuyet.forEach(doc => { if (!formData[doc.id]) missingTienQuyet.push(doc.name); });
@@ -316,14 +348,18 @@ const XetTuyenPage = () => {
                 if (formData.loai_diem === 'THI_THPT' && maxScore >= 22.5) {
                     uTienChinhThuc = ((30 - maxScore) / 7.5) * uTienBanDau;
                 }
-                
+
                 let finalScore = Math.round((maxScore + uTienChinhThuc + diemCong) * 100) / 100;
-                
-                if (finalScore >= 15.0) { 
-                    diemStatus = "PASS"; 
-                    diemMsg = `Tổng: <strong>${finalScore}đ</strong> (Tổ hợp: ${maxScore.toFixed(2)} + ƯT: ${uTienChinhThuc.toFixed(2)}${diemCong > 0 ? ` + Cộng: ${diemCong}` : ''}). Chuẩn: 15.0đ.`; 
-                } else { 
-                    diemMsg = `Tổng điểm: ${finalScore}đ. Thiếu ${(15.0 - finalScore).toFixed(2)}đ.`; 
+                // ĐÃ SỬA: điểm chuẩn giờ tra theo Phương thức xét tuyển thay vì hardcode
+                // 15.0 chung cho cả 3 phương thức — GIỮ ĐỒNG BỘ với DIEM_CHUAN_THPT bên
+                // thamDinhHelpers.js (đổi mức điểm chuẩn thì phải đổi ở CẢ 2 nơi).
+                const diemChuanThpt = DIEM_CHUAN_THPT[formData.loai_diem] ?? 15;
+
+                if (finalScore >= diemChuanThpt) {
+                    diemStatus = "PASS";
+                    diemMsg = `Tổng: <strong>${finalScore}đ</strong> (Tổ hợp: ${maxScore.toFixed(2)} + ƯT: ${uTienChinhThuc.toFixed(2)}${diemCong > 0 ? ` + Cộng: ${diemCong}` : ''}). Chuẩn: ${diemChuanThpt.toFixed(1)}đ.`;
+                } else {
+                    diemMsg = `Tổng điểm: ${finalScore}đ. Thiếu ${(diemChuanThpt - finalScore).toFixed(2)}đ (chuẩn ${diemChuanThpt.toFixed(1)}đ).`;
                 }
             }
         }
@@ -404,7 +440,13 @@ const XetTuyenPage = () => {
         "TIN HỌC": getSubjectAverage('tinhoc', formData) || "", 
         "GDKTPL": getSubjectAverage('gdktpl', formData) || "",
         
-        "ĐIỂM TB HỆ 4": formData.diem_tb_he4, "ĐIỂM TB HỆ 10": formData.diem_tb_he10, "ĐIỂM CỘNG": formData.diem_cong,
+        // ĐÃ VÁ BUG THẬT (không chỉ đổi tên): tên cột thật trên Goc01 là "ĐIỂM TB TOÀN
+        // KHÓA HỆ 4"/"...HỆ 10" — trước đây ghi nhầm bằng tên rút gọn "ĐIỂM TB HỆ 4/10"
+        // (không khớp cột thật nào) nên MỌI hồ sơ xét theo Học bạ nhập tay từ trước tới
+        // giờ đều bị ghi TRỐNG 2 cột điểm này vào Goc01. Hồ sơ cũ đã đẩy lên (nếu có,
+        // dùng Học bạ) cần rà soát/bổ sung lại tay — hệ thống không tự khôi phục được dữ
+        // liệu đã mất do bug này trước đây.
+        "ĐIỂM TB TOÀN KHÓA HỆ 4": formData.diem_tb_he4, "ĐIỂM TB TOÀN KHÓA HỆ 10": formData.diem_tb_he10, "ĐIỂM CỘNG": formData.diem_cong,
         "ĐIỂM CHUẨN": formData.diem_chuan, 
         
         "PHƯƠNG THỨC XÉT TUYỂN": formData.loai_diem === 'THI_THPT' ? 'Điểm thi THPT' : (formData.loai_diem === 'HOC_BA' ? 'Điểm học bạ' : (formData.loai_diem === 'HOC_BA_2025' ? 'Điểm học bạ (TBTS 2025)' : '')),
@@ -544,15 +586,20 @@ const XetTuyenPage = () => {
             // ĐÃ THÊM: backend giờ trả thêm failedUpdates (hồ sơ _Action=UPDATE nhưng không khớp
             // được hồ sơ gốc — trước đây bug âm thầm chèn thành dòng mới, giờ báo lỗi rõ ràng).
             const failedUpdateItems = result.data?.failedUpdates || [];
+            // ĐÃ THÊM: backend giờ trả thêm invalidRows (hồ sơ bị chặn vì NGÀNH/HỆ ĐÀO TẠO/...
+            // không khớp danh sách hợp lệ ở CauHinh — xem kiemTraHopLeCauHinh_ bên Quanlysv.gs).
+            const invalidItems = result.data?.invalidRows || [];
             setDataList(prev => prev.map(r => {
                 if (r["TRẠNG THÁI ĐẨY"] === "Waiting" || r["TRẠNG THÁI ĐẨY"].includes("Lỗi")) {
                     const rCccd = String(r["CĂN CƯỚC"]).replace(/\D/g, '');
                     const rNganh = String(r["NGÀNH"]).trim().toLowerCase();
                     const isFailed = failedItems.some(f => f.cccd === rCccd && f.nganh.toLowerCase() === rNganh);
                     const isFailedUpdate = failedUpdateItems.some(f => String(f.cccd).replace(/\D/g, '') === rCccd && String(f.nganh).toLowerCase() === rNganh);
-                    
+                    const invalidItem = invalidItems.find(f => String(f.cccd).replace(/\D/g, '') === rCccd && String(f.nganh).toLowerCase() === rNganh);
+
                     if (isFailed) return {...r, "TRẠNG THÁI ĐẨY": "Lỗi: Trùng hồ sơ"};
                     if (isFailedUpdate) return {...r, "TRẠNG THÁI ĐẨY": "Lỗi: Không khớp hồ sơ gốc để sửa"};
+                    if (invalidItem) return {...r, "TRẠNG THÁI ĐẨY": "Lỗi: " + invalidItem.loi};
                     else return {...r, "TRẠNG THÁI ĐẨY": "Uploaded"};
                 }
                 return r;
@@ -661,11 +708,17 @@ const XetTuyenPage = () => {
           try { rawObj = JSON.parse(normData["RAW_DIEM_HK"]); } catch(e) {}
       }
 
+      // ĐÃ SỬA: bổ sung "1" và "X" vào danh sách giá trị được coi là ĐÃ CÓ giấy tờ — trước
+      // đây thiếu 2 giá trị này, trong khi getMissingDocs (thamDinhHelpers.js, bên trang
+      // Thẩm định) đã chấp nhận cả TRUE/1/V/X/CÓ từ lâu — khiến 1 hồ sơ Thẩm định coi là ĐÃ
+      // ĐỦ giấy tờ (vì cột ghi "x" hoặc "1", ví dụ đến từ luồng Thu hồ sơ trực tiếp) nhưng
+      // khi tải lại để sửa bên trang Xét tuyển lại hiện thành CHƯA tick — giờ đồng bộ đúng 1
+      // danh sách với getMissingDocs.
       const getDocVal = (doc) => {
           const val = normData[doc.name.toUpperCase()] || normData[doc.short.toUpperCase()];
           if (val === true || val === 1) return true;
           const strVal = String(val).toUpperCase().trim();
-          return strVal === "TRUE" || strVal === "CÓ" || strVal === "V";
+          return strVal === "TRUE" || strVal === "1" || strVal === "CÓ" || strVal === "V" || strVal === "X";
       };
 
       setFormData(prev => ({
@@ -706,8 +759,11 @@ const XetTuyenPage = () => {
               return acc;
           }, {}),
 
-          diem_tb_he4: normData["ĐIỂM TB HỆ 4"] || normData["HỆ 4"] || "",
-          diem_tb_he10: normData["ĐIỂM TB HỆ 10"] || normData["HỆ 10"] || "",
+          // ĐÃ SỬA: thêm fallback đọc đúng tên cột thật "ĐIỂM TB TOÀN KHÓA HỆ 4/10" (xem
+          // chú thích bug tại chỗ ghi "ĐIỂM TB TOÀN KHÓA HỆ 4/10" phía trên) — thiếu dòng
+          // này thì hồ sơ có điểm hợp lệ trên Goc01 vẫn hiện trống khi mở lại để sửa.
+          diem_tb_he4: normData["ĐIỂM TB TOÀN KHÓA HỆ 4"] || normData["ĐIỂM TB HỆ 4"] || normData["HỆ 4"] || "",
+          diem_tb_he10: normData["ĐIỂM TB TOÀN KHÓA HỆ 10"] || normData["ĐIỂM TB HỆ 10"] || normData["HỆ 10"] || "",
           diem_cong: normData["ĐIỂM CỘNG"] || "",
           diem_chuan: normData["ĐIỂM CHUẨN"] || "",
 
@@ -729,14 +785,81 @@ const XetTuyenPage = () => {
   // trang Thu hồ sơ (getAdmissionsHeaders), tránh lệch cột khi có thêm/sửa/xoá sau này
   // vì chỉ còn 1 nơi cần sửa. executeImport() đọc file theo alias độc lập, không phụ
   // thuộc mảng này, nên đổi nguồn ở đây không ảnh hưởng logic nhập Excel đã có.
+  // ĐÃ VIẾT LẠI: dùng helper taiFileMauExcel (utils/excelTemplate.js, chạy bằng exceljs)
+  // thay cho thao tác trực tiếp bằng xlsx như trước — lý do đổi: xlsx (bản miễn phí) không
+  // ghi được Data Validation (dropdown thật) vào file .xlsx xuất ra, chỉ có ở bản trả phí.
+  // Giờ ngoài việc khoá định dạng Text cho CĂN CƯỚC (và NGÀY SINH, thêm mới — cùng lý do
+  // như ImportModal.jsx, tránh Excel tự đổi kiểu ô), file mẫu còn có dropdown thật cho các
+  // cột có danh sách giá trị cố định, lấy đúng 1 nguồn dữ liệu với sheet CauHinh (qua
+  // fetchConfig — cùng nguồn dropdown đang dùng ở form nhập tay ngay trên trang này) — giảm
+  // hẳn nguy cơ gõ sai/thừa khoảng trắng khiến dữ liệu không khớp được các trường giá trị
+  // cố định (backend cũng đã chặn thêm 1 lớp nữa khi đẩy lên hệ thống, xem importStudents).
+  // ĐÃ VIẾT LẠI (rà soát cột file mẫu): thay "guideRowText" (1 câu duy nhất, chỉ nằm ở cột
+  // A) bằng "descRow" — mô tả RIÊNG CHO TỪNG CỘT, dựng động từ chính DICT_HO_SO/dropdown
+  // đang dùng ở trang này (không hardcode trùng lặp, đổi 1 nơi là đổi theo hết). Thêm
+  // "headerColorGroups" — tô màu dòng tiêu đề (dòng 1) riêng theo TỪNG NHÓM đối tượng đầu
+  // vào (giấy tờ chung 1 màu, giấy tờ riêng của mỗi loại "Tốt nghiệp..." 1 màu khác) — chỉ
+  // để dễ nhìn khi cuộn ngang, KHÔNG ảnh hưởng gì tới việc đọc file lúc import.
   const handleDownloadTemplate = async () => {
       setImportStatus("⏳ Đang tạo file mẫu...");
       try {
           const headers = await fetchXetTuyenHeaders();
-          const ws = XLSX.utils.aoa_to_sheet([headers, ["(Dòng hướng dẫn) Nhập dữ liệu từ dòng số 3..."]]);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Mau_Nhap_Lieu");
-          XLSX.writeFile(wb, "FileMau_NhapLieu_TuyenSinh.xlsx");
+          // Lấy danh sách hợp lệ từ CauHinh — nếu gọi lỗi thì vẫn tạo được file mẫu bình
+          // thường, chỉ là không có dropdown, không chặn hẳn việc tải file mẫu.
+          let config = {};
+          try { config = await fetchConfig(); } catch (err) { /* bỏ qua, tạo file mẫu không dropdown */ }
+
+          const dropdownColumns = {
+            'NGÀNH': config.Nganh,
+            'KHÓA': config.KhoaNhapHoc,
+            'ĐỐI TƯỢNG ƯU TIÊN': config.DoiTuongUT,
+            'KHU VỰC ƯU TIÊN': config.KhuVucUT,
+            'ĐỐI TƯỢNG ĐẦU VÀO': config.DoiTuongDauVao,
+            'NĂM XÉT TUYỂN': config.NamXetTuyen,
+            'HỆ ĐÀO TẠO': config.HeDaoTao,
+            'HÌNH THỨC ĐÀO TẠO': config.HinhThucDaoTao,
+          };
+
+          // Dòng mô tả (dòng 2) — đúng nội dung đã chốt cho từng cột/nhóm cột.
+          const descRow = { 'STT': '0', 'CĂN CƯỚC': 'Số CCCD', 'NGÀY SINH': 'dd/mm/yyyy' };
+          Object.keys(dropdownColumns).forEach((c) => { descRow[c] = 'chọn dropdown'; });
+          ALL_HO_SO_DOCS.forEach((doc) => { descRow[doc.name.toUpperCase()] = 'ghi x hoặc "true"'; });
+          descRow['ĐIỂM TB TOÀN KHÓA HỆ 4'] = 'Điền 1 trong 2 hệ';
+          descRow['ĐIỂM TB TOÀN KHÓA HỆ 10'] = 'Điền 1 trong 2 hệ';
+          // "PHƯƠNG THỨC XÉT TUYỂN" được GIỮ LẠI trong file mẫu (xác nhận có chức năng
+          // thật — xem chú thích tại chỗ ghi "PHƯƠNG THỨC XÉT TUYỂN" ở handleAddRow) —
+          // thêm mô tả ngắn để người nhập liệu hiểu ô này không bắt buộc lúc import.
+          descRow['PHƯƠNG THỨC XÉT TUYỂN'] = 'Điểm thi THPT / Điểm học bạ / Điểm học bạ (TBTS 2025) — có thể để trống';
+
+          // Tô màu nhóm cho dòng tiêu đề: "chung" (luôn áp dụng, gồm cả "Phiếu đăng ký dự
+          // tuyển" vì cột này lặp lại y hệt ở MỌI nhóm tiên quyết) + 1 màu riêng cho từng
+          // nhóm "Đối tượng đầu vào" còn lại.
+          const MAU_NHOM_HEADER = {
+            chung: 'FFDDEBF7', 'Tốt nghiệp THPT': 'FFE2EFDA',
+            'Tốt nghiệp Trung cấp sau 2022': 'FFFFF2CC',
+            'Tốt nghiệp Trung cấp trước 2022': 'FFF4CCCC', 'Trung học nghề': 'FFF4CCCC',
+            'Tốt nghiệp Cao đẳng': 'FFD9D2E9', 'Tốt nghiệp Đại học': 'FFD0E0E3',
+          };
+          const headerColorGroups = {};
+          DICT_HO_SO.chung.forEach((doc) => { headerColorGroups[doc.name.toUpperCase()] = MAU_NHOM_HEADER.chung; });
+          Object.entries(DICT_HO_SO.tien_quyet).forEach(([nhom, docs]) => {
+            docs.forEach((doc) => {
+              const ten = doc.name.toUpperCase();
+              if (doc.id === 'doc_phieu_dk') { headerColorGroups[ten] = MAU_NHOM_HEADER.chung; return; }
+              if (headerColorGroups[ten]) return;
+              headerColorGroups[ten] = MAU_NHOM_HEADER[nhom];
+            });
+          });
+
+          await taiFileMauExcel({
+            headers,
+            descRow,
+            textLockColumns: ['CĂN CƯỚC', 'NGÀY SINH'],
+            dropdownColumns,
+            headerColorGroups,
+            sheetName: 'Mau_Nhap_Lieu',
+            fileName: 'FileMau_NhapLieu_TuyenSinh.xlsx',
+          });
           setImportStatus("");
       } catch (e) { setImportStatus("❌ Lỗi tạo file: " + e.message); }
   };
@@ -755,9 +878,20 @@ const XetTuyenPage = () => {
 
               if (rows.length < 3) { alert("File không hợp lệ hoặc rỗng."); setImportStatus(""); return; }
 
+              // ĐÃ THÊM: đọc thêm 1 bản song song với raw:false — CHỈ dùng để lấy đúng cột
+              // CĂN CƯỚC theo chuỗi ĐÃ ĐỊNH DẠNG (giữ được số 0 ở đầu nếu ô bị Excel coi là
+              // Number có định dạng đệm số 0, VD "000000000000"). KHÔNG dùng raw:false cho
+              // `rows` ở trên (để đọc mọi cột khác, đặc biệt NGÀY SINH) vì nó đổi cách đọc ô
+              // Date sang chuỗi ĐÃ ĐỊNH DẠNG theo number-format của chính file nguồn (có thể
+              // không phải dd/MM/yyyy tuỳ file) — trong khi cách đọc mặc định (raw:true) trả
+              // về SỐ SERIAL THÔ, được chuanHoaNgaySinhImport (utils/ngaySinh.js) giải mã
+              // luôn đúng dd/MM/yyyy bất kể định dạng/locale hiển thị của file gốc.
+              const rowsFormatted = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+
               const headers = rows[0].map(h => String(h).trim().toUpperCase().replace(/\s+/g, ' '));
               const dataRows = rows.slice(2);
-              
+              const dataRowsFormatted = rowsFormatted.slice(2);
+
               const getField = (rowArr, aliasArray) => {
                   for (let alias of aliasArray) {
                       const aliasClean = alias.trim().toUpperCase().replace(/\s+/g, ' ');
@@ -767,8 +901,36 @@ const XetTuyenPage = () => {
                   return "";
               };
 
+              // ĐÃ THÊM: validate điểm lúc import Excel — trước đây chỉ chặn điểm âm/vượt 10
+              // + chuẩn hoá dấu phẩy/chấm lúc NHẬP TAY (xem handleChange), import Excel hoàn
+              // toàn chưa có lớp chặn nào, dữ liệu rác (chữ, số âm, số >10) từng lọt thẳng lên
+              // hệ thống. `max` truyền theo thang điểm riêng từng cột (10 cho các môn + Hệ 10,
+              // 4 cho Hệ 4). Ô để trống luôn hợp lệ (val: null) — các môn ngoài tổ hợp xét
+              // tuyển vốn không bắt buộc điền hết.
+              const validateDiem = (raw, max) => {
+                  if (!raw || !raw.trim()) return { ok: true, val: null };
+                  const num = Number(raw.trim().replace(',', '.'));
+                  if (isNaN(num)) return { ok: false, err: `"${raw}" không phải số hợp lệ` };
+                  if (num < 0) return { ok: false, err: `${raw} là số âm (không hợp lệ)` };
+                  if (num > max) return { ok: false, err: `${raw} vượt quá ${max}` };
+                  return { ok: true, val: num };
+              };
+              const SCORE_FIELDS = [
+                  { ten: 'TOÁN', aliases: ['TOÁN'] }, { ten: 'VẬT LÍ', aliases: ['VẬT LÍ', 'VẬT LÝ'] },
+                  { ten: 'HÓA HỌC', aliases: ['HÓA HỌC'] }, { ten: 'SINH HỌC', aliases: ['SINH HỌC'] },
+                  { ten: 'NGỮ VĂN', aliases: ['NGỮ VĂN'] }, { ten: 'LỊCH SỬ', aliases: ['LỊCH SỬ'] },
+                  { ten: 'ĐỊA LÝ', aliases: ['ĐỊA LÝ', 'ĐỊA LÍ'] }, { ten: 'TIẾNG ANH', aliases: ['TIẾNG ANH'] },
+                  { ten: 'TIẾNG TRUNG', aliases: ['TIẾNG TRUNG'] }, { ten: 'TIN HỌC', aliases: ['TIN HỌC'] },
+                  { ten: 'GDKTPL', aliases: ['GDKTPL', 'GIÁO DỤC KINH TẾ'] },
+              ];
+
               let importedCount = 0; let dupCount = 0; let dupInFileCount = 0; let dupOnSheetCount = 0;
               const newItems = [];
+              // ĐÃ THÊM: hồ sơ bị LOẠI do điểm không hợp lệ (rejectedRows, xem SCORE_FIELDS ở
+              // trên) + hồ sơ điền CẢ Hệ 4 lẫn Hệ 10 nên bị tự chọn 1 trong 2 (rowWarnings) —
+              // cả 2 đều được báo cáo chi tiết trong alert tổng kết cuối hàm.
+              const rejectedRows = [];
+              const rowWarnings = [];
               // ĐÃ THÊM (rà soát Trunggian.gs): dò trùng NGAY TRONG CHÍNH FILE ĐANG CHỌN — trước đây
               // chỉ so với dataList hiện có trên trang, nên 2 dòng trùng CCCD+Ngành nhau NGAY TRONG
               // CÙNG 1 FILE (mà cả 2 đều chưa từng có trên dataList) sẽ lọt qua hết, cả 2 đều được
@@ -776,10 +938,13 @@ const XetTuyenPage = () => {
               const seenInThisFile = new Set();
               const sttBase = dataList.length;
 
-              dataRows.forEach((rowArr) => {
+              dataRows.forEach((rowArr, rowIdx) => {
                   if (rowArr.every(cell => String(cell || "").trim() === "")) return;
 
-                  const cccdVal = getField(rowArr, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]);
+                  // ĐÃ SỬA: lấy CĂN CƯỚC từ bản đọc raw:false (dataRowsFormatted, cùng chỉ số
+                  // dòng rowIdx) thay vì rowArr mặc định — giữ số 0 ở đầu dãy nếu ô bị Excel
+                  // coi là kiểu Number (xem chú thích ở khai báo rowsFormatted phía trên).
+                  const cccdVal = getField(dataRowsFormatted[rowIdx] || rowArr, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]);
                   const nganhVal = getField(rowArr, ["NGÀNH"]);
                   const cccdClean = cccdVal.replace(/\D/g, '');
                   const nganhClean = nganhVal.trim().toLowerCase();
@@ -793,6 +958,54 @@ const XetTuyenPage = () => {
                       if (isDupInFile) dupInFileCount++;
                       return;
                   }
+
+                  // ĐÃ THÊM: validate NGAY TRƯỚC KHI ghi nhận dòng này vào seenInThisFile/newItems
+                  // — hồ sơ lỗi bị LOẠI HOÀN TOÀN (không nạp vào danh sách chờ đẩy), người dùng sửa
+                  // lại đúng dòng lỗi trên chính file Excel rồi chọn lại NGUYÊN FILE để import lại;
+                  // các hồ sơ đã nạp thành công lần trước tự bị loại vì trùng CCCD+Ngành (isDupOnList
+                  // ở trên), không bị nạp đúp — không cần tự tay xoá bớt file trước khi import lại.
+                  const rowErrors = [];
+                  SCORE_FIELDS.forEach(({ ten, aliases }) => {
+                      const kq = validateDiem(getField(rowArr, aliases), 10);
+                      if (!kq.ok) rowErrors.push(`${ten}: ${kq.err}`);
+                  });
+
+                  const he4Raw = getField(rowArr, ["HỆ 4", "ĐIỂM TB TOÀN KHÓA HỆ 4"]);
+                  const he10Raw = getField(rowArr, ["HỆ 10", "ĐIỂM TB TOÀN KHÓA HỆ 10"]);
+                  const he4Kq = validateDiem(he4Raw, 4);
+                  const he10Kq = validateDiem(he10Raw, 10);
+                  if (!he4Kq.ok) rowErrors.push(`Điểm TB hệ 4: ${he4Kq.err}`);
+                  if (!he10Kq.ok) rowErrors.push(`Điểm TB hệ 10: ${he10Kq.err}`);
+
+                  if (rowErrors.length > 0) {
+                      rejectedRows.push({
+                          dong: rowIdx + 3, // dòng thật trong file: 1=tiêu đề, 2=mô tả, dữ liệu từ dòng 3
+                          ten: getField(rowArr, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]) || "(chưa rõ tên)",
+                          cccd: cccdVal || "(chưa rõ CCCD)",
+                          loi: rowErrors,
+                      });
+                      return;
+                  }
+
+                  // ĐÃ THÊM: điền cả 2 cột Hệ 4 và Hệ 10 trong CÙNG 1 dòng (lẽ ra chỉ điền 1 trong
+                  // 2 — xem mô tả dòng 2 file mẫu "Điền 1 trong 2 hệ") -> tự lấy điểm ở cột có TỈ LỆ
+                  // % SO VỚI THANG ĐIỂM cao hơn (VD 2/4 = 50% so với 6/10 = 60% -> lấy 6/10), bỏ
+                  // trống cột còn lại, kèm cảnh báo rõ đã lấy cột nào — tránh người thẩm định bất
+                  // ngờ khi thấy 1 cột đột nhiên trống dù file gốc có điền. Bằng % nhau -> giữ Hệ 10.
+                  let he4Final = he4Raw, he10Final = he10Raw;
+                  if (he4Kq.val != null && he10Kq.val != null) {
+                      const pct4 = (he4Kq.val / 4) * 100;
+                      const pct10 = (he10Kq.val / 10) * 100;
+                      const tenHienThi = getField(rowArr, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]) || `dòng ${rowIdx + 3}`;
+                      if (pct10 >= pct4) {
+                          he4Final = "";
+                          rowWarnings.push(`${tenHienThi}: điền cả Hệ 4 (${he4Raw} = ${pct4.toFixed(1)}%) và Hệ 10 (${he10Raw} = ${pct10.toFixed(1)}%) — đã lấy điểm Hệ 10 (tỉ lệ % cao hơn hoặc bằng).`);
+                      } else {
+                          he10Final = "";
+                          rowWarnings.push(`${tenHienThi}: điền cả Hệ 4 (${he4Raw} = ${pct4.toFixed(1)}%) và Hệ 10 (${he10Raw} = ${pct10.toFixed(1)}%) — đã lấy điểm Hệ 4 (tỉ lệ % cao hơn).`);
+                      }
+                  }
+
                   if (cccdClean) seenInThisFile.add(fileKey);
 
                   {
@@ -817,8 +1030,14 @@ const XetTuyenPage = () => {
                           "SINH HỌC": getField(rowArr, ["SINH HỌC"]), "NGỮ VĂN": getField(rowArr, ["NGỮ VĂN"]), "LỊCH SỬ": getField(rowArr, ["LỊCH SỬ"]), 
                           "ĐỊA LÝ": getField(rowArr, ["ĐỊA LÝ", "ĐỊA LÍ"]), "TIẾNG ANH": getField(rowArr, ["TIẾNG ANH"]), "TIẾNG TRUNG": getField(rowArr, ["TIẾNG TRUNG"]), 
                           "TIN HỌC": getField(rowArr, ["TIN HỌC"]), "GDKTPL": getField(rowArr, ["GDKTPL", "GIÁO DỤC KINH TẾ"]),
-                          "ĐIỂM TB HỆ 4": getField(rowArr, ["HỆ 4", "ĐIỂM TB TOÀN KHÓA HỆ 4"]), "ĐIỂM TB HỆ 10": getField(rowArr, ["HỆ 10", "ĐIỂM TB TOÀN KHÓA HỆ 10"]), "ĐIỂM CỘNG": getField(rowArr, ["ĐIỂM CỘNG"]),
-                          "ĐIỂM CHUẨN": getField(rowArr, ["ĐIỂM CHUẨN"]), 
+                          // ĐÃ VÁ BUG THẬT (cùng nguyên nhân với chỗ nhập tay — xem chú thích tại
+                          // handleAddRow phía trên): ghi vào ĐÚNG tên cột thật "ĐIỂM TB TOÀN KHÓA
+                          // HỆ 4/10" thay vì tên rút gọn cũ, để dữ liệu import Excel không còn bị
+                          // ghi trống 2 cột này vào Goc01 nữa. Vế đọc (getField) đã tự nhận cả 2
+                          // cách đặt tên cột phía FILE MẪU người dùng gõ (ưu tiên "HỆ 4"/"HỆ 10" —
+                          // đúng mô tả dòng 2 "Điền 1 trong 2 hệ", vẫn nhận cả tên đầy đủ nếu ai đó
+                          // tự đổi lại) — không đổi.
+                          "ĐIỂM TB TOÀN KHÓA HỆ 4": he4Final, "ĐIỂM TB TOÀN KHÓA HỆ 10": he10Final, "ĐIỂM CỘNG": getField(rowArr, ["ĐIỂM CỘNG"]),
                           
                           "TRẠNG THÁI THẨM ĐỊNH": "Chưa thẩm định",
                           "TIME": currentTimestamp,
@@ -829,7 +1048,16 @@ const XetTuyenPage = () => {
                       
                       ALL_HO_SO_DOCS.forEach(doc => {
                           const val = getField(rowArr, [doc.name.toUpperCase(), doc.short]);
-                          newRow[doc.name.toUpperCase()] = (val === "TRUE" || val === "1" || val.toUpperCase() === "CÓ" || val.toUpperCase() === "V") ? "TRUE" : "FALSE";
+                          // ĐÃ SỬA: "TRUE" trước đây so khớp CHÍNH XÁC hoa/thường (val === "TRUE")
+                          // — gõ "True"/"true" trong Excel không được nhận, và "x"/"X" (cách gõ
+                          // quen thuộc nhất cho ô tick) hoàn toàn chưa có trong danh sách chấp
+                          // nhận, dù getMissingDocs (thamDinhHelpers.js, trang Thẩm định) đã coi
+                          // "X" là hợp lệ từ trước — 1 dòng import ghi "x" bị âm thầm quy thành
+                          // "FALSE" (mất tick) ngay từ bước này, trước khi kịp tới Thẩm định. Giờ
+                          // so khớp không phân biệt hoa/thường (toUpperCase trước), đúng 1 danh
+                          // sách với getMissingDocs: TRUE/1/V/X/CÓ.
+                          const valUpper = val.toUpperCase();
+                          newRow[doc.name.toUpperCase()] = (valUpper === "TRUE" || valUpper === "1" || valUpper === "CÓ" || valUpper === "V" || valUpper === "X") ? "TRUE" : "FALSE";
                       });
 
                       newItems.push(newRow);
@@ -888,6 +1116,15 @@ const XetTuyenPage = () => {
               if (dupInFileCount > 0) msg += `\n⚠️ Bỏ qua ${dupInFileCount} hồ sơ trùng CCCD + Ngành NGAY TRONG file vừa chọn.`;
               if (dupCount - dupInFileCount > 0) msg += `\n⚠️ Bỏ qua ${dupCount - dupInFileCount} hồ sơ trùng với danh sách đang chờ đẩy.`;
               if (dupOnSheetCount > 0) msg += `\n⚠️ Bỏ qua ${dupOnSheetCount} hồ sơ đã có sẵn trên hệ thống (người khác đã nhập trước).`;
+              // ĐÃ THÊM: báo chi tiết 2 loại — cảnh báo (đã tự xử lý, hồ sơ vẫn được nạp) và
+              // lỗi (hồ sơ bị loại hoàn toàn, chưa được nạp) — xem rowWarnings/rejectedRows.
+              if (rowWarnings.length > 0) {
+                  msg += `\n\n⚠️ ${rowWarnings.length} hồ sơ điền cả Hệ 4 và Hệ 10 (đã tự lấy điểm có tỉ lệ % cao hơn):\n` + rowWarnings.map(w => `- ${w}`).join('\n');
+              }
+              if (rejectedRows.length > 0) {
+                  msg += `\n\n❌ ${rejectedRows.length} hồ sơ bị LOẠI do điểm không hợp lệ (CHƯA được nạp) — sửa lại đúng các dòng sau trên file Excel rồi chọn lại NGUYÊN FILE đó để import lại (hồ sơ đã nạp thành công ở trên sẽ tự bị bỏ qua vì trùng, không lo nạp đúp):\n`
+                      + rejectedRows.map(r => `- Dòng ${r.dong} (${r.ten} - CCCD ${r.cccd}): ${r.loi.join('; ')}`).join('\n');
+              }
               alert(msg);
 
           } catch(err) { alert("Lỗi đọc file: " + err.message); setImportStatus(""); }
@@ -1064,7 +1301,7 @@ const XetTuyenPage = () => {
                           <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ CHUNG</h6>
                           <button type="button" className="btn btn-sm btn-warning fw-bold py-0" onClick={handleSelectAllCommon}>⚡ Chọn/Bỏ Chọn</button>
                       </div>
-                      {renderDocs(DICT_HO_SO.chung)} 
+                      {renderDocs(DICT_HO_SO.chung.filter(doc => isDocApplicable(doc, formData)))}
                       
                       <div className="mt-3 d-flex align-items-center gap-2">
                           <label className="checkbox-item mb-0">

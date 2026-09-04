@@ -373,6 +373,49 @@ export const gopHoSoDinhDanh = async ({ svKeyNguon, svKeyDich }) => {
   throw new Error(response.data.message || 'Lỗi gộp hồ sơ định danh');
 };
 
+// ĐÃ THÊM — "Gợi ý cặp nghi trùng": danh sách các nhóm hồ sơ định danh đang sống trùng
+// tên+ngày sinh, để panel Gộp thủ công gợi ý sẵn thay vì bắt Admin/ThamDinh tự gõ tìm.
+export const fetchGoiYCapNghiTrungDinhDanh = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=dinhDanhGoiYCapNghiTrung&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải gợi ý cặp nghi trùng');
+};
+
+// Chỉ đếm số nhóm nghi trùng — dùng cho bong bóng thông báo ở các tài khoản không có quyền
+// tự xử lý, lỗi thì coi như 0 (cùng nguyên tắc như fetchSoLuongCanXacNhanDinhDanhCuaToi).
+export const fetchSoLuongCapNghiTrungDinhDanh = async () => {
+  try {
+    const auth = getAuthParams();
+    const response = await axios.get(`${GAS_URL}?action=dinhDanhSoLuongCapNghiTrung&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+    if (response.data && response.data.code === 200) {
+      return response.data.data.soLuong || 0;
+    }
+    return 0;
+  } catch (e) {
+    return 0;
+  }
+};
+
+// Tài khoản không có quyền tự xử lý bấm "Báo Admin" từ bong bóng thông báo -> đẩy 1 tin
+// nhắn Google Chat qua webhook đã cấu hình sẵn (xem dinhDanhBaoAdmin trong DinhDanh.gs).
+export const baoAdminDinhDanh = async ({ soCanXacNhan, soCanGop }) => {
+  const formData = new URLSearchParams();
+  formData.append('action', 'dinhDanhBaoAdmin');
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify({ soCanXacNhan, soCanGop }));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi gửi báo Admin');
+};
+
 // ==========================================
 // PHẦN 4: API CẤU HÌNH HỆ THỐNG
 // ==========================================

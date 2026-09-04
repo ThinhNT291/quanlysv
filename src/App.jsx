@@ -272,8 +272,10 @@ const App = () => {
                   </NavLink>
                 </li>
 
-                {/* MENU QUẢN LÝ HỒ SƠ: Dành cho CanBo và Admin */}
-                {hasAnyRole(currentUser.roles, ['CanBo', 'Admin']) && (
+                {/* MENU QUẢN LÝ HỒ SƠ: CanBo + Admin (sửa được) + ThamDinh (ĐÃ THÊM — chỉ
+                    xem, xem AdmissionsPage.jsx: trang tự khoá mọi nút/ô ghi dữ liệu khi
+                    tài khoản chỉ có role ThamDinh). */}
+                {hasAnyRole(currentUser.roles, ['CanBo', 'ThamDinh', 'Admin']) && (
                   <li className="nav-item">
                     <NavLink to="/thu-ho-so-nhap-hoc" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
                       <i className="bi bi-people-fill me-1"></i> Quản lý hồ sơ
@@ -299,8 +301,9 @@ const App = () => {
                   </li>
                 )}
 
-                {/* HÀNG ĐỢI XÁC NHẬN ĐỊNH DANH: Chỉ Admin — ĐÃ THÊM (Pha 1·D1 — bước 4) */}
-                {hasAnyRole(currentUser.roles, ['Admin']) && (
+                {/* HÀNG ĐỢI XÁC NHẬN ĐỊNH DANH: Admin + ThamDinh — ĐÃ THÊM (Pha 1·D1 — bước 4);
+                    ĐÃ SỬA: trước chỉ Admin, mở thêm cho Ban thẩm định theo yêu cầu. */}
+                {hasAnyRole(currentUser.roles, ['Admin', 'ThamDinh']) && (
                   <li className="nav-item">
                     <NavLink to="/xac-nhan-dinh-danh" onClick={() => setIsNavCollapsed(true)} className={({isActive}) => `nav-link px-3 rounded ${isActive ? 'active bg-primary text-white shadow-sm' : 'text-light'}`}>
                       <i className="bi bi-person-fill-exclamation me-1"></i> Xác nhận định danh
@@ -329,8 +332,10 @@ const App = () => {
                 giờ trỏ về Trang chủ dạng thẻ chức năng — mỗi thẻ tự lọc theo quyền của
                 currentUser (xem Home.jsx), không cần bọc thêm ProtectedRoute ở đây. */}
             <Route path="/" element={<Home currentUser={currentUser} />} />
+            {/* ĐÃ SỬA: thêm ThamDinh (chỉ xem — xem ghi chú ở nav link phía trên và
+                AdmissionsPage.jsx). ProtectedRoute tự OR thêm Admin sẵn. */}
             <Route path="/thu-ho-so-nhap-hoc" element={
-              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo']}>
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'ThamDinh']}>
                 <AdmissionsPage />
               </ProtectedRoute>
             } />
@@ -356,9 +361,11 @@ const App = () => {
               </ProtectedRoute>
             } />
 
-            {/* Hàng đợi xác nhận định danh (Chỉ Admin) — ĐÃ THÊM (Pha 1·D1 — bước 4) */}
+            {/* Hàng đợi xác nhận định danh (Admin + ThamDinh) — ĐÃ THÊM (Pha 1·D1 — bước 4);
+                ĐÃ SỬA: allowedRoles=['ThamDinh'] — ProtectedRoute tự OR thêm Admin (xem định
+                nghĩa ở trên), nên kết quả là đúng 2 role Admin + ThamDinh được vào. */}
             <Route path="/xac-nhan-dinh-danh" element={
-              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={[]}>
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['ThamDinh']}>
                 <XacNhanDinhDanhPage />
               </ProtectedRoute>
             } />

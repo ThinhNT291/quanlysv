@@ -89,6 +89,11 @@ const ThamDinhPage = () => {
   // nhật bảng NGAY, không cần gọi lại server.
   const [showTrucTiep, setShowTrucTiep] = useState(false);
   const [sortBy, setSortBy] = useState('date_desc');
+  // ĐÃ THÊM: tách bộ lọc 2 tầng theo yêu cầu — hàng "ghim" (Tìm nhanh/Thời gian/Trạng
+  // thái thẩm định/Sắp xếp) luôn hiện, các ô còn lại (Ngành/Đối tượng/Trạng thái hồ
+  // sơ/Nhập học trực tiếp) chỉ xổ ra khi bấm nút "Lọc thêm" — cờ này quyết định hàng
+  // đó có đang mở hay không.
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT);
   const [selectedKeys, setSelectedKeys] = useState(new Set());
@@ -206,6 +211,11 @@ const ThamDinhPage = () => {
   const isFilterActive = search !== '' || dateFrom !== defaultDateFrom || dateTo !== defaultDateTo ||
     filterNganh !== '' || filterDoiTuong !== '' || filterHoSo !== '' || filterThamDinh !== '' || sortBy !== 'date_desc' ||
     showTrucTiep !== false;
+
+  // ĐÃ SỬA: Ngành đào tạo và nút "Nhập học trực tiếp" chuyển lên hàng ghim (luôn hiện)
+  // theo yêu cầu đợt sau, nên nhóm "Lọc thêm" giờ chỉ còn Đối tượng đầu vào/Trạng thái
+  // hồ sơ — chấm cam trên nút "Lọc thêm" chỉ cần phản ánh đúng 2 ô còn ẩn trong đó.
+  const moreFiltersActive = filterDoiTuong !== '' || filterHoSo !== '';
 
   const toggleSelect = (key, checked) => {
     setSelectedKeys(prev => {
@@ -632,17 +642,22 @@ const ThamDinhPage = () => {
 
       {isError && <div className="alert alert-danger">Lỗi tải dữ liệu: {error?.message}</div>}
 
-      {/* ĐÃ SỬA: cả khối 4 thẻ thống kê giờ chỉ chiếm nửa bề ngang trang (col-md-6),
-          nửa còn lại để trống bên phải theo yêu cầu (đang để dành, chưa quyết định
-          đặt gì vào). 4 thẻ bên trong vẫn giữ đúng tỉ lệ 1/4 NHƯNG tính theo nửa
-          trang đó — nên bề ngang thực tế mỗi thẻ co lại còn một nửa so với trước.
-          Chữ trong từng thẻ (nhãn + số) đều in đậm thêm (fw-bold). */}
-      <div className="row mb-3 g-2">
-        <div className="col-md-6">
-          <div className="row g-2">
+      {/* ĐÃ SỬA (đợt 4): khối 4 thẻ thống kê vẫn col-md-6, nửa còn lại bên phải giờ là
+          1 khối bộ lọc "ghim" chia 2 HÀNG (thay vì 1 hàng dàn ngang cũ) để 2 bên trông
+          cân đối bằng nhau — 4 thẻ cũng được đôn cao thêm 1 chút (py-2 -> py-3) cho
+          khớp chiều cao với khối 2 hàng bên phải.
+          Hàng 1 (bên phải): Tìm nhanh — Thời gian (giãn hết chỗ còn lại trong hàng) —
+          Nhập học trực tiếp (ngoài cùng phải).
+          Hàng 2 (bên phải): Trạng thái thẩm định — Sắp xếp — Ngành đào tạo (thu ngắn
+          còn ~nửa bề rộng so với 2 ô kia) — Lọc thêm — Bỏ lọc (ngoài cùng phải, có
+          chữ). Nhóm "Lọc thêm" xổ dưới giờ chỉ còn Đối tượng đầu vào/Trạng thái hồ sơ
+          (Ngành + Nhập học trực tiếp đã chuyển lên hàng ghim ở trên). */}
+      <div className="row mb-3 g-2 align-items-stretch">
+        <div className="col-md-6 d-flex">
+          <div className="row g-2 flex-fill">
             <div className="col-6 col-md-3">
               <div className="card bg-primary text-white border-0 shadow-sm h-100">
-                <div className="card-body py-2 px-3">
+                <div className="card-body py-3 px-3">
                   <div className="small opacity-75 fw-bold">📁 Tổng hồ sơ ({today.getFullYear()})</div>
                   <h3 className="mb-0 fw-bold">{kpi.total}</h3>
                 </div>
@@ -650,7 +665,7 @@ const ThamDinhPage = () => {
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-body py-2 px-3">
+                <div className="card-body py-3 px-3">
                   <div className="small text-muted fw-bold">📑 Đủ hồ sơ</div>
                   <h3 className="mb-0 fw-bold" style={{ color: '#2980b9' }}>{kpi.du}</h3>
                 </div>
@@ -658,7 +673,7 @@ const ThamDinhPage = () => {
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-body py-2 px-3">
+                <div className="card-body py-3 px-3">
                   <div className="small text-muted fw-bold">⚠️ Thiếu hồ sơ</div>
                   <h3 className="mb-0 fw-bold" style={{ color: '#c0392b' }}>{kpi.thieu}</h3>
                 </div>
@@ -666,7 +681,7 @@ const ThamDinhPage = () => {
             </div>
             <div className="col-6 col-md-3">
               <div className="card border-0 shadow-sm h-100">
-                <div className="card-body py-2 px-3">
+                <div className="card-body py-3 px-3">
                   <div className="small text-muted fw-bold">✅ Đã duyệt</div>
                   <h3 className="mb-0 fw-bold" style={{ color: '#2e7d32' }}>{kpi.daDuyet}</h3>
                 </div>
@@ -674,109 +689,134 @@ const ThamDinhPage = () => {
             </div>
           </div>
         </div>
-        {/* col-md-6 còn lại cố ý để trống — chờ nội dung sau */}
-      </div>
-
-      <div className="card border-0 shadow-sm mb-3">
-        <div className="card-body py-2">
-          {/* ĐÃ SỬA: bề rộng từng ô giờ dùng class riêng (td-col-*, định nghĩa trong
-              ThamDinh.css) thay vì col-md-N/col-xl-N của Bootstrap — vì các tỉ lệ yêu
-              cầu (2/3, x1.2, x0.5, x1.5) không khớp số nguyên cột 12 phần của Bootstrap
-              nên tính % trực tiếp cho đúng tỉ lệ. Ở màn hẹp (< md) vẫn dùng col-6 của
-              Bootstrap để xếp 2 ô/hàng như cũ. Nhãn (label) mỗi ô được in đậm thêm. */}
-          <div className="row g-2 align-items-end thamdinh-filter-row">
-            <div className="col-6 td-col-quick">
-              <label className="form-label small fw-bold mb-1">Tìm nhanh</label>
-              <input type="search" className="form-control form-control-sm" placeholder="🔎 Mã SV / CCCD / Họ tên..."
-                value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
-            </div>
-            {/* ĐÃ SỬA: gộp "Từ ngày"/"Đến ngày" thành 1 ô "Thời gian" — bấm mở lịch tháng,
-                bấm 2 lần chọn 2 mốc của khoảng (không cần đúng thứ tự), kiểu chọn ngày
-                quen thuộc của các trang đặt phòng khách sạn. Xem DateRangePicker.jsx. */}
-            <div className="col-6 td-col-thoigian">
-              <label className="form-label small fw-bold mb-1">Thời gian</label>
-              <DateRangePicker
-                from={dateFrom}
-                to={dateTo}
-                onChange={(lo, hi) => { setDateFrom(lo); setDateTo(hi); setCurrentPage(1); }}
-              />
-            </div>
-            <div className="col-6 td-col-nganh">
-              <label className="form-label small fw-bold mb-1">Ngành đào tạo</label>
-              <select className="form-select form-select-sm" value={filterNganh} onChange={e => { setFilterNganh(e.target.value); setCurrentPage(1); }}>
-                <option value="">-- Tất cả ngành --</option>
-                {nganhOptions.map(ng => <option key={ng} value={ng}>{ng}</option>)}
-              </select>
-            </div>
-            <div className="col-6 td-col-doituong">
-              <label className="form-label small fw-bold mb-1">Đối tượng đầu vào</label>
-              <select className="form-select form-select-sm" value={filterDoiTuong} onChange={e => { setFilterDoiTuong(e.target.value); setCurrentPage(1); }}>
-                <option value="">-- Tất cả --</option>
-                {doiTuongOptions.map(dt => <option key={dt} value={dt}>{dt}</option>)}
-              </select>
-            </div>
-            {/* ĐÃ SỬA: nút "Xoá bộ lọc" trước đây chỉ có icon (bi-x-circle) -> trên máy
-                không tải được font icon thì trông như 1 ô trắng trống trơn. Giờ luôn có
-                chữ "Xóa lọc" rõ ràng; màu mặc định trung tính (không nổi bật), tự động
-                chuyển cam nhạt khi isFilterActive = true (đang có ít nhất 1 điều kiện lọc
-                khác mặc định) — xem 2 class .thamdinh-reset-btn/-active trong CSS. */}
-            <div className="col-6 td-col-reset">
-              <button
-                className={`btn btn-sm w-100 ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
-                onClick={resetFilters}
-                title="Xóa bộ lọc, quay về mặc định"
-              >
-                <i className="bi bi-x-circle me-1"></i>Xóa lọc
-              </button>
-            </div>
-            <div className="col-6 td-col-hoso-status">
-              <label className="form-label small fw-bold mb-1">Trạng thái hồ sơ</label>
-              <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
-                <option value="">-- Tất cả --</option>
-                <option value="Đủ">Đủ hồ sơ</option>
-                <option value="Thiếu">Thiếu hồ sơ</option>
-              </select>
-            </div>
-            {/* ĐÃ SỬA: lọc theo Trạng thái thẩm định — không còn bằng bề rộng ô Trạng thái hồ
-                sơ nữa (2 tỉ lệ khác nhau ở đợt sửa này), nên tách thành class riêng
-                td-col-thamdinh-status (trước đây dùng chung td-col-status). */}
-            <div className="col-6 td-col-thamdinh-status">
-              <label className="form-label small fw-bold mb-1">Trạng thái thẩm định</label>
-              <select className="form-select form-select-sm" value={filterThamDinh} onChange={e => { setFilterThamDinh(e.target.value); setCurrentPage(1); }}>
-                <option value="">-- Tất cả --</option>
-                <option value="Đang chờ duyệt">Đang chờ duyệt</option>
-                <option value="Mới bổ sung">Mới bổ sung</option>
-                <option value="Đã báo thiếu">Đã báo thiếu</option>
-                <option value="Đã duyệt">Đã duyệt</option>
-                <option value="Đã trúng tuyển">Đã trúng tuyển (Nhập học)</option>
-              </select>
-            </div>
-            <div className="col-6 td-col-sort">
-              <label className="form-label small fw-bold mb-1">Sắp xếp</label>
-              <select className="form-select form-select-sm" value={sortBy} onChange={e => setSortBy(e.target.value)}>
-                <option value="date_desc">Ngày nộp mới nhất</option>
-                <option value="date_asc">Ngày nộp cũ nhất</option>
-                <option value="score_desc">Điểm cao nhất</option>
-                <option value="status">Theo trạng thái</option>
-              </select>
-            </div>
-            {/* ĐÃ THÊM: nút hiện/ẩn hồ sơ kênh "Thu hồ sơ trực tiếp" (trang Nhập học) —
-                mặc định TẮT (ẩn), bấm vào để hiện thêm. Chỉ lọc lại filteredData (đã tải
-                sẵn trong rawData) nên bảng cập nhật ngay, không cần gọi lại server. */}
-            <div className="col-6 td-col-tructiep">
-              <label className="form-label small fw-bold mb-1 d-block">&nbsp;</label>
-              <button
-                type="button"
-                className={`btn btn-sm w-100 ${showTrucTiep ? 'btn-info text-white' : 'btn-outline-secondary'}`}
-                onClick={() => { setShowTrucTiep(v => !v); setCurrentPage(1); }}
-                title="Hiện/ẩn hồ sơ từ trang Thu hồ sơ nhập học (kênh Thu hồ sơ trực tiếp)"
-              >
-                <i className="bi bi-person-check me-1"></i>Nhập học trực tiếp
-              </button>
+        <div className="col-md-6">
+          <div className="card border-0 shadow-sm h-100 thamdinh-pinned-filters-card">
+            <div className="card-body py-2 px-3 d-flex flex-column justify-content-center gap-2 thamdinh-pinned-filters">
+              {/* Hàng 1: Tìm nhanh — Thời gian (giãn hết chỗ trống của hàng) — Nhập học
+                  trực tiếp (ngoài cùng bên phải hàng 1). */}
+              <div className="d-flex align-items-center gap-2 thamdinh-pin-row1">
+                <input
+                  type="search"
+                  className="form-control form-control-sm thamdinh-pin-quick"
+                  placeholder="🔎 Mã SV / CCCD / Họ tên..."
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+                />
+                <div className="thamdinh-pin-daterange">
+                  <DateRangePicker
+                    from={dateFrom}
+                    to={dateTo}
+                    onChange={(lo, hi) => { setDateFrom(lo); setDateTo(hi); setCurrentPage(1); }}
+                  />
+                </div>
+                {/* ĐÃ SỬA: nút "Nhập học trực tiếp" chuyển lên hàng ghim (hàng 1, ngoài
+                    cùng bên phải) — trước đây nằm trong nhóm "Lọc thêm" xổ dưới. */}
+                <button
+                  type="button"
+                  className={`btn btn-sm thamdinh-pin-tructiep ${showTrucTiep ? 'btn-info text-white' : 'btn-outline-secondary'}`}
+                  onClick={() => { setShowTrucTiep(v => !v); setCurrentPage(1); }}
+                  title="Hiện/ẩn hồ sơ từ trang Thu hồ sơ nhập học (kênh Thu hồ sơ trực tiếp)"
+                >
+                  <i className="bi bi-person-check me-1"></i>Nhập học trực tiếp
+                </button>
+              </div>
+              {/* Hàng 2: Trạng thái thẩm định — Sắp xếp — Ngành đào tạo (thu ngắn còn
+                  nửa bề rộng) — Lọc thêm — Bỏ lọc (ngoài cùng bên phải hàng 2). */}
+              <div className="d-flex flex-wrap align-items-center gap-2 thamdinh-pin-row2">
+                <select
+                  className="form-select form-select-sm thamdinh-pin-status"
+                  value={filterThamDinh}
+                  onChange={e => { setFilterThamDinh(e.target.value); setCurrentPage(1); }}
+                  title="Trạng thái thẩm định"
+                >
+                  <option value="">-- Trạng thái thẩm định --</option>
+                  <option value="Đang chờ duyệt">Đang chờ duyệt</option>
+                  <option value="Mới bổ sung">Mới bổ sung</option>
+                  <option value="Đã báo thiếu">Đã báo thiếu</option>
+                  <option value="Đã duyệt">Đã duyệt</option>
+                  <option value="Đã trúng tuyển">Đã trúng tuyển (Nhập học)</option>
+                </select>
+                <select
+                  className="form-select form-select-sm thamdinh-pin-sort"
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value)}
+                  title="Sắp xếp"
+                >
+                  <option value="date_desc">Ngày nộp mới nhất</option>
+                  <option value="date_asc">Ngày nộp cũ nhất</option>
+                  <option value="score_desc">Điểm cao nhất</option>
+                  <option value="status">Theo trạng thái</option>
+                </select>
+                {/* ĐÃ SỬA: Ngành đào tạo chuyển từ nhóm "Lọc thêm" lên hàng ghim, thu ngắn
+                    còn ~nửa bề rộng so với 2 ô Trạng thái thẩm định/Sắp xếp bên cạnh. */}
+                <select
+                  className="form-select form-select-sm thamdinh-pin-nganh"
+                  value={filterNganh}
+                  onChange={e => { setFilterNganh(e.target.value); setCurrentPage(1); }}
+                  title="Ngành đào tạo"
+                >
+                  <option value="">-- Ngành --</option>
+                  {nganhOptions.map(ng => <option key={ng} value={ng}>{ng}</option>)}
+                </select>
+                {/* ĐÃ THÊM: nút "Lọc thêm" — bấm vào xổ ra 1 hàng bên dưới chứa Đối tượng
+                    đầu vào/Trạng thái hồ sơ. Nổi chấm cam khi nhóm đó đang có lọc áp dụng
+                    nhưng hàng đang ĐÓNG (moreFiltersActive) — để không "giấu" mất lọc đang
+                    bật mà người dùng không biết. */}
+                <button
+                  type="button"
+                  className={`btn btn-sm position-relative thamdinh-more-filter-btn ${showMoreFilters ? 'btn-info text-white' : 'btn-outline-secondary'}`}
+                  onClick={() => setShowMoreFilters(v => !v)}
+                  title="Thêm điều kiện lọc (Đối tượng đầu vào, Trạng thái hồ sơ)"
+                >
+                  <i className="bi bi-funnel me-1"></i>Lọc thêm
+                  <i className={`bi bi-chevron-${showMoreFilters ? 'up' : 'down'} ms-1`}></i>
+                  {moreFiltersActive && !showMoreFilters && (
+                    <span className="thamdinh-more-filter-dot" title="Đang có lọc áp dụng trong nhóm này"></span>
+                  )}
+                </button>
+                {/* ĐÃ SỬA: nút reset đổi tên hiển thị thành "Bỏ lọc" (có chữ, không chỉ
+                    icon nữa) và luôn là phần tử NGOÀI CÙNG BÊN PHẢI của hàng 2 — logic đổi
+                    màu cam nhạt khi isFilterActive giữ nguyên như trước. */}
+                <button
+                  type="button"
+                  className={`btn btn-sm ms-auto ${isFilterActive ? 'thamdinh-reset-btn-active' : 'thamdinh-reset-btn'}`}
+                  onClick={resetFilters}
+                  title="Xóa bộ lọc, quay về mặc định"
+                >
+                  <i className="bi bi-x-circle me-1"></i>Bỏ lọc
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ĐÃ SỬA: nhóm "Lọc thêm" giờ chỉ còn Đối tượng đầu vào/Trạng thái hồ sơ (Ngành
+          và Nhập học trực tiếp đã chuyển lên hàng ghim ở trên) — xổ RA HẲN 1 HÀNG RIÊNG
+          bên dưới khi bấm nút, không phải dropdown/overlay che nội dung. */}
+      {showMoreFilters && (
+        <div className="card border-0 shadow-sm mb-3">
+          <div className="card-body py-2">
+            <div className="row g-2 align-items-end">
+              <div className="col-6 col-md-4">
+                <label className="form-label small fw-bold mb-1">Đối tượng đầu vào</label>
+                <select className="form-select form-select-sm" value={filterDoiTuong} onChange={e => { setFilterDoiTuong(e.target.value); setCurrentPage(1); }}>
+                  <option value="">-- Tất cả --</option>
+                  {doiTuongOptions.map(dt => <option key={dt} value={dt}>{dt}</option>)}
+                </select>
+              </div>
+              <div className="col-6 col-md-4">
+                <label className="form-label small fw-bold mb-1">Trạng thái hồ sơ</label>
+                <select className="form-select form-select-sm" value={filterHoSo} onChange={e => { setFilterHoSo(e.target.value); setCurrentPage(1); }}>
+                  <option value="">-- Tất cả --</option>
+                  <option value="Đủ">Đủ hồ sơ</option>
+                  <option value="Thiếu">Thiếu hồ sơ</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedKeys.size > 0 && (
         <div className="card border-0 shadow-sm mb-3 bg-light">
@@ -1029,7 +1069,7 @@ const ThamDinhPage = () => {
                           {scores.hasScore ? (
                             <>
                               <div className="fw-bold" style={{ color: '#2e7d32' }}>{scores.finalTotalScore} <span className="small text-muted">({scores.bestCombo})</span></div>
-                              <div className="small text-muted">/ 15</div>
+                              <div className="small text-muted">/ {scores.diemChuanLabel}</div>
                             </>
                           ) : <div className="small fst-italic text-muted">Chưa đủ dữ liệu điểm</div>}
                         </div>
@@ -1199,7 +1239,7 @@ const ThamDinhPage = () => {
                             <td style={{ padding: '3px 4px' }}>{scores.type === 'thpt' ? 'Điểm trúng tuyển / Tổ hợp / Điểm chuẩn' : scores.dtbLabel}</td>
                             <td style={{ padding: '3px 4px', fontWeight: 'bold' }}>
                               {scores.type === 'thpt'
-                                ? (scores.hasScore ? `${scores.finalTotalScore} (${scores.bestCombo}) / 15` : 'Chưa đủ dữ liệu điểm')
+                                ? (scores.hasScore ? `${scores.finalTotalScore} (${scores.bestCombo}) / ${scores.diemChuanLabel}` : 'Chưa đủ dữ liệu điểm')
                                 : `${scores.dtbVal} / ${scores.diemChuanText}`}
                             </td>
                           </tr>

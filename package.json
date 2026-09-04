@@ -16,6 +16,7 @@
     "@tanstack/react-query": "^5.101.4",
     "axios": "^1.19.0",
     "bootstrap": "^5.3.8",
+    "exceljs": "^4.4.0",
     "html2pdf.js": "^0.14.0",
     "jwt-decode": "^4.0.0",
     "moment": "^2.30.1",

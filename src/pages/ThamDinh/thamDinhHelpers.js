@@ -34,10 +34,23 @@ export function normalizeText(str) {
 }
 
 // Khoá ghép đôi CCCD + Ngành — nhận diện 1 hồ sơ duy nhất, khớp cách các GAS backend chống trùng
+// ĐÃ SỬA (lỗi tick chọn 1 hồ sơ mà nhiều hồ sơ khác bị chọn/bỏ chọn theo): khi CCCD trống
+// (hồ sơ thiếu dữ liệu/test), nhiều hồ sơ khác nhau có thể cùng ra khoá rỗng + cùng ngành
+// (vd: "_công nghệ thông tin") -> selectedKeys.has(key) trả về true/false GIỐNG NHAU cho tất
+// cả các hồ sơ đó, nên tick 1 dòng khiến các dòng còn lại cũng đổi trạng thái theo.
+// Cách sửa: chỉ khi CCCD có giá trị mới dùng khoá cũ (cccd + "_" + ngành) — GIỮ NGUYÊN hành vi
+// hiện tại (khớp với cách BE chống trùng theo CCCD+Ngành). Khi CCCD trống, ghép thêm các
+// trường khác (họ tên, ngày sinh, SĐT, email, khóa) để giảm khả năng trùng khoá giữa các hồ sơ.
 export function getRowKey(row) {
   const cccd = getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '').trim();
   const nganh = getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]).trim().toLowerCase();
-  return cccd + "_" + nganh;
+  if (cccd) return cccd + "_" + nganh;
+  const hoTen = normalizeText(getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]));
+  const ngaySinh = getVal(row, ["NGÀY SINH", "NGÀNH SINH"]).trim();
+  const sdt = getVal(row, ["SỐ ĐIỆN THOẠI", "SĐT", "ĐIỆN THOẠI"]).trim();
+  const email = getVal(row, ["EMAIL"]).trim().toLowerCase();
+  const khoa = getVal(row, ["KHÓA"]).trim();
+  return ["", nganh, hoTen, ngaySinh, sdt, email, khoa].join("_");
 }
 
 export function generateMaSV(row) {
@@ -170,6 +183,26 @@ export function getAppState(row) {
   return "Đang chờ duyệt";
 }
 
+// ĐÃ THÊM: điểm chuẩn nhánh "Tốt nghiệp THPT" giờ KHÁC NHAU theo "PHƯƠNG THỨC XÉT
+// TUYỂN" (trước đây hardcode chung 1 mức 15.0 cho cả 3 phương thức — SAI, theo yêu cầu
+// thực tế: Điểm thi THPT = 15, Điểm học bạ (thường) = 16, Điểm học bạ (TBTS 2025) = 15).
+// GIỮ ĐỒNG BỘ với bảng tương tự bên XetTuyenPage.jsx (dùng cho bảng xem trước lúc nhập
+// tay) — đổi mức điểm chuẩn thì phải đổi ở CẢ 2 nơi.
+const DIEM_CHUAN_THPT = { THI_THPT: 15, HOC_BA: 16, HOC_BA_2025: 15 };
+
+// Suy ra khoá phương thức (THI_THPT/HOC_BA/HOC_BA_2025) từ nhãn tiếng Việt lưu trên
+// cột "PHƯƠNG THỨC XÉT TUYỂN" (hoặc chính khoá đó, phòng khi có nơi lưu thẳng khoá).
+// Trả về "" nếu không nhận diện được (hồ sơ cũ chưa có cột này, hoặc bị bỏ trống lúc
+// import) — nơi gọi phải tự xử lý trường hợp không rõ phương thức, KHÔNG được mặc định
+// ngầm 1 mức điểm chuẩn nào cả (dễ khiến người thẩm định hiểu nhầm là điểm chuẩn thật).
+function suyRaPhuongThuc(row) {
+  const raw = getVal(row, ["PHƯƠNG THỨC XÉT TUYỂN", "LOẠI ĐIỂM"]);
+  if (raw === "Điểm thi THPT" || raw === "THI_THPT") return "THI_THPT";
+  if (raw === "Điểm học bạ" || raw === "HOC_BA") return "HOC_BA";
+  if (raw === "Điểm học bạ (TBTS 2025)" || raw === "HOC_BA_2025") return "HOC_BA_2025";
+  return "";
+}
+
 // ĐÃ THÊM (Pha 5): bản mở rộng của getBestScore() — dùng cho panel điểm chi tiết
 // trong modal (bảng từng tổ hợp + trạng thái Đạt/Trượt), hỗ trợ "khảo sát ngành
 // khác" (targetNganh khác ngành đăng ký thật của thí sinh) — port từ
@@ -202,9 +235,17 @@ export function calculateScores(row, targetNganh) {
     if (maxScore > 0) {
       const finalUTien = maxScore >= 22.5 ? ((30 - maxScore) / 7.5) * uTienBanDau : uTienBanDau;
       const finalTotalScore = (maxScore + finalUTien + diemCong).toFixed(2);
+      // ĐÃ SỬA: điểm chuẩn giờ tra theo phương thức xét tuyển thay vì hardcode 15.0 —
+      // xem DIEM_CHUAN_THPT/suyRaPhuongThuc phía trên. Hồ sơ không xác định được phương
+      // thức (cột trống/giá trị lạ) -> diemChuan = null, diemChuanLabel hiện rõ "chưa rõ
+      // phương thức" thay vì âm thầm coi như 15 hay 16 — để người thẩm định tự đối chiếu.
+      const phuongThuc = suyRaPhuongThuc(row);
+      const diemChuan = phuongThuc ? DIEM_CHUAN_THPT[phuongThuc] : null;
+      const diemChuanLabel = diemChuan != null ? String(diemChuan) : "15 hoặc 16 (chưa rõ Phương thức xét tuyển)";
       return {
         type: 'thpt', hasScore: true, diemCong, uuTien: finalUTien,
-        finalTotalScore, bestCombo, comboResults, dat: parseFloat(finalTotalScore) >= 15.0,
+        finalTotalScore, bestCombo, comboResults, phuongThuc, diemChuan, diemChuanLabel,
+        dat: diemChuan != null ? parseFloat(finalTotalScore) >= diemChuan : null,
       };
     }
     return { type: 'thpt', hasScore: false, comboResults: [] };

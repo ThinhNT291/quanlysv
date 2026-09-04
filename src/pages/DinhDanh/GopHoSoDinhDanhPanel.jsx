@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
-import { timKiemHoSoDinhDanh, xemTruocGopDinhDanh, gopHoSoDinhDanh } from '../../api/studentApi';
+import { timKiemHoSoDinhDanh, xemTruocGopDinhDanh, gopHoSoDinhDanh, fetchGoiYCapNghiTrungDinhDanh, fetchSoLuongCapNghiTrungDinhDanh } from '../../api/studentApi';
 
 // ĐÃ THÊM (PHA 1·D2 — "Gộp 2 hồ sơ định danh đã tồn tại"): KHÁC với bảng "Hàng đợi" ở
 // XacNhanDinhDanhPage — bảng đó xử lý 1 dòng MỚI vừa nhập chưa có sv_key riêng. Ở đây là ca
@@ -13,7 +13,10 @@ import { timKiemHoSoDinhDanh, xemTruocGopDinhDanh, gopHoSoDinhDanh } from '../..
 // Swal xác nhận lần 2 -> mới thật sự ghi. Đổi kết quả tìm kiếm hoặc đổi lựa chọn nguồn/đích
 // đều huỷ preview cũ, tránh xác nhận nhầm dữ liệu cũ.
 const GopHoSoDinhDanhPanel = () => {
-  const [moRong, setMoRong] = useState(false);
+  // ĐÃ SỬA: mặc định MỞ SẴN (trước là false, phải bấm mới mở) — giờ cả khối này chỉ được
+  // render ra khi thật sự có gì đáng chú ý (xem điều kiện ẩn/hiện ở return bên dưới), nên
+  // không cần bắt bấm thêm 1 lần nữa mới thấy nội dung.
+  const [moRong, setMoRong] = useState(true);
   const [tuKhoa, setTuKhoa] = useState('');
   const [dangTim, setDangTim] = useState(false);
   const [ketQua, setKetQua] = useState([]);
@@ -25,7 +28,61 @@ const GopHoSoDinhDanhPanel = () => {
   const [goXacNhan, setGoXacNhan] = useState('');
   const [dangGop, setDangGop] = useState(false);
 
+  // ĐÃ THÊM — "Gợi ý cặp nghi trùng": trước đây phải TỰ BIẾT tên/CCCD để gõ tìm, giờ quét
+  // sẵn hoso_dinh_danh, nhóm theo tên+ngày sinh, liệt kê ra đây để bấm thẳng vào bảng chọn
+  // bên dưới thay vì gõ tìm mò.
+  const [goiY, setGoiY] = useState([]);
+  const [dangTaiGoiY, setDangTaiGoiY] = useState(false);
+  const [daTaiGoiY, setDaTaiGoiY] = useState(false);
+
+  // ĐÃ THÊM — theo yêu cầu: cả khối này CHỈ hiện khi có hồ sơ nghi trùng, thay vì luôn
+  // hiện (dù thu gọn) như trước. Tự quét số lượng nhóm nghi trùng ngay khi vào trang, làm
+  // mới mỗi 60s — CÙNG CƠ CHẾ với "cần xác nhận" (CanXacNhanBadge): không cần bấm gì,
+  // backend đã tự quét sẵn hoso_dinh_danh mỗi lần gọi (xem dinhDanhSoLuongCapNghiTrung).
+  // Khác biệt duy nhất so với "cần xác nhận": kết quả không được LƯU thành 1 cột đánh dấu
+  // cố định trên Sheet (vì đây là so 2 hồ sơ ĐÃ CÓ SẴN với nhau, không phải 1 dòng mới vừa
+  // nhập) — mà tính lại (quét) mỗi lần gọi, nhưng với người dùng thì trải nghiệm y hệt:
+  // tự động xuất hiện, không cần thao tác gì trước.
+  const [soLuongTuDong, setSoLuongTuDong] = useState(null); // null = chưa tải xong lần đầu
+  const [hienThuCong, setHienThuCong] = useState(false); // ép hiện dù quét tự động ra 0 (tìm thủ công theo tiêu chí khác tên+ngày sinh, VD nghi trùng CCCD gõ sai)
+
+  useEffect(() => {
+    let huy = false;
+    const napLai = () => {
+      fetchSoLuongCapNghiTrungDinhDanh().then(n => { if (!huy) setSoLuongTuDong(n); });
+    };
+    napLai();
+    const timer = setInterval(napLai, 60000);
+    return () => { huy = true; clearInterval(timer); };
+  }, []);
+
   const huyPreview = () => { setXemTruoc(null); setGoXacNhan(''); };
+
+  const taiGoiY = async () => {
+    setDangTaiGoiY(true);
+    try {
+      const ds = await fetchGoiYCapNghiTrungDinhDanh();
+      setGoiY(ds);
+      setDaTaiGoiY(true);
+    } catch (err) {
+      Swal.fire('Lỗi tải gợi ý', err.message, 'error');
+    } finally {
+      setDangTaiGoiY(false);
+    }
+  };
+
+  // Đổ thẳng 1 nhóm gợi ý vào đúng bảng chọn nguồn/đích bên dưới (tái dùng lại UI/logic đã
+  // có, không phải làm luồng chọn riêng) — coi như kết quả của 1 lần "tìm kiếm".
+  const xemNhomGoiY = (nhom) => {
+    huyPreview();
+    setSvKeyNguon(''); setSvKeyDich('');
+    setKetQua(nhom.hoSo.map(h => ({
+      sv_key: h.sv_key, ho_ten_chuan_hoa: nhom.hoTen, ngay_sinh: nhom.ngaySinh,
+      ma_phu: h.ma_phu, soDongTrunggian: h.soDongTrunggian
+    })));
+    setTuKhoa(nhom.hoTen);
+    setDaTimChua(true);
+  };
 
   const timKiem = async () => {
     if (!tuKhoa || tuKhoa.trim().length < 2) {
@@ -92,6 +149,12 @@ const GopHoSoDinhDanhPanel = () => {
           html: `Đã chuyển <b>${kq.soMaPhuDaChuyen}</b> mã định danh và <b>${kq.soDongTrunggianDaChuyen}</b> hồ sơ tuyển sinh sang hồ sơ đích${dongDup}.`,
         });
         resetSauKhiGop();
+        // ĐÃ THÊM: nếu đang mở danh sách gợi ý, tải lại luôn để cặp vừa gộp biến mất khỏi
+        // gợi ý (không tự dọn thì Admin dễ bấm nhầm gộp lại cặp đã xử lý xong).
+        if (daTaiGoiY) taiGoiY();
+        // ĐÃ THÊM: tải lại số lượng nghi trùng tự động — nếu về 0, cả khối này tự ẩn lại
+        // đúng như lúc mới vào trang (không đợi tới lần quét 60s tiếp theo).
+        fetchSoLuongCapNghiTrungDinhDanh().then(setSoLuongTuDong);
       } catch (err) {
         Swal.fire({
           icon: 'error', title: 'Lỗi khi gộp',
@@ -103,12 +166,31 @@ const GopHoSoDinhDanhPanel = () => {
     });
   };
 
+  // ĐÃ THÊM — theo yêu cầu: cả khối này CHỈ hiện khi có hồ sơ nghi trùng. Chưa tải xong
+  // lần quét đầu -> chưa biết ẩn/hiện, không render gì (tránh nháy layout lúc vào trang).
+  if (soLuongTuDong === null) return null;
+
+  // Quét tự động ra 0 VÀ người dùng cũng chưa chủ động bấm tìm thủ công -> ẩn hẳn khối
+  // này, chỉ để lại 1 dòng nhỏ + link mở lại — phòng trường hợp cần tìm nghi trùng theo
+  // tiêu chí khác (VD gõ sai CCCD) mà quét tự động (theo tên+ngày sinh) không bắt được.
+  if (soLuongTuDong === 0 && !hienThuCong) {
+    return (
+      <div className="text-center text-muted small mt-3">
+        <i className="bi bi-check-circle me-1"></i>Không có hồ sơ định danh nào đang nghi trùng (tự động quét mỗi 60s).{' '}
+        <button className="btn btn-link btn-sm p-0 align-baseline" onClick={() => setHienThuCong(true)}>
+          Vẫn muốn tìm thủ công?
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="card mt-4 border-warning">
       <div className="card-header bg-warning-subtle d-flex justify-content-between align-items-center"
         style={{ cursor: 'pointer' }} onClick={() => setMoRong(!moRong)}>
         <span className="fw-bold text-dark">
           <i className="bi bi-people-fill me-2"></i>Gộp 2 hồ sơ định danh đã tồn tại (thủ công)
+          {soLuongTuDong > 0 && <span className="badge bg-danger ms-2">{soLuongTuDong} nhóm nghi trùng</span>}
         </span>
         <i className={`bi bi-chevron-${moRong ? 'up' : 'down'}`}></i>
       </div>
@@ -119,6 +201,34 @@ const GopHoSoDinhDanhPanel = () => {
             Dùng khi phát hiện 2 sv_key <b>ĐÃ TỒN TẠI SẴN</b> (mỗi cái đã có mã/hồ sơ tuyển sinh riêng) thật ra là cùng 1 người —
             khác với bảng "Hàng đợi xác nhận" ở trên (dành cho hồ sơ MỚI vừa nhập, chưa từng có sv_key riêng).
           </p>
+
+          {/* ĐÃ THÊM — "Gợi ý cặp nghi trùng": quét sẵn các nhóm hồ sơ định danh cùng tên+ngày
+              sinh, để không phải tự gõ tìm mò khi chưa biết ai trùng với ai. */}
+          <div className="alert alert-light border mb-3 py-2">
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <span className="small text-muted">
+                Gợi ý các nhóm hồ sơ định danh đang trùng tên + ngày sinh — không tự gộp, chỉ để bấm vào bảng chọn bên dưới cho nhanh.
+              </span>
+              <button className="btn btn-sm btn-outline-secondary" onClick={taiGoiY} disabled={dangTaiGoiY}>
+                <i className="bi bi-arrow-clockwise me-1"></i>{dangTaiGoiY ? 'Đang tải...' : (daTaiGoiY ? 'Tải lại gợi ý' : 'Tải gợi ý')}
+              </button>
+            </div>
+            {daTaiGoiY && goiY.length === 0 && (
+              <div className="small text-success mt-2 mb-0"><i className="bi bi-check-circle-fill me-1"></i>Không có nhóm nào nghi trùng.</div>
+            )}
+            {goiY.length > 0 && (
+              <div className="d-flex flex-column gap-1 mt-2">
+                {goiY.map((nhom, idx) => (
+                  <div key={idx} className="d-flex justify-content-between align-items-center bg-white border rounded px-2 py-1">
+                    <span className="small">
+                      <b>{nhom.hoTen}</b> — {nhom.ngaySinh} <span className="badge bg-warning text-dark ms-1">{nhom.hoSo.length} hồ sơ</span>
+                    </span>
+                    <button className="btn btn-sm btn-outline-primary" onClick={() => xemNhomGoiY(nhom)}>Xem trong bảng chọn</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="input-group mb-3" style={{ maxWidth: 480 }}>
             <input type="text" className="form-control" placeholder="Họ tên, sv_key, CCCD hoặc MSV..."
