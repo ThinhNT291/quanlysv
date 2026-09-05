@@ -27,6 +27,70 @@
 }
 
 /* ========================================================
+   ĐÃ THÊM (theo phản hồi — tối ưu menu ☰ trên di động, rồi ĐỒNG BỘ luôn giao diện qua
+   desktop theo phản hồi tiếp theo): 3 nhóm submenu (Tuyển sinh/Thẩm định/Hệ thống, xem
+   App.jsx) trước đây dùng NGUYÊN kiểu dropdown Bootstrap mặc định — panel TRẮNG, chữ tối
+   màu, không khớp tông tối (#212529) của navbar — và trên di động còn "nổi đè" lên nội dung
+   phía dưới (position:absolute) khiến bảng menu ☰ (.app-nav-collapse ở trên) không "dài ra"
+   theo đúng nội dung đang mở (submenu nổi đè không cộng thêm chiều cao vào panel cha vì nằm
+   ngoài dòng chảy trang), nhóm mở sau có thể bị submenu nhóm trước che khuất.
+
+   Class "app-submenu" gắn thêm vào mỗi <ul> submenu — khối MÀU SẮC ngay dưới đây (không bọc
+   trong media query) áp dụng CHUNG cho cả desktop lẫn di động: panel tối cùng tông navbar,
+   chữ sáng, hover/active có icon mũi tên đã thêm ở App.jsx đồng bộ 2 nơi. Khối BỐ CỤC bọc
+   trong @media dưới breakpoint lg mới là phần CHỈ áp dụng cho di động (đúng lúc
+   navbar-expand-lg chuyển sang dạng ☰): bỏ position:absolute, cho submenu xổ THỤT VÀO (viền
+   trái mảnh) ngay trong dòng chảy trang, panel ☰ nhờ vậy tự cao lên/thấp xuống đúng theo
+   đang mở nhóm nào (rồi mới bị chặn bởi max-height/overflow-y ở trên nếu quá dài). Desktop
+   (>=992px) KHÔNG đổi bố cục — vẫn nổi đè (position:absolute) như dropdown thường thấy ở
+   mọi trang web, chỉ đổi màu sắc cho khớp giao diện tối.
+   ======================================================== */
+.app-submenu {
+  background-color: #2b3035 !important; /* tối hơn 1 chút so với bg-dark #212529 của navbar, để phân biệt panel với nền sau nó */
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+.app-submenu .dropdown-item {
+  color: #dee2e6;
+  font-size: 0.92rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+}
+.app-submenu .dropdown-item:hover,
+.app-submenu .dropdown-item:focus {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.app-submenu .dropdown-item.active {
+  background-color: rgba(13, 202, 240, 0.18);
+  color: #0dcaf0;
+}
+
+@media (max-width: 991.98px) {
+  .app-nav-collapse .app-submenu {
+    position: static !important;
+    float: none !important;
+    display: none;
+    width: 100% !important;
+    margin: 0.15rem 0 0.5rem 0.9rem !important;
+    padding: 0.15rem 0 !important;
+    border: none !important;
+    border-left: 2px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  .app-nav-collapse .app-submenu.show {
+    display: block !important;
+    animation: appSubmenuXo 0.16s ease;
+  }
+}
+
+@keyframes appSubmenuXo {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========================================================
    LOGO TRƯỜNG TRONG NAVBAR — thu nhỏ dần ở màn hình hẹp để cụm logo + tên hệ
    thống + cụm tài khoản + nút ☰ vẫn vừa 1 dòng, không bị vỡ xuống dòng 2.
    ======================================================== */

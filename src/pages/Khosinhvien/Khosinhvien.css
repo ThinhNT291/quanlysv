@@ -37,7 +37,7 @@
 
 /* ĐÃ SỬA: trước đây cả dòng <tr> bấm đâu cũng mở modal (.kho-row-clickable trên <tr>) —
    bị lỗi kéo-chọn-chữ trong dòng cũng bị hiểu nhầm thành bấm mở hồ sơ. Đã đổi sang dùng
-   <Link> thật (mở /quan-ly-ho-so-moi/ho-so/:cccd/:nganh) gắn đúng vào tên — trình duyệt tự
+   <Link> thật (mở /sprofile/student/:key8) gắn đúng vào tên — trình duyệt tự
    phân biệt kéo-chọn-chữ với bấm-để-mở, không cần lớp CSS "cả dòng bấm được" nữa. Giữ style
    link ở đây cho đồng bộ màu/gạch chân với link hồ sơ khác trong hệ thống. */
 .kho-ten-link {

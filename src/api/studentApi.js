@@ -518,17 +518,25 @@ export const layThongKeKho = async (namXetTuyen = '') => {
   throw new Error(response.data.message || 'Lỗi tải thống kê kho sinh viên');
 };
 
-// ĐÃ THÊM: trang chi tiết 1 hồ sơ (route con /quan-ly-ho-so-moi/ho-so/:cccd/:nganh, khớp
-// action 'layChiTietHoSoKho'). Đọc trực tiếp, KHÔNG qua cache — luôn lấy bản mới nhất.
-export const layChiTietHoSoKho = async (cccd, nganh) => {
+// ĐÃ SỬA (theo phản hồi, tránh lộ CCCD/Ngành ngay trên thanh địa chỉ): trang chi tiết 1 hồ
+// sơ giờ dùng route "/sprofile/student/:key8" (key8 = 8 ký tự cuối SV_KEY — xem
+// KhoSinhVienPage.jsx), gọi hàm này với key8. Vẫn giữ được gọi kiểu cũ (cccd, nganh) làm
+// phương án dự phòng cho hồ sơ CŨ chưa có SV_KEY (xem route dự phòng còn giữ lại trong
+// App.jsx) — action 'layChiTietHoSoKho' bên GAS tự nhận biết đang được gọi kiểu nào.
+// Đọc trực tiếp, KHÔNG qua cache — luôn lấy bản mới nhất.
+export const layChiTietHoSoKho = async ({ key8, cccd, nganh } = {}) => {
   const auth = getAuthParams();
   const qs = new URLSearchParams({
     action: 'layChiTietHoSoKho',
     idToken: auth.idToken,
     sessionToken: auth.sessionToken,
-    cccd: cccd || '',
-    nganh: nganh || '',
   });
+  if (key8) {
+    qs.append('key8', key8);
+  } else {
+    qs.append('cccd', cccd || '');
+    qs.append('nganh', nganh || '');
+  }
   const response = await axios.get(`${GAS_URL}?${qs.toString()}`);
   if (response.data && response.data.code === 200) {
     return response.data.data;

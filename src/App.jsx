@@ -129,8 +129,9 @@ const App = () => {
   // theo dõi ở trên (qua "hashchange"), không cần thêm cơ chế route nào khác. Đặt SAU khai
   // báo currentUser (bên trên) vì effect này cần đọc currentUser — khai báo trước đó (ngay
   // sau isThamDinhPage) sẽ lỗi "Cannot access 'currentUser' before initialization" vì
-  // currentUser lúc đó chưa tồn tại trong phạm vi hàm component. Route con có tham số động
-  // ("/quan-ly-ho-so-moi/ho-so/:cccd/:nganh") không khớp được bằng so sánh nguyên văn nên
+  // currentUser lúc đó chưa tồn tại trong phạm vi hàm component. 2 route con có tham số
+  // động ("/sprofile/student/:key8" và route dự phòng cũ
+  // "/quan-ly-ho-so-moi/ho-so/:cccd/:nganh") không khớp được bằng so sánh nguyên văn nên
   // xét riêng bằng tiền tố ở effect bên dưới.
   const TIEU_DE_THEO_TRANG = {
     '/': 'Trang chủ',
@@ -147,7 +148,7 @@ const App = () => {
     if (!currentUser) { document.title = 'Đăng nhập'; return; }
     const pathGoc = currentHashPath.split('?')[0];
     let tieuDe = 'Quản lý sinh viên';
-    if (pathGoc.startsWith('/quan-ly-ho-so-moi/ho-so/')) tieuDe = 'Chi tiết hồ sơ sinh viên';
+    if (pathGoc.startsWith('/sprofile/student/') || pathGoc.startsWith('/quan-ly-ho-so-moi/ho-so/')) tieuDe = 'Chi tiết hồ sơ sinh viên';
     else if (TIEU_DE_THEO_TRANG[pathGoc]) tieuDe = TIEU_DE_THEO_TRANG[pathGoc];
     document.title = tieuDe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -409,7 +410,19 @@ const App = () => {
                   "Trang chủ" đã bỏ khỏi đây (chuyển sang gắn vào logo/chữ header, xem phía
                   trên). Mỗi nhóm chỉ hiện nếu tài khoản có quyền với ÍT NHẤT 1 trang bên
                   trong nhóm đó; từng mục con bên trong vẫn tự kiểm tra quyền riêng như cũ,
-                  phòng trường hợp 1 tài khoản chỉ có quyền 1/2 mục trong nhóm. */}
+                  phòng trường hợp 1 tài khoản chỉ có quyền 1/2 mục trong nhóm.
+
+                  ĐÃ SỬA (theo phản hồi — tối ưu menu trên di động): trước đây submenu của cả
+                  3 nhóm dùng kiểu dropdown Bootstrap "nổi đè" (position:absolute) NGAY CẢ khi
+                  đang ở menu ☰ trên di động — khiến bảng menu ☰ trông như bị "khóa chết kích
+                  thước" (submenu nổi đè lên nhóm kế tiếp thay vì đẩy nó xuống, panel ngoài
+                  cùng không "dài ra" theo nội dung thực tế đang mở). Class "app-submenu" thêm
+                  vào mỗi <ul> submenu bên dưới CHỈ đổi hành vi này trên di động (xem media
+                  query trong App.css): submenu chuyển thành khối xổ THỤT VÀO nằm ngay trong
+                  dòng chảy trang (không còn absolute), nên bảng menu ☰ tự cao lên/thấp xuống
+                  đúng theo đang mở nhóm nào. Trên desktop (>=992px) giữ nguyên kiểu dropdown
+                  nổi đè như cũ, không đổi gì. Mỗi nhóm cũng có thêm icon mũi tên xoay chiều
+                  (bi-chevron-down/up) báo hiệu đang đóng/mở. */}
               <ul className="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-4 gap-2">
 
                 {/* NHÓM 1 — TUYỂN SINH: Quản lý hồ sơ (Nhập học) + Nhập liệu Xét tuyển. */}
@@ -422,9 +435,10 @@ const App = () => {
                       style={{ cursor: 'pointer' }}
                     >
                       <i className="bi bi-mortarboard-fill me-1"></i> Tuyển sinh
+                      <i className={`bi ${openGroup === 'tuyensinh' ? 'bi-chevron-up' : 'bi-chevron-down'} ms-2 small app-menu-chevron`}></i>
                     </a>
                     <ul
-                      className={`dropdown-menu shadow border-0 mt-2 ${openGroup === 'tuyensinh' ? 'show' : ''}`}
+                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroup === 'tuyensinh' ? 'show' : ''}`}
                       style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
                     >
                       {hasAnyRole(currentUser.roles, ['CanBo', 'ThamDinh', 'Admin']) && (
@@ -463,9 +477,10 @@ const App = () => {
                       style={{ cursor: 'pointer' }}
                     >
                       <i className="bi bi-clipboard-check me-1"></i> Thẩm định
+                      <i className={`bi ${openGroup === 'thamdinh' ? 'bi-chevron-up' : 'bi-chevron-down'} ms-2 small app-menu-chevron`}></i>
                     </a>
                     <ul
-                      className={`dropdown-menu shadow border-0 mt-2 ${openGroup === 'thamdinh' ? 'show' : ''}`}
+                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroup === 'thamdinh' ? 'show' : ''}`}
                       style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
                     >
                       {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
@@ -504,9 +519,10 @@ const App = () => {
                       style={{ cursor: 'pointer' }}
                     >
                       <i className="bi bi-hdd-stack-fill me-1"></i> Hệ thống
+                      <i className={`bi ${openGroup === 'hethong' ? 'bi-chevron-up' : 'bi-chevron-down'} ms-2 small app-menu-chevron`}></i>
                     </a>
                     <ul
-                      className={`dropdown-menu shadow border-0 mt-2 ${openGroup === 'hethong' ? 'show' : ''}`}
+                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroup === 'hethong' ? 'show' : ''}`}
                       style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
                     >
                       {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
@@ -584,7 +600,18 @@ const App = () => {
             } />
             {/* ĐÃ THÊM: trang chi tiết 1 hồ sơ trong Kho — route con, cùng quyền như trang
                 Kho ở trên (không phải trang/file riêng, chỉ là 1 route khác của cùng bundle
-                React — không tốn thêm lưu trữ dù có bao nhiêu hồ sơ). */}
+                React — không tốn thêm lưu trữ dù có bao nhiêu hồ sơ).
+                ĐÃ SỬA (theo phản hồi, tránh lộ CCCD + Ngành ngay trên URL): route CHÍNH giờ
+                là "/sprofile/student/:key8" (key8 = 8 ký tự cuối SV_KEY — xem
+                KhoSinhVienPage.jsx). Route CŨ /quan-ly-ho-so-moi/ho-so/:cccd/:nganh vẫn giữ
+                lại làm dự phòng CHỈ cho hồ sơ chưa từng được gắn SV_KEY (nên chưa có key8 để
+                dùng) — cùng trỏ vào đúng 1 component ChiTietHoSoKhoPage, component tự nhận
+                biết đang được mở theo kiểu nào (xem useParams() trong đó). */}
+            <Route path="/sprofile/student/:key8" element={
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh']}>
+                <ChiTietHoSoKhoPage />
+              </ProtectedRoute>
+            } />
             <Route path="/quan-ly-ho-so-moi/ho-so/:cccd/:nganh" element={
               <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh']}>
                 <ChiTietHoSoKhoPage />

@@ -5,19 +5,24 @@ import { layChiTietHoSoKho } from '../../api/studentApi';
 import './KhoSinhVien.css';
 
 // ===================================================================
-// TRANG CHI TIẾT 1 HỒ SƠ (route con /quan-ly-ho-so-moi/ho-so/:cccd/:nganh) — ĐÃ THÊM
-// theo yêu cầu: bấm vào 1 dòng ở trang Kho sẽ mở ra TRANG RIÊNG (không phải modal nữa —
-// modal cũ đã bỏ) hiện đầy đủ thông tin hồ sơ đó, từ lịch sử tuyển sinh cho tới "hiện tại"
-// (để trong ngoặc kép = còn để trống chỗ cho dữ liệu Đào tạo/Khảo thí/Tài chính sau này,
-// khi các hệ thống đó được kết nối — xem 3 khối "Chưa kết nối" ở dưới).
+// TRANG CHI TIẾT 1 HỒ SƠ — ĐÃ THÊM theo yêu cầu: bấm vào 1 dòng ở trang Kho sẽ mở ra TRANG
+// RIÊNG (không phải modal nữa — modal cũ đã bỏ) hiện đầy đủ thông tin hồ sơ đó, từ lịch sử
+// tuyển sinh cho tới "hiện tại" (để trong ngoặc kép = còn để trống chỗ cho dữ liệu Đào
+// tạo/Khảo thí/Tài chính sau này, khi các hệ thống đó được kết nối — xem 3 khối "Chưa kết
+// nối" ở dưới).
 //
-// LƯU Ý về URL dạng /:cccd/:nganh — đây CHỈ là 1 route con của CÙNG 1 trang React (dùng
-// HashRouter, phần path nằm sau dấu #), KHÔNG phải tạo 1 trang/file HTML riêng cho mỗi
-// sinh viên — nên KHÔNG tốn thêm lưu trữ nào cả, dù có 100 hay 1 triệu hồ sơ, mã nguồn
-// (bundle JS) vẫn chỉ có đúng 1 bản, chỉ đổi cccd/nganh trong URL rồi gọi API lấy đúng hồ
-// sơ đó. Đổi từ modal sang route thật (dùng thẻ <Link>) cũng nhân tiện SỬA LUÔN lỗi bấm
-// chọn/copy chữ trong bảng bị hiểu nhầm thành bấm mở hồ sơ (link thật thì trình duyệt tự
-// phân biệt được kéo-chọn-chữ với bấm-để-mở, khác hẳn onClick gắn cho cả dòng <tr>).
+// LƯU Ý về URL — đây CHỈ là 1 route con của CÙNG 1 trang React (dùng HashRouter, phần path
+// nằm sau dấu #), KHÔNG phải tạo 1 trang/file HTML riêng cho mỗi sinh viên — nên KHÔNG tốn
+// thêm lưu trữ nào cả, dù có 100 hay 1 triệu hồ sơ, mã nguồn (bundle JS) vẫn chỉ có đúng 1
+// bản, chỉ đổi tham số trong URL rồi gọi API lấy đúng hồ sơ đó. Đổi từ modal sang route thật
+// (dùng thẻ <Link>) cũng nhân tiện SỬA LUÔN lỗi bấm chọn/copy chữ trong bảng bị hiểu nhầm
+// thành bấm mở hồ sơ (link thật thì trình duyệt tự phân biệt được kéo-chọn-chữ với
+// bấm-để-mở, khác hẳn onClick gắn cho cả dòng <tr>).
+//
+// ĐÃ SỬA (theo phản hồi, tránh lộ CCCD + Ngành ngay trên thanh địa chỉ): route CHÍNH giờ là
+// "/sprofile/student/:key8" (key8 = 8 ký tự cuối SV_KEY, xem KhoSinhVienPage.jsx). Route CŨ
+// "/quan-ly-ho-so-moi/ho-so/:cccd/:nganh" vẫn còn (xem App.jsx) làm dự phòng cho hồ sơ chưa
+// từng được gắn SV_KEY — component này tự nhận biết đang mở theo kiểu nào qua useParams().
 // ===================================================================
 
 const BADGE_MAU = {
@@ -65,12 +70,14 @@ const BangKV = ({ tieuDe, data }) => {
 };
 
 const ChiTietHoSoKhoPage = () => {
-  const { cccd, nganh } = useParams();
+  // key8 -> route chính "/sprofile/student/:key8"; cccd/nganh -> route dự phòng cũ
+  // "/quan-ly-ho-so-moi/ho-so/:cccd/:nganh" (chỉ khớp 1 trong 2 kiểu tuỳ đang ở route nào).
+  const { key8, cccd, nganh } = useParams();
   const navigate = useNavigate();
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['khoChiTietHoSo', cccd, nganh],
-    queryFn: () => layChiTietHoSoKho(cccd, nganh),
+    queryKey: ['khoChiTietHoSo', key8, cccd, nganh],
+    queryFn: () => layChiTietHoSoKho({ key8, cccd, nganh }),
   });
 
   const handlePrint = () => window.print();

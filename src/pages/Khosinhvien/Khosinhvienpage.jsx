@@ -406,10 +406,21 @@ const KhoSinhVienPage = () => {
                 items.map((item, idx) => {
                   // ĐÃ SỬA: bỏ onClick trên cả <tr> (bị lỗi kéo-chọn-chữ hiểu nhầm thành bấm
                   // mở hồ sơ) — thay bằng <Link> thật gắn đúng vào tên, mở trang chi tiết
-                  // riêng (route con /quan-ly-ho-so-moi/ho-so/:cccd/:nganh), KHÔNG phải modal
-                  // nữa. cccd/nganh đưa vào URL qua encodeURIComponent để an toàn với ký tự
-                  // có dấu/khoảng trắng trong tên ngành.
-                  const duongDanChiTiet = `/quan-ly-ho-so-moi/ho-so/${encodeURIComponent(item.cccd)}/${encodeURIComponent(item.nganh)}`;
+                  // riêng (KHÔNG phải modal nữa).
+                  //
+                  // ĐÃ SỬA (theo phản hồi, tránh lộ CCCD + Ngành ngay trên URL): trước đây URL
+                  // là /quan-ly-ho-so-moi/ho-so/:cccd/:nganh — giờ đổi sang
+                  // /sprofile/student/:key8, key8 là 8 ký tự cuối của SV_KEY (uuid do hệ thống
+                  // tự gắn khi tạo hồ sơ — xem dinhDanhGanTuDongChoHoSoMoi_ bên GAS), gần như
+                  // không thể trùng nhau. Hồ sơ CŨ chưa từng được gắn SV_KEY (trước khi tính
+                  // năng định danh ra đời) thì không có gì để lấy 8 ký tự cuối — với các hồ sơ
+                  // hiếm gặp này vẫn tạm dùng lại đường dẫn cũ /cccd/:nganh (route dự phòng còn
+                  // giữ trong App.jsx) để không bị mất khả năng xem, chờ hồ sơ đó được gắn định
+                  // danh (qua trang Xác nhận định danh) rồi tự động chuyển sang key8 sau.
+                  const key8 = (item.svKey || '').trim().slice(-8).toLowerCase();
+                  const duongDanChiTiet = key8
+                    ? `/sprofile/student/${key8}`
+                    : `/quan-ly-ho-so-moi/ho-so/${encodeURIComponent(item.cccd)}/${encodeURIComponent(item.nganh)}`;
                   return (
                     <tr key={`${item.cccd}_${item.nganh}`.toLowerCase()}>
                       <td className="text-center">{(trang - 1) * kichThuoc + idx + 1}</td>
