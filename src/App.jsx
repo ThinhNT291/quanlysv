@@ -58,6 +58,20 @@ const App = () => {
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const userDropdownRef = useRef(null);
 
+  // ĐÃ THÊM (theo phản hồi — mục "Xuất Excel" trong menu tài khoản, CHỈ hiện khi đang ở
+  // trang Thẩm định): App.jsx là component TẠO RA <HashRouter>, nên bản thân nó không nằm
+  // "bên trong" Router lúc hook chạy -> không gọi useLocation() được ở đây (sẽ báo lỗi
+  // "useLocation() may be used only in the context of a <Router>"). Dùng thẳng
+  // window.location.hash (HashRouter) + lắng nghe sự kiện "hashchange" của trình duyệt để
+  // tự cập nhật mỗi khi chuyển trang — không cần tách thêm component con.
+  const [currentHashPath, setCurrentHashPath] = useState(() => window.location.hash.replace(/^#/, '') || '/');
+  useEffect(() => {
+    const onHashChange = () => setCurrentHashPath(window.location.hash.replace(/^#/, '') || '/');
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+  const isThamDinhPage = currentHashPath.startsWith('/tham-dinh');
+
   // ĐÃ THÊM: tự đóng dropdown tài khoản khi bấm ra ngoài hoặc nhấn Esc.
   useEffect(() => {
     if (!isUserDropdownOpen) return;
@@ -109,6 +123,35 @@ const App = () => {
     const savedUser = localStorage.getItem('tuyensinh_user');
     return savedUser ? normalizeUserInfo(JSON.parse(savedUser)) : null;
   });
+
+  // ĐÃ THÊM (theo phản hồi — tiêu đề tab trình duyệt hiện đúng tên trang đang xem, thay vì
+  // luôn cố định "Quản lý sinh viên" như trong index.html): dùng chung currentHashPath đã
+  // theo dõi ở trên (qua "hashchange"), không cần thêm cơ chế route nào khác. Đặt SAU khai
+  // báo currentUser (bên trên) vì effect này cần đọc currentUser — khai báo trước đó (ngay
+  // sau isThamDinhPage) sẽ lỗi "Cannot access 'currentUser' before initialization" vì
+  // currentUser lúc đó chưa tồn tại trong phạm vi hàm component. Route con có tham số động
+  // ("/quan-ly-ho-so-moi/ho-so/:cccd/:nganh") không khớp được bằng so sánh nguyên văn nên
+  // xét riêng bằng tiền tố ở effect bên dưới.
+  const TIEU_DE_THEO_TRANG = {
+    '/': 'Trang chủ',
+    '/thu-ho-so-nhap-hoc': 'Thu hồ sơ trực tiếp',
+    '/xet-tuyen': 'Nhập liệu xét tuyển',
+    '/tham-dinh': 'Ban thẩm định',
+    '/settings': 'Cấu hình hệ thống',
+    '/quan-ly-ho-so-moi': 'Student Overview',
+    '/xac-nhan-dinh-danh': 'Định danh hồ sơ',
+    '/user-stats': 'Thống kê cá nhân',
+    '/ho-so-ca-nhan': 'Hồ sơ cá nhân',
+  };
+  useEffect(() => {
+    if (!currentUser) { document.title = 'Đăng nhập'; return; }
+    const pathGoc = currentHashPath.split('?')[0];
+    let tieuDe = 'Quản lý sinh viên';
+    if (pathGoc.startsWith('/quan-ly-ho-so-moi/ho-so/')) tieuDe = 'Chi tiết hồ sơ sinh viên';
+    else if (TIEU_DE_THEO_TRANG[pathGoc]) tieuDe = TIEU_DE_THEO_TRANG[pathGoc];
+    document.title = tieuDe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentHashPath, currentUser]);
 
   // ĐÃ SỬA: đưa handleLogout ra ngoài useEffect (trước đây khai báo local bên trong,
   // không dùng lại được ở nơi khác) để dùng chung cho: idle-timeout, hết hạn JWT
@@ -223,7 +266,13 @@ const App = () => {
 
   return (
     <HashRouter>
-      <div style={{ minHeight: '100vh', backgroundColor: '#f4f6f9', paddingBottom: '38px' }}>
+      {/* ĐÃ SỬA: khung ngoài giờ dùng flex column + minHeight:100vh — để footer "Phản hồi/
+          Cập nhật lần cuối" bên dưới có thể nằm ĐÚNG CUỐI TRANG theo dòng chảy bình thường
+          (không còn position:fixed đè lên nội dung nữa, xem chú thích tại chính footer đó)
+          mà vẫn tự đẩy xuống sát đáy màn hình khi nội dung trang ngắn (nhờ khối nội dung ở
+          giữa có flex:1, xem className="p-2 p-md-3" bên dưới) — đây là kiểu "sticky footer"
+          bằng flexbox, khác hẳn position:sticky/fixed. */}
+      <div style={{ minHeight: '100vh', backgroundColor: '#f4f6f9', display: 'flex', flexDirection: 'column' }}>
         
         <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top">
           <div className="container-fluid px-4">
@@ -272,8 +321,14 @@ const App = () => {
                 <span className="small fw-bold me-1">{currentUser.role}</span>
               </a>
 
+              {/* ĐÃ THÊM class "user-account-menu" (theo phản hồi): chữ trong menu này đang to
+                  hơn hẳn chữ trong các trang — vì dùng thẳng class Bootstrap .dropdown-menu/
+                  .dropdown-item (đơn vị rem), ăn theo font-size GỐC 18px của :root
+                  (index.css), trong khi các trang (.xettuyen-wrapper, .thamdinh-page...) đều
+                  tự override xuống 15px. Ép font-size 15px cho khớp cỡ chữ chung — xem CSS
+                  tại App.css. */}
               <ul
-                className={`dropdown-menu dropdown-menu-end shadow border-0 mt-2 ${isUserDropdownOpen ? 'show' : ''}`}
+                className={`dropdown-menu dropdown-menu-end shadow border-0 mt-2 user-account-menu ${isUserDropdownOpen ? 'show' : ''}`}
                 style={{ position: 'absolute', right: 0, top: '100%' }}
               >
                 {/* ĐÃ THÊM: dòng username + avatar đầu menu — bấm vào sẽ mở trang hồ sơ cá
@@ -310,6 +365,30 @@ const App = () => {
                     <i className="bi bi-graph-up-arrow me-2 text-primary"></i> Thống kê cá nhân
                   </NavLink>
                 </li>
+                {/* ĐÃ THÊM (theo phản hồi): mục "Xuất Excel" — CHỈ hiện khi đang ở trang Thẩm
+                    định (isThamDinhPage, xem khai báo ở đầu component). Bấm vào chỉ BẮN sự
+                    kiện DOM "thamdinh:export-excel" — App.jsx không tự có dữ liệu bảng Thẩm
+                    định (state đó sống trong ThamDinhPage.jsx), nên dùng đúng cơ chế
+                    window.dispatchEvent/addEventListener đã có sẵn trong dự án (xem
+                    "app:session-expired" ở studentApi.js/App.jsx) để "gọi" hàm xuất file thật
+                    sự đang nằm bên ThamDinhPage.jsx, không cần nâng state/props lằng nhằng.
+                    Ẩn hẳn (không disable) ở các trang khác vì nút bấm sẽ không làm gì cả. */}
+                {isThamDinhPage && (
+                  <>
+                    <li><hr className="dropdown-divider" /></li>
+                    <li>
+                      <button
+                        className="dropdown-item py-2"
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('thamdinh:export-excel'));
+                          setIsUserDropdownOpen(false);
+                        }}
+                      >
+                        <i className="bi bi-file-earmark-excel me-2 text-success"></i> Xuất Excel (Thẩm định)
+                      </button>
+                    </li>
+                  </>
+                )}
                 <li><hr className="dropdown-divider" /></li>
                 <li>
                   <button className="dropdown-item text-danger py-2" onClick={handleLogoutClick}>
@@ -461,7 +540,7 @@ const App = () => {
           </div>
         </nav>
 
-        <div className="p-2 p-md-3">
+        <div className="p-2 p-md-3" style={{ flex: '1 0 auto' }}>
           {/* VÙNG ĐỊNH TUYẾN CHÍNH (Chỉ giữ 1 khối Routes duy nhất) */}
           <Routes>
             {/* ĐÃ SỬA: "/" trước đây redirect thẳng sang Quản lý hồ sơ (Navigate replace),
@@ -546,10 +625,15 @@ const App = () => {
           </Routes>
         </div>
 
-        {/* ĐÃ THÊM: footer cố định dưới cùng, hiện xuyên suốt toàn app — nút Phản hồi bên
-            trái, dòng "Cập nhật lần cuối" bên phải theo đúng yêu cầu. */}
+        {/* ĐÃ SỬA (theo phản hồi): trước đây footer này position:fixed + always-on-top,
+            đè lên nội dung trang (đặc biệt các trang có bảng dài như Xét tuyển/Kho tra
+            cứu). Giờ bỏ hẳn position:fixed — footer nằm THEO DÒNG CHẢY BÌNH THƯỜNG ở cuối
+            trang (nhờ khối nội dung ở giữa có flex:1, xem div "p-2 p-md-3" phía trên đẩy
+            footer này xuống đáy khi trang ngắn) — không còn che nội dung nữa, nhưng cũng
+            không còn "luôn hiện trên mọi màn hình khi cuộn" như trước (đánh đổi đúng theo
+            yêu cầu: "gắn vào trang, ở dưới cùng luôn, chứ không always ontop nữa"). */}
         <div style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1020,
+          flexShrink: 0,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '6px 16px', background: 'rgba(255,255,255,0.95)',
           borderTop: '1px solid #dee2e6', fontSize: '0.8rem'

@@ -82,3 +82,15 @@
   font-size: 0.9em !important;
   padding: 0.4em 0.6em !important;
 }
+
+/* ========================================================
+   ĐÃ THÊM (theo phản hồi): chữ trong menu tài khoản (góc trên bên phải, xem App.jsx) đang
+   to hơn hẳn chữ trong các trang — vì dùng thẳng class Bootstrap .dropdown-menu/
+   .dropdown-item (đơn vị rem), ăn theo font-size GỐC 18px của :root (index.css), trong khi
+   các trang (.xettuyen-wrapper, .thamdinh-page...) đều tự override xuống 15px. Ép về đúng
+   15px cho khớp cỡ chữ chung của các trang.
+   ======================================================== */
+.user-account-menu,
+.user-account-menu .dropdown-item {
+  font-size: 15px;
+}

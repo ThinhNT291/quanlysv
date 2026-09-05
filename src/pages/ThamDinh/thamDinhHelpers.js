@@ -195,11 +195,37 @@ const DIEM_CHUAN_THPT = { THI_THPT: 15, HOC_BA: 16, HOC_BA_2025: 15 };
 // Trả về "" nếu không nhận diện được (hồ sơ cũ chưa có cột này, hoặc bị bỏ trống lúc
 // import) — nơi gọi phải tự xử lý trường hợp không rõ phương thức, KHÔNG được mặc định
 // ngầm 1 mức điểm chuẩn nào cả (dễ khiến người thẩm định hiểu nhầm là điểm chuẩn thật).
+// ĐÃ SỬA (theo phản hồi — modal thẩm định hiện "chưa rõ Phương thức xét tuyển" dù bên
+// Xét tuyển đã chọn đúng "Điểm học bạ"): trước đây so khớp CHÍNH XÁC TỪNG KÝ TỰ (kể cả
+// hoa/thường, dấu câu) với đúng 3 chuỗi XetTuyenPage.jsx tự sinh ra — nhập tay qua dropdown
+// luôn ra đúng 1 trong 3 chuỗi đó nên khớp được, NHƯNG cột "PHƯƠNG THỨC XÉT TUYỂN" này lại
+// KHÔNG nằm trong danh sách "dropdownColumns" của file mẫu Excel (xem handleDownloadTemplate),
+// tức là lúc IMPORT EXCEL người nhập liệu gõ tay hoàn toàn tự do — chỉ cần lệch 1 chút (viết
+// hoa/thường khác, thừa/thiếu khoảng trắng, gõ "Học bạ" thay vì "Điểm học bạ"...) là so khớp
+// chính xác trượt ngay, ra "" (không nhận diện được) dù ý người dùng rất rõ ràng. Giờ dùng
+// normalizeText() (đã có sẵn trong file này, bỏ dấu + hạ chữ thường + gọn khoảng trắng) rồi
+// dò theo TỪ KHOÁ thay vì so khớp nguyên văn — chấp nhận mọi biến thể hoa/thường/dấu câu,
+// miễn còn giữ đúng cụm từ khoá gốc. Vẫn ưu tiên nhận thẳng khi có nơi lưu sẵn đúng khoá kỹ
+// thuật (THI_THPT/HOC_BA/HOC_BA_2025, không qua normalize vì đây là khoá cố định, không phải
+// nhãn tiếng Việt tự do).
 function suyRaPhuongThuc(row) {
   const raw = getVal(row, ["PHƯƠNG THỨC XÉT TUYỂN", "LOẠI ĐIỂM"]);
-  if (raw === "Điểm thi THPT" || raw === "THI_THPT") return "THI_THPT";
-  if (raw === "Điểm học bạ" || raw === "HOC_BA") return "HOC_BA";
-  if (raw === "Điểm học bạ (TBTS 2025)" || raw === "HOC_BA_2025") return "HOC_BA_2025";
+  if (!raw) return "";
+  if (raw === "THI_THPT" || raw === "HOC_BA" || raw === "HOC_BA_2025") return raw;
+  const chuan = normalizeText(raw);
+  // ĐÃ THÊM (theo phản hồi): bên XetTuyenPage.jsx, khi hồ sơ Học bạ (thường) có nhập Điểm
+  // phỏng vấn (PV), cột "PHƯƠNG THỨC XÉT TUYỂN" trên Goc01 giờ được ghi thẳng thành "Phỏng
+  // vấn" thay vì "Điểm học bạ" (để nhận ra ngay trên sheet hồ sơ nào có phỏng vấn) — bản
+  // chất VẪN LÀ phương thức Học bạ (điểm chuẩn 16, được cộng PV), nên nhận diện "phong van"
+  // TRẢ VỀ THẲNG "HOC_BA" ở đây — không cần thêm khoá/nhánh tính điểm riêng nào khác, mọi
+  // logic dùng phuongThuc === 'HOC_BA' (điểm chuẩn, điều kiện cộng PV...) tự động đúng.
+  if (chuan.includes("phong van")) return "HOC_BA";
+  if (chuan.includes("hoc ba")) {
+    // "TBTS" (viết tắt "tổng bình quân trung sinh"/tên gọi riêng của phương thức mới,
+    // dùng thống nhất với XetTuyenPage.jsx) hoặc năm "2025" đi kèm -> phương thức mới.
+    return (chuan.includes("tbts") || chuan.includes("2025")) ? "HOC_BA_2025" : "HOC_BA";
+  }
+  if (chuan.includes("thi thpt") || chuan.includes("diem thi")) return "THI_THPT";
   return "";
 }
 
@@ -234,17 +260,51 @@ export function calculateScores(row, targetNganh) {
 
     if (maxScore > 0) {
       const finalUTien = maxScore >= 22.5 ? ((30 - maxScore) / 7.5) * uTienBanDau : uTienBanDau;
-      const finalTotalScore = (maxScore + finalUTien + diemCong).toFixed(2);
       // ĐÃ SỬA: điểm chuẩn giờ tra theo phương thức xét tuyển thay vì hardcode 15.0 —
       // xem DIEM_CHUAN_THPT/suyRaPhuongThuc phía trên. Hồ sơ không xác định được phương
       // thức (cột trống/giá trị lạ) -> diemChuan = null, diemChuanLabel hiện rõ "chưa rõ
       // phương thức" thay vì âm thầm coi như 15 hay 16 — để người thẩm định tự đối chiếu.
+      // ĐÃ CHUYỂN LÊN TRƯỚC finalTotalScore (trước đây tính SAU) — cần biết phuongThuc
+      // rồi mới quyết định có cộng Điểm phỏng vấn (PV) vào finalTotalScore hay không, xem
+      // ngay bên dưới.
       const phuongThuc = suyRaPhuongThuc(row);
       const diemChuan = phuongThuc ? DIEM_CHUAN_THPT[phuongThuc] : null;
       const diemChuanLabel = diemChuan != null ? String(diemChuan) : "15 hoặc 16 (chưa rõ Phương thức xét tuyển)";
+
+      // ĐÃ VÁ BUG THẬT (theo phản hồi — modal thẩm định chi tiết chỉ hiện điểm tổ hợp,
+      // chưa cộng Điểm phỏng vấn): bên XetTuyenPage.jsx (phương thức "Điểm học bạ"), khi
+      // (điểm tổ hợp cao nhất + điểm cộng + điểm ưu tiên) nằm trong khoảng đủ điều kiện, ô
+      // "ĐIỂM PV" hiện ra và được cộng thêm vào điểm xét tuyển cuối cùng (tối đa 2 điểm) —
+      // nhưng calculateScores() ở đây (dùng cho modal thẩm định + panel tổ hợp) trước giờ
+      // CHƯA BAO GIỜ tính tới PV, dù cột "ĐIỂM PHỎNG VẤN" đã có sẵn trên Goc01 — khiến điểm
+      // xét tuyển hiển thị/dùng để xét Đạt-Trượt ở đây LUÔN THIẾU đúng phần PV so với công
+      // thức thật, có thể khiến 1 hồ sơ biên (sát điểm chuẩn) bị đánh giá TRƯỢT oan trong
+      // khi thực ra đã ĐẠT nhờ PV.
+      // Áp ĐÚNG 1 điều kiện duy nhất, khớp y hệt XetTuyenPage.jsx: chỉ cộng PV khi phương
+      // thức là "Điểm học bạ" (HOC_BA, không áp dụng THI_THPT/HOC_BA_2025) VÀ (điểm TỔ HỢP
+      // CAO NHẤT + ĐIỂM CỘNG + ĐIỂM ƯU TIÊN) BẰNG 15 ĐẾN DƯỚI 16 (>= 15 và < 16) — ĐÃ SỬA
+      // theo phản hồi 2 lần: (1) trước đây để NGHIÊM NGẶT > 15, tức đúng 15.0 bị loại oan;
+      // giờ 15.0 vẫn được tính, chỉ đúng 16.0 là bị loại; (2) tổng dùng để so ngưỡng trước
+      // đây THIẾU HẲN Điểm ưu tiên (finalUTien), chỉ mới Tổ hợp + Điểm cộng — SAI theo đúng
+      // yêu cầu gốc, giờ đã cộng thêm finalUTien vào tổng này. Tối đa 2 điểm PV.
+      const diemPhongVanRaw = parseFloat(getVal(row, ["ĐIỂM PHỎNG VẤN", "ĐIỂM PV"]).replace(',', '.')) || 0;
+      const tongDiemXetPV = maxScore + diemCong + finalUTien;
+      const diemPhongVan = (phuongThuc === 'HOC_BA' && tongDiemXetPV >= 15 && tongDiemXetPV < 16)
+        ? Math.min(Math.round(diemPhongVanRaw * 100) / 100, 2)
+        : 0;
+      const finalTotalScore = (maxScore + finalUTien + diemCong + diemPhongVan).toFixed(2);
+
+      // ĐÃ THÊM (theo phản hồi — "check bằng cách nào không?" khi PV không lên điểm): trả
+      // thêm "maxScore" (điểm tổ hợp thô, trước ưu tiên/điểm cộng/PV) và "diemPhongVanRaw"
+      // (giá trị PV ĐÃ NHẬP trên cột "ĐIỂM PHỎNG VẤN", BẤT KỂ có đủ điều kiện cộng hay
+      // không) — khác với "diemPhongVan" (giá trị PV THỰC SỰ được cộng vào điểm, 0 nếu
+      // chưa đủ điều kiện). Có cả 2 con số này, ThamDinhPage.jsx tự so sánh và hiện luôn
+      // 1 dòng giải thích ngay trong modal khi hồ sơ có nhập PV nhưng chưa được cộng — tự
+      // trả lời "vì sao" mà không cần dò code, xem đoạn hiển thị "diemPhongVanRaw > 0 &&
+      // diemPhongVan === 0" bên ThamDinhPage.jsx.
       return {
-        type: 'thpt', hasScore: true, diemCong, uuTien: finalUTien,
-        finalTotalScore, bestCombo, comboResults, phuongThuc, diemChuan, diemChuanLabel,
+        type: 'thpt', hasScore: true, diemCong, uuTien: finalUTien, diemPhongVan, diemPhongVanRaw, maxScore,
+        finalTotalScore, bestCombo, comboResults, phuongThuc, diemChuanLabel, diemChuan,
         dat: diemChuan != null ? parseFloat(finalTotalScore) >= diemChuan : null,
       };
     }

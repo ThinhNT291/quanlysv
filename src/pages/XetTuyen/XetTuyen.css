@@ -9,8 +9,7 @@
 .doc-group h4, .score-group h4 { margin: 0 0 6px 0; color: #0277bd; font-size: 13px; border-bottom: 1px solid #b2ebf2; padding-bottom: 5px; font-weight: bold; }
 
 .checkbox-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; row-gap: 8px; margin-bottom: 15px; }
-/* ĐÃ SỬA (lại lần nữa — bản trước bị mất do áp nhầm 1 bản CSS cũ đè lên): 6 cột
-   thay vì 4 -> 11 môn + ô ĐIỂM CỘNG dồn lên còn 2 hàng. */
+/* ĐÃ SỬA (yêu cầu #3): 6 cột thay vì 4 -> 11 môn + ô ĐIỂM CỘNG dồn lên còn 2 hàng. */
 .score-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 15px; }
 
 .checkbox-item { display: flex; align-items: center; background: #ffffff; padding: 6px 10px; margin: 0; border-radius: 4px; border: 1px solid #d0e8e6; cursor: pointer; transition: all 0.2s; }
@@ -30,6 +29,59 @@ tr:has(.status-failed) td { background-color: #fdecea !important; }
 
 /* RESPONSIVE */
 @media (max-width: 768px) { .checkbox-grid, .score-grid { grid-template-columns: 1fr; } }
+
+/* ========================================================
+   BẢNG ĐIỂM HỌC BẠ / TBTS 2025 — 2 KHỐI NỐI LIỀN KHI MÀN HÌNH NHỎ (theo yêu cầu)
+   Bootstrap tự dồn 2 cột col-md-6 xuống 1 cột khi < md (768px), nhưng mỗi khối vẫn
+   là 1 <table> riêng với tiêu đề (MÔN/LỚP hoặc MÔN/HK) và khung viền bo góc riêng —
+   dồn xuống trông như 2 bảng tách rời, có tiêu đề chen ngang giữa chừng. Media
+   query dưới đây CHỈ áp dụng dưới 768px (đúng breakpoint Bootstrap dùng để dồn cột,
+   khớp với chính "< md" mà comment JSX nhắc tới): ẩn tiêu đề khối 2, xoá khoảng
+   cách dọc (Bootstrap g-3 tạo margin-top qua biến --bs-gutter-y) và bo góc/viền ở
+   chỗ nối — để các hàng môn của khối 1 và khối 2 xếp liên tục như 1 bảng duy nhất.
+   Từ 768px trở lên (2 khối nằm cạnh nhau) các quy tắc này không có hiệu lực gì.
+   ======================================================== */
+/* ĐÃ THÊM (theo phản hồi — cột không đều/che mất cột TB): ép table-layout:fixed
+   cho cả 2 bảng (2 khối), kết hợp với <colgroup> % giống hệt nhau gắn trong JSX
+   (xem renderHK2025TableHalf / renderHocBaTableHalf) — bắt buộc trình duyệt tính
+   bề rộng cột theo % khai báo thay vì theo nội dung/tiêu đề của riêng từng bảng,
+   nhờ đó 2 khối luôn có cột rộng bằng nhau dù khối 2 bị ẩn <thead> ở mobile.
+   Áp dụng luôn ở mọi kích thước màn hình (không chỉ trong media query) vì lúc 2
+   khối nằm cạnh nhau cũng nên đều cột, không riêng gì lúc gộp dọc. */
+.xettuyen-toanhop-table {
+  table-layout: fixed;
+}
+
+@media (max-width: 767.98px) {
+  .xettuyen-toanhop-khoi-2 {
+    margin-top: 0 !important;
+  }
+  .xettuyen-toanhop-khoi-2 thead {
+    display: none;
+  }
+  .xettuyen-toanhop-khoi-1 .table-responsive {
+    border-bottom: none !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+  .xettuyen-toanhop-khoi-2 .table-responsive {
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+  }
+  /* ĐÃ SỬA (theo phản hồi — "gạch đậm đậm" giữa 2 khối): trước đây chỉ gộp khung
+     ngoài (.table-responsive) làm 1 khối liền nhưng vẫn giữ nguyên viền RIÊNG của
+     từng Ô trong bảng (Bootstrap .table-bordered) — viền dưới của hàng môn cuối
+     khối 1 (GDKTPL) và viền trên của hàng môn đầu khối 2 (LỊCH SỬ/NGOẠI NGỮ...)
+     nằm sát nhau nên nhìn như 1 nét kẻ dày/đậm bất thường ở chỗ nối. Bỏ hẳn viền
+     dưới của hàng cuối khối 1 và viền trên của hàng đầu khối 2 để chỗ nối chỉ còn
+     đúng 1 nét mảnh như các hàng khác, đồng đều. */
+  .xettuyen-toanhop-khoi-1 tbody tr:last-child td {
+    border-bottom: none !important;
+  }
+  .xettuyen-toanhop-khoi-2 tbody tr:first-child td {
+    border-top: none !important;
+  }
+}
 
 /* ========================================================
    BACKGROUND PATTERN CHO TRANG XÉT TUYỂN
@@ -53,6 +105,29 @@ tr:has(.status-failed) td { background-color: #fdecea !important; }
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04);
     max-width: 1500px; /* Giới hạn chiều rộng để background lòi ra 2 bên */
     margin: 0 auto;    /* Căn giữa màn hình */
+}
+
+/* ========================================================
+   BẢNG "DANH SÁCH CHỜ ĐỒNG BỘ" — CUỘN RIÊNG, TIÊU ĐỀ CỐ ĐỊNH (theo phản hồi)
+   Trước đây bảng không giới hạn chiều cao -> cả TRANG cuộn xuống, tiêu đề (dùng
+   class Bootstrap "sticky-top") lúc dính lúc không tùy trình duyệt vì "position:
+   sticky" đặt thẳng lên <thead> không được Safari hỗ trợ ổn định (phải đặt lên
+   từng <th>). Giờ bọc bảng trong khung có chiều cao giới hạn + overflow-y:auto
+   (bảng tự có thanh cuộn DỌC riêng, không cuốn theo cả trang nữa), tiêu đề dùng
+   position:sticky đặt trên từng ô <th> (tương thích mọi trình duyệt) — cuộn dọc
+   thì tiêu đề đứng yên, cuộn ngang (đã có overflow-x:auto từ trước, y hệt) thì
+   tiêu đề vẫn trượt theo đúng cột như bình thường.
+   ======================================================== */
+.xettuyen-ds-scroll {
+  max-height: 65vh;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+.xettuyen-ds-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: #f8f9fa; /* trùng màu table-light, để chữ/dòng cuộn bên dưới không lộ qua */
 }
 
 /* ========================================================

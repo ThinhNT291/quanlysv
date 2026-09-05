@@ -34,7 +34,7 @@ const DICT_NGANH = {
     "Quản trị kinh doanh": ["A00", "A01", "D01", "D09", "D10", "D45", "D65", "X01", "X25", "X37"],
     "Ngôn ngữ Anh": ["A01", "C03", "C04", "D01", "D09", "D10", "D14", "D15", "X25", "X26"],
     "Ngôn ngữ Trung Quốc": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X01", "X37"],
-    "Quản trị dịch vụ du lịch và lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
+    "Quản trị dịch vụ du lịch & lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
 };
 
 const SUBJECTS_UI = [
@@ -45,7 +45,7 @@ const SUBJECTS_UI = [
 ];
 
 const HK_FIELDS = SUBJECTS_UI.reduce((acc, subj) => {
-    acc[`diem_${subj.id}_hk1_11`] = '';
+    acc[`diem_${subj.id}_hk2_11`] = '';
     acc[`diem_${subj.id}_hk1_12`] = '';
     acc[`diem_${subj.id}_hk2_12`] = '';
     return acc;
@@ -170,7 +170,7 @@ const tuDongChenDauThapPhan = (val) => {
 
 const getSubjectAverage = (subjId, data) => {
     if (data.loai_diem === 'HOC_BA_2025') {
-        const raw1 = data[`diem_${subjId}_hk1_11`], raw2 = data[`diem_${subjId}_hk1_12`], raw3 = data[`diem_${subjId}_hk2_12`];
+        const raw1 = data[`diem_${subjId}_hk2_11`], raw2 = data[`diem_${subjId}_hk1_12`], raw3 = data[`diem_${subjId}_hk2_12`];
         // ĐÃ SỬA: giữ ĐÚNG điều kiện hợp lệ gốc (cả 3 ô đều phải parse ra số thật —
         // isNaN(parseFloat(...)) === false) rồi MỚI làm tròn từng giá trị qua lamTronDiem()
         // để cộng trung bình — không đổi thành so sánh chuỗi rỗng (dễ lọt chuỗi rác kiểu
@@ -222,6 +222,44 @@ const tinhToHopCaoNhat = (nganh, data) => {
     return { maxScore, bestCombo };
 };
 
+// ĐÃ THÊM (theo phản hồi — "Tìm hồ sơ cũ"/"Sửa" ở datalist làm MẤT điểm dù chính datalist
+// vẫn đang hiện có điểm): dựng lại bộ field Lớp 10/11/12 + HK2-11/HK1-12/HK2-12 cho TỪNG
+// môn từ JSON RAW_DIEM_HK (rawObj) — dùng chung cho cả loadOldCandidate() (hồ sơ ĐÃ đẩy
+// lên Goc01, tìm bằng "Tìm hồ sơ cũ") lẫn handleEditRowLocal() (hồ sơ còn nằm trong danh
+// sách chờ đồng bộ ở trình duyệt).
+// NGUYÊN NHÂN THẬT: hồ sơ nhập qua IMPORT EXCEL (executeImport()) luôn ghi thẳng
+// "RAW_DIEM_HK": "" — file mẫu Excel chỉ có ĐÚNG 1 cột điểm/môn (VD "TOÁN"), không có chỗ
+// tách Lớp 10/11/12 hay từng học kỳ, nên hoàn toàn không có gì để đóng gói vào JSON này lúc
+// import. Trước đây, khi mở lại 1 hồ sơ như vậy để sửa (dù nhập tay theo phương thức Học bạ/
+// TBTS 2025), rawObj rỗng -> cả 3 ô Lớp/Kỳ của MỌI môn đều hiện TRỐNG trên form — dù cột
+// điểm trung bình cuối cùng (VD "TOÁN") trên Goc01/datalist vẫn còn nguyên giá trị đúng (đây
+// chính là lý do "datalist bên dưới vẫn hiển thị có điểm" nhưng form sửa lại trống). Nếu lỡ
+// bấm Lưu/Đẩy dữ liệu lên hệ thống ở trạng thái này, getSubjectAverage() coi 3 ô trống là
+// "chưa đủ dữ liệu" (bắt buộc CẢ 3 ô đều phải có số) -> trả về 0 -> GHI ĐÈ, XÓA MẤT giá trị
+// điểm ĐÚNG đang có trên Goc01 — đúng hiện tượng "ngẫu nhiên 1 số hồ sơ" bị mất điểm đã báo.
+//
+// CÁCH SỬA: nếu rawObj HOÀN TOÀN không có bất kỳ ô Lớp/Kỳ nào cho 1 môn (đúng tình huống
+// Excel-import ở trên), dùng TẠM giá trị điểm trung bình cuối cùng đã lưu (getFlatVal(subj),
+// VD cột "TOÁN") làm giá trị chung cho cả 3 ô Lớp/Kỳ của môn đó — không khôi phục lại được
+// ĐÚNG điểm từng Lớp/học kỳ gốc (dữ liệu chi tiết đó thực sự không còn tồn tại ở đâu cả),
+// nhưng giữ nguyên đúng điểm TRUNG BÌNH đã có, tránh mất điểm nếu lưu/đẩy lại lần nữa — người
+// dùng nên tự đối chiếu và sửa lại cho khớp điểm thật của từng Lớp/học kỳ nếu cần chính xác
+// tuyệt đối. Nếu rawObj CÓ ít nhất 1 trong 3 ô (hồ sơ nhập tay, có thể cố ý để trống 1-2 ô vì
+// chưa có điểm năm đó) thì GIỮ NGUYÊN đúng như JSON, KHÔNG áp dự phòng — tôn trọng đúng ô nào
+// đã nhập/chưa nhập, không tự ý ghi đè bằng điểm trung bình cuối cùng.
+const khoiPhucDiemTungMon = (rawObj, getFlatVal) => SUBJECTS_UI.reduce((acc, subj) => {
+    const coHk = rawObj[`${subj.id}_hk2_11`] || rawObj[`${subj.id}_hk1_12`] || rawObj[`${subj.id}_hk2_12`];
+    const coLop = rawObj[`${subj.id}_lop10`] || rawObj[`${subj.id}_lop11`] || rawObj[`${subj.id}_lop12`];
+    const duPhong = (coHk || coLop) ? "" : (getFlatVal(subj) || "");
+    acc[`diem_${subj.id}_hk2_11`] = rawObj[`${subj.id}_hk2_11`] || duPhong;
+    acc[`diem_${subj.id}_hk1_12`] = rawObj[`${subj.id}_hk1_12`] || duPhong;
+    acc[`diem_${subj.id}_hk2_12`] = rawObj[`${subj.id}_hk2_12`] || duPhong;
+    acc[`diem_${subj.id}_lop10`] = rawObj[`${subj.id}_lop10`] || duPhong;
+    acc[`diem_${subj.id}_lop11`] = rawObj[`${subj.id}_lop11`] || duPhong;
+    acc[`diem_${subj.id}_lop12`] = rawObj[`${subj.id}_lop12`] || duPhong;
+    return acc;
+}, {});
+
 const compareIsoDates = (a, b) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(b)) return NaN;
     return a.localeCompare(b);
@@ -267,14 +305,49 @@ const loadSession = (key, defaultVal) => {
     return defaultVal;
 };
 
+// ĐÃ THÊM (theo phản hồi — tự gắn "Phỏng vấn" vào PHƯƠNG THỨC XÉT TUYỂN khi có Điểm PV):
+// nhận diện "Điểm học bạ" (THƯỜNG, KHÔNG phải bản TBTS 2025) từ 1 chuỗi tự do — dùng riêng
+// cho luồng Import Excel, vì ô "PHƯƠNG THỨC XÉT TUYỂN" trong file mẫu là ô gõ tay tự do
+// (không phải dropdown cố định — xem chú thích tại descRow['PHƯƠNG THỨC XÉT TUYỂN'] phía
+// dưới), người nhập liệu có thể gõ lệch hoa/thường/dấu câu. Luồng nhập tay (handleAddRow)
+// không cần hàm này vì đã có sẵn formData.loai_diem (khoá kỹ thuật chọn qua tick/dropdown,
+// luôn chính xác). Logic bỏ dấu/hạ chữ thường cố ý PORT giống hệt normalizeText() +
+// suyRaPhuongThuc() (thamDinhHelpers.js, trang Thẩm định) để 2 nơi luôn nhận diện khớp
+// nhau — không import chéo qua trang khác, giữ đúng quy ước độc lập-nhưng-đồng-bộ đã dùng
+// cho các hàm tính điểm khác trong dự án (VD tinhToHopCaoNhat/calculateScores).
+const laHocBaThuongTuChuoi = (str) => {
+    const chuan = String(str || "")
+        .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd').replace(/\s+/g, ' ').trim();
+    return chuan.includes('hoc ba') && !chuan.includes('2025') && !chuan.includes('tbts');
+};
+
 const XetTuyenPage = () => {
   const [formData, setFormData] = useState(() => loadSession('xt_form', initialFormState));
   const [dataList, setDataList] = useState(() => loadSession('xt_list', [])); 
   const [isEditMode, setIsEditMode] = useState(() => loadSession('xt_isEdit', false));
+  // ĐÃ THÊM (sửa bug "Không khớp hồ sơ gốc" cho hồ sơ Excel-import CHƯA đẩy lên): trước đây
+  // handleAddRow() gắn "_Action": isEditMode ? "UPDATE" : "INSERT" — nghĩa là HỄ đang ở chế
+  // độ sửa trên Form (isEditMode=true) là ghi UPDATE, KHÔNG phân biệt được 2 tình huống:
+  //   1) Sửa 1 hồ sơ đã có sẵn trên Goc01 (qua "Tìm hồ sơ cũ") -> đúng là UPDATE.
+  //   2) Sửa 1 hồ sơ vừa Import Excel/nhập tay còn nằm trong "Danh sách chờ đồng bộ", CHƯA
+  //      từng đẩy lên Goc01 lần nào (qua nút "Sửa" ở datalist) -> vẫn là hồ sơ MỚI, phải giữ
+  //      nguyên INSERT, vì backend (importStudents, Quanlysv.gs) chỉ sinh Mã sinh viên +
+  //      tạo hoso_dinh_danh/SV_KEY ở nhánh INSERT — nhánh UPDATE bắt buộc phải khớp được 1
+  //      dòng có sẵn theo CCCD+Ngành trên Goc01, nếu không sẽ rơi vào failedUpdates ("Lỗi:
+  //      Không khớp hồ sơ gốc để sửa"). Cách né cũ (tự tạo tay 1 dòng "khóa" CCCD+Ngành
+  //      trên Goc01 cho khớp) làm hồ sơ lọt qua nhánh UPDATE thật, nhưng vì đó là sinh viên
+  //      HOÀN TOÀN MỚI nên hồ sơ vĩnh viễn không có Mã sinh viên tự sinh, không có
+  //      hoso_dinh_danh/SV_KEY — kéo theo mã phụ/lịch sử định danh cũng không có.
+  // editingAction lưu lại _Action GỐC của hồ sơ đang được tải lên Form để sửa (set ở
+  // handleEditRowLocal cho tình huống 2, và luôn ép "UPDATE" ở loadOldCandidate cho tình
+  // huống 1) — handleAddRow() giờ dùng editingAction thay vì suy luận từ isEditMode.
+  const [editingAction, setEditingAction] = useState(() => loadSession('xt_editAction', null));
 
   useEffect(() => { sessionStorage.setItem('xt_form', JSON.stringify(formData)); }, [formData]);
   useEffect(() => { sessionStorage.setItem('xt_list', JSON.stringify(dataList)); }, [dataList]);
   useEffect(() => { sessionStorage.setItem('xt_isEdit', JSON.stringify(isEditMode)); }, [isEditMode]);
+  useEffect(() => { sessionStorage.setItem('xt_editAction', JSON.stringify(editingAction)); }, [editingAction]);
 
   const [admissionResult, setAdmissionResult] = useState(null);
   const [isPushing, setIsPushing] = useState(false);
@@ -384,7 +457,7 @@ const XetTuyenPage = () => {
       setFormData(prev => {
           const newState = { ...prev };
           SUBJECTS_UI.forEach(subj => {
-              newState[`diem_${subj.id}_hk1_11`] = '';
+              newState[`diem_${subj.id}_hk2_11`] = '';
               newState[`diem_${subj.id}_hk1_12`] = '';
               newState[`diem_${subj.id}_hk2_12`] = '';
           });
@@ -458,16 +531,22 @@ const XetTuyenPage = () => {
                     uTienChinhThuc = ((30 - maxScore) / 7.5) * uTienBanDau;
                 }
 
-                // ĐÃ SỬA (theo phản hồi): điểm phỏng vấn — CHỈ áp dụng cho phương thức
-                // "Điểm học bạ" (HOC_BA), và CHỈ cộng vào điểm xét tuyển khi (điểm tổ hợp +
-                // điểm cộng) nằm trong khoảng (15, 16) — DÙNG ĐÚNG 1 NGƯỠNG DUY NHẤT này cho
-                // cả việc HIỆN Ô NHẬP (xem renderHocBaTableHalf, đã sửa lại dùng cùng ngưỡng
-                // (tổ hợp + điểm cộng) thay vì chỉ xét riêng tổ hợp như bản trước) lẫn việc
-                // ÁP DỤNG vào công thức — không còn lệch nhau giữa 2 chỗ nữa.
+                // ĐÃ SỬA (theo phản hồi — CHỐT LẠI CÔNG THỨC ĐÚNG): điểm phỏng vấn — CHỈ áp
+                // dụng cho phương thức "Điểm học bạ" (HOC_BA), và CHỈ cộng vào điểm xét
+                // tuyển khi (điểm TỔ HỢP CAO NHẤT + ĐIỂM CỘNG + ĐIỂM ƯU TIÊN) BẰNG 15 ĐẾN
+                // DƯỚI 16 (>= 15 và < 16) — bản trước đó THIẾU hẳn Điểm ưu tiên (uTienChinhThuc)
+                // trong tổng này, chỉ cộng Tổ hợp + Điểm cộng, SAI theo đúng yêu cầu gốc.
+                // DÙNG ĐÚNG 1 NGƯỠNG DUY NHẤT này cho cả việc HIỆN Ô NHẬP (xem
+                // renderHocBaTableHalf, đã sửa lại dùng cùng công thức) lẫn việc ÁP DỤNG vào
+                // công thức — không còn lệch nhau giữa 2 chỗ nữa. Dùng uTienChinhThuc (đã
+                // tính ở trên) chứ không phải uTienBanDau — với HOC_BA thì 2 giá trị này
+                // luôn bằng nhau (công thức giảm trừ theo maxScore>=22.5 chỉ áp dụng cho
+                // THI_THPT), nhưng dùng đúng biến "chính thức" để phòng hờ sau này đổi quy
+                // tắc thì chỗ này tự động khớp theo, không cần sửa lại thêm lần nữa.
                 let diemPhongVan = 0;
                 if (formData.loai_diem === 'HOC_BA') {
-                    const tongToHopVaCong = maxScore + diemCong;
-                    if (tongToHopVaCong > 15 && tongToHopVaCong < 16) {
+                    const tongDiemXetPV = maxScore + diemCong + uTienChinhThuc;
+                    if (tongDiemXetPV >= 15 && tongDiemXetPV < 16) {
                         diemPhongVan = Math.min(lamTronDiem(formData.diem_phong_van), 2);
                     }
                 }
@@ -536,7 +615,7 @@ const XetTuyenPage = () => {
     if (formData.loai_diem === 'HOC_BA_2025') {
         const rawObj = {};
         SUBJECTS_UI.forEach(subj => {
-            rawObj[`${subj.id}_hk1_11`] = formData[`diem_${subj.id}_hk1_11`] || "";
+            rawObj[`${subj.id}_hk2_11`] = formData[`diem_${subj.id}_hk2_11`] || "";
             rawObj[`${subj.id}_hk1_12`] = formData[`diem_${subj.id}_hk1_12`] || "";
             rawObj[`${subj.id}_hk2_12`] = formData[`diem_${subj.id}_hk2_12`] || "";
         });
@@ -555,8 +634,13 @@ const XetTuyenPage = () => {
     }
 
     const newRow = {
-        "STT": dataList.length + 1, "TRẠNG THÁI ĐẨY": "Waiting", 
-        "_Action": isEditMode ? "UPDATE" : "INSERT", 
+        "STT": dataList.length + 1, "TRẠNG THÁI ĐẨY": "Waiting",
+        // ĐÃ SỬA (xem chú thích đầy đủ tại chỗ khai báo editingAction, gần isEditMode): dùng
+        // editingAction (giữ đúng _Action GỐC của hồ sơ) thay vì suy ra thẳng từ isEditMode —
+        // tránh hồ sơ Excel-import chưa từng đẩy lên bị gắn nhầm thành "UPDATE" chỉ vì đang
+        // sửa dở trên Form. Fallback "UPDATE" chỉ để phòng hờ (không nên xảy ra vì cả 2 nơi
+        // gọi setIsEditMode(true) đều gọi kèm setEditingAction() ngay trước đó).
+        "_Action": isEditMode ? (editingAction || "UPDATE") : "INSERT",
         "KẾT QUẢ SƠ TUYỂN": admissionResult ? admissionResult.title : "",
         "CĂN CƯỚC": formData.cccd.trim(), "TÊN SINH VIÊN": formData.hoten.trim(), "NGÀY SINH": formData.ngaysinh,
         "NGÀNH": formData.nganh, "KHÓA": formData.khoa, "ĐỐI TƯỢNG ƯU TIÊN": formData.doituonguutien,
@@ -588,15 +672,23 @@ const XetTuyenPage = () => {
         // không ép thành 0.
         "ĐIỂM TB TOÀN KHÓA HỆ 4": lamTronDiemGiuRong(formData.diem_tb_he4), "ĐIỂM TB TOÀN KHÓA HỆ 10": lamTronDiemGiuRong(formData.diem_tb_he10), "ĐIỂM CỘNG": lamTronDiemGiuRong(formData.diem_cong),
         // ĐÃ THÊM: lưu điểm phỏng vấn (chỉ có giá trị khi phương thức Học bạ + đủ điều
-        // kiện hiện ô, xem renderHocBaTableHalf) — LƯU Ý: cột "ĐIỂM PHỎNG VẤN" hiện CHƯA
-        // có sẵn trên Goc01 (Trung Gian), cần bổ sung thêm 1 cột đúng tên này trên Google
-        // Sheet thì giá trị mới thực sự được ghi xuống khi "Đẩy dữ liệu lên hệ thống" —
-        // xem action 'importStudents' bên Quanlysv.gs, chỗ ghi cleanHeaders.forEach chỉ
-        // ghi được cột đã CÓ SẴN trên sheet, cột lạ bị bỏ qua (không lỗi, chỉ không lưu).
+        // kiện hiện ô, xem renderHocBaTableHalf) — cột "ĐIỂM PHỎNG VẤN" đã có sẵn trên
+        // Goc01 (Trung Gian) và trong file mẫu (XETTUYEN_TEMPLATE_HEADERS, Quanlysv.gs)
+        // nên giá trị được ghi xuống bình thường khi "Đẩy dữ liệu lên hệ thống".
         "ĐIỂM PHỎNG VẤN": lamTronDiemGiuRong(formData.diem_phong_van),
         "ĐIỂM CHUẨN": formData.diem_chuan,
         
-        "PHƯƠNG THỨC XÉT TUYỂN": formData.loai_diem === 'THI_THPT' ? 'Điểm thi THPT' : (formData.loai_diem === 'HOC_BA' ? 'Điểm học bạ' : (formData.loai_diem === 'HOC_BA_2025' ? 'Điểm học bạ (TBTS 2025)' : '')),
+        // ĐÃ SỬA (theo phản hồi): hồ sơ "Điểm học bạ" (HOC_BA) mà CÓ nhập Điểm phỏng vấn
+        // (bất kể sau này có đủ điều kiện cộng theo ngưỡng 15-16 hay không — chỉ cần Ô PV
+        // có dữ liệu là được, xem yêu cầu gốc) thì ghi thẳng "Phỏng vấn" thay vì "Điểm học
+        // bạ" — để nhận ra ngay trên Goc01 hồ sơ nào có phỏng vấn mà không cần mở từng hồ
+        // sơ. Bản chất VẪN LÀ phương thức Học bạ (điểm chuẩn 16) — trang Thẩm định
+        // (suyRaPhuongThuc, thamDinhHelpers.js) đã được cập nhật để nhận diện "Phỏng vấn"
+        // tương đương HOC_BA. handleEditRowLocal/loadOldCandidate bên dưới cũng đã cập
+        // nhật để đọc ngược lại đúng tick "Điểm học bạ" khi mở hồ sơ này ra sửa.
+        "PHƯƠNG THỨC XÉT TUYỂN": (formData.loai_diem === 'HOC_BA' && (parseFloat(String(formData.diem_phong_van).replace(',', '.')) || 0) > 0)
+          ? 'Phỏng vấn'
+          : (formData.loai_diem === 'THI_THPT' ? 'Điểm thi THPT' : (formData.loai_diem === 'HOC_BA' ? 'Điểm học bạ' : (formData.loai_diem === 'HOC_BA_2025' ? 'Điểm học bạ (TBTS 2025)' : ''))),
         "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "Mới bổ sung" : "Chưa thẩm định",
         
         "TIME": isEditMode ? (formData.time_goc || currentTimestamp) : currentTimestamp,
@@ -618,14 +710,16 @@ const XetTuyenPage = () => {
         setDataList([...dataList, newRow]);
     }
 
-    setFormData(initialFormState); 
-    setIsEditMode(false); 
+    setFormData(initialFormState);
+    setIsEditMode(false);
+    setEditingAction(null); // ĐÃ THÊM: reset lại sau khi đã dùng xong ở "_Action" phía trên.
   };
 
   const handleCancelEdit = () => {
       if (window.confirm("Bạn có chắc chắn muốn Hủy chỉnh sửa? Các thay đổi sẽ không được lưu.")) {
           setFormData(initialFormState);
           setIsEditMode(false);
+          setEditingAction(null); // ĐÃ THÊM: hủy sửa thì cũng phải xóa luôn _Action GỐC đang giữ.
       }
   };
 
@@ -633,9 +727,24 @@ const XetTuyenPage = () => {
     const row = dataList[index];
     if(!window.confirm(`Bạn có muốn tải hồ sơ của [${row["TÊN SINH VIÊN"]}] lên Form để chỉnh sửa lại không?`)) return;
 
+    // ĐÃ THÊM (theo phản hồi — cùng nguyên nhân/cách sửa với loadOldCandidate() ở "Tìm hồ sơ
+    // cũ" phía dưới, áp dụng luôn ở đây cho nhất quán vì rủi ro y hệt): nếu đang sửa dở 1 hồ
+    // sơ KHÁC (isEditMode=true) mà bấm "Sửa" tiếp 1 dòng khác trong Danh sách chờ đồng bộ,
+    // toàn bộ thay đổi đang sửa dở trên Form sẽ bị ghi đè mất mà không có cảnh báo riêng nào
+    // — cảnh báo thứ 2 này đứng SAU cảnh báo tải hồ sơ ở trên, TRƯỚC khi đẩy dữ liệu về Form.
+    if (isEditMode) {
+        if (!window.confirm("⚠️ Bạn đang sửa dở 1 hồ sơ KHÁC chưa lưu/hủy!\n\nNếu tiếp tục, mọi thay đổi đang sửa dở trên Form sẽ MẤT HẲN, không thể khôi phục.\n\nBấm OK để tiếp tục (chấp nhận mất) — Bấm Hủy để quay lại, tự bấm \"Cập nhật\" hoặc \"Hủy chỉnh sửa\" cho hồ sơ đang sửa trước.")) return;
+    }
+
     let phuongThuc = "";
     if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Điểm thi THPT') phuongThuc = "THI_THPT";
     if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Điểm học bạ') phuongThuc = "HOC_BA";
+    // ĐÃ THÊM (theo phản hồi — tự gắn "Phỏng vấn" khi hồ sơ HOC_BA có Điểm PV, xem chú
+    // thích tại chỗ ghi "PHƯƠNG THỨC XÉT TUYỂN" ở handleAddRow): mở lại hồ sơ này để sửa
+    // phải nhận diện ngược lại "Phỏng vấn" == tick "Điểm học bạ" — thiếu dòng này thì
+    // phuongThuc rơi vào "" (không khớp cả 3 nhánh cũ), Form mở ra sẽ KHÔNG tick sẵn
+    // phương thức nào cả dù hồ sơ vốn là Học bạ.
+    if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Phỏng vấn') phuongThuc = "HOC_BA";
     if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Điểm học bạ (TBTS 2025)') phuongThuc = "HOC_BA_2025";
 
     let rawObj = {};
@@ -670,18 +779,12 @@ const XetTuyenPage = () => {
         diem_tinhoc: row["TIN HỌC"] || "",
         diem_gdktpl: row["GDKTPL"] || "",
         
-        // ĐÃ SỬA: khôi phục CẢ 2 bộ field (HK 2025 và Lớp 10/11/12) từ cùng 1 JSON
-        // RAW_DIEM_HK — không cần biết trước hồ sơ đang ở phương thức nào, bộ field không
-        // dùng tới sẽ tự rỗng (rawObj không có key tương ứng), vô hại.
-        ...SUBJECTS_UI.reduce((acc, subj) => {
-            acc[`diem_${subj.id}_hk1_11`] = rawObj[`${subj.id}_hk1_11`] || "";
-            acc[`diem_${subj.id}_hk1_12`] = rawObj[`${subj.id}_hk1_12`] || "";
-            acc[`diem_${subj.id}_hk2_12`] = rawObj[`${subj.id}_hk2_12`] || "";
-            acc[`diem_${subj.id}_lop10`] = rawObj[`${subj.id}_lop10`] || "";
-            acc[`diem_${subj.id}_lop11`] = rawObj[`${subj.id}_lop11`] || "";
-            acc[`diem_${subj.id}_lop12`] = rawObj[`${subj.id}_lop12`] || "";
-            return acc;
-        }, {}),
+        // ĐÃ SỬA (theo phản hồi — mất điểm khi Sửa hồ sơ Excel-import): dùng chung hàm
+        // khoiPhucDiemTungMon() (xem chú thích đầy đủ tại chỗ khai báo, ngay sau
+        // tinhToHopCaoNhat()) thay vì chỉ đọc thẳng rawObj — có dự phòng bằng điểm trung
+        // bình cuối cùng (row[label], VD row["TOÁN"]) khi rawObj hoàn toàn không có dữ liệu
+        // tách Lớp/Kỳ cho 1 môn (đúng tình huống hồ sơ Excel-import).
+        ...khoiPhucDiemTungMon(rawObj, (subj) => row[subj.label]),
 
         diem_tb_he4: row["ĐIỂM TB HỆ 4"] || row["ĐIỂM TB TOÀN KHÓA HỆ 4"] || "",
         diem_tb_he10: row["ĐIỂM TB HỆ 10"] || row["ĐIỂM TB TOÀN KHÓA HỆ 10"] || "",
@@ -698,6 +801,12 @@ const XetTuyenPage = () => {
         }), {})
     }));
 
+    // ĐÃ THÊM (xem chú thích đầy đủ tại chỗ khai báo editingAction): giữ lại _Action GỐC của
+    // đúng dòng này (row["_Action"]) — hồ sơ Excel-import/nhập tay vừa thêm còn nằm trong
+    // "Danh sách chờ đồng bộ", CHƯA đẩy lên Goc01 lần nào thì row["_Action"] === "INSERT",
+    // phải giữ nguyên INSERT khi bấm "Lưu cập nhật vào danh sách", KHÔNG được đổi thành
+    // UPDATE chỉ vì đang sửa trên Form.
+    setEditingAction(row["_Action"] || "INSERT");
     setIsEditMode(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -843,7 +952,17 @@ const XetTuyenPage = () => {
 
   const loadOldCandidate = (record) => {
       if(!window.confirm(`⚠️ CHÚ Ý: Việc chỉnh sửa sẽ ghi đè lên dữ liệu cũ của thí sinh [${record.hoTen}]. Bạn có chắc chắn muốn Tải lên Form?`)) return;
-      
+
+      // ĐÃ THÊM (theo phản hồi): cảnh báo THỨ 2, đứng SAU cảnh báo ghi đè hồ sơ vừa tìm được
+      // ở trên, và TRƯỚC KHI đẩy dữ liệu về lại Form (đúng thứ tự đã yêu cầu) — chỉ hiện khi
+      // đang sửa dở 1 hồ sơ KHÁC (isEditMode=true) mà chưa lưu (nút "Cập nhật") hay hủy (nút
+      // "Hủy chỉnh sửa"). Không có cảnh báo riêng này, toàn bộ formData đang sửa dở (hồ sơ đó
+      // CHƯA kịp nằm trong "Danh sách chờ đồng bộ" nên không có cách tìm/khôi phục lại) sẽ bị
+      // ghi đè mất trắng ngay khi bấm tiếp, không có đường lùi.
+      if (isEditMode) {
+          if (!window.confirm("⚠️ Bạn đang sửa dở 1 hồ sơ KHÁC chưa lưu/hủy!\n\nNếu tiếp tục, mọi thay đổi đang sửa dở trên Form sẽ MẤT HẲN, không thể khôi phục.\n\nBấm OK để tiếp tục (chấp nhận mất) — Bấm Hủy để quay lại, tự bấm \"Cập nhật\" hoặc \"Hủy chỉnh sửa\" cho hồ sơ đang sửa trước.")) return;
+      }
+
       const rawData = record.fullData || {};
       const normData = {};
       for (let key in rawData) {
@@ -855,6 +974,10 @@ const XetTuyenPage = () => {
       const rawPhuongThuc = normData["PHƯƠNG THỨC XÉT TUYỂN"] || normData["LOẠI ĐIỂM"] || "";
       if (rawPhuongThuc === 'Điểm thi THPT' || rawPhuongThuc === 'THI_THPT') phuongThuc = "THI_THPT";
       if (rawPhuongThuc === 'Điểm học bạ' || rawPhuongThuc === 'HOC_BA') phuongThuc = "HOC_BA";
+      // ĐÃ THÊM (theo phản hồi — cùng lý do với handleEditRowLocal): "Tìm hồ sơ cũ" của 1
+      // hồ sơ đã được tự gắn "Phỏng vấn" (thay vì "Điểm học bạ") cũng phải nhận diện
+      // ngược lại đúng tick "Điểm học bạ" khi tải về Form.
+      if (rawPhuongThuc === 'Phỏng vấn') phuongThuc = "HOC_BA";
       if (rawPhuongThuc === 'Điểm học bạ (TBTS 2025)' || rawPhuongThuc === 'HOC_BA_2025') phuongThuc = "HOC_BA_2025";
 
       let rawObj = {};
@@ -880,7 +1003,15 @@ const XetTuyenPage = () => {
           hoten: normData["TÊN SINH VIÊN"] || normData["HỌ VÀ TÊN"] || "",
           cccd: String(normData["CĂN CƯỚC"] || normData["CCCD"] || "").replace(/'/g, ''), 
           nganh: normData["NGÀNH"] || "",
-          ngaysinh: normData["NGÀY SINH"] || "",
+          // ĐÃ SỬA (theo phản hồi — "một số hồ sơ đẩy ngược lên không kèm năm sinh" dù ô trên
+          // Goc01 vẫn đúng): searchOldRecord (Quanlysv.gs) giờ trả "NGÀY SINH" dạng chuỗi
+          // "dd/mm/yyyy" thay vì để lọt nguyên Date object (JSON hoá thành ISO giờ UTC, lệch
+          // múi giờ +7 và <input type="date"> không nhận dạng được -> hiện trống). Chạy qua
+          // chuanHoaNgaySinhImport() (đã import sẵn, dùng chung với luồng Excel import) để
+          // đổi "dd/mm/yyyy" -> "yyyy-MM-dd" đúng định dạng ô input cần — đồng thời vẫn nhận
+          // được cả hồ sơ CŨ còn lưu ngày sinh dạng text khác kiểu (hàm này đã có sẵn nhiều
+          // nhánh nhận dạng, không đổi hành vi với các hồ sơ vốn đã hiển thị đúng từ trước).
+          ngaysinh: chuanHoaNgaySinhImport(normData["NGÀY SINH"]) || "",
           khoa: normData["KHÓA"] || "", 
           khuvucuutien: normData["KHU VỰC ƯU TIÊN"] || normData["KHU VỰC"] || "",
           doituonguutien: normData["ĐỐI TƯỢNG ƯU TIÊN"] || "", 
@@ -906,17 +1037,13 @@ const XetTuyenPage = () => {
           diem_tinhoc: normData["TIN HỌC"] || "",
           diem_gdktpl: normData["GDKTPL"] || normData["GIÁO DỤC KINH TẾ"] || "",
           
-          // ĐÃ SỬA: khôi phục CẢ 2 bộ field (HK 2025 và Lớp 10/11/12) từ cùng 1 JSON
-          // RAW_DIEM_HK — vô hại nếu bộ nào không dùng tới (rawObj không có key đó).
-          ...SUBJECTS_UI.reduce((acc, subj) => {
-              acc[`diem_${subj.id}_hk1_11`] = rawObj[`${subj.id}_hk1_11`] || "";
-              acc[`diem_${subj.id}_hk1_12`] = rawObj[`${subj.id}_hk1_12`] || "";
-              acc[`diem_${subj.id}_hk2_12`] = rawObj[`${subj.id}_hk2_12`] || "";
-              acc[`diem_${subj.id}_lop10`] = rawObj[`${subj.id}_lop10`] || "";
-              acc[`diem_${subj.id}_lop11`] = rawObj[`${subj.id}_lop11`] || "";
-              acc[`diem_${subj.id}_lop12`] = rawObj[`${subj.id}_lop12`] || "";
-              return acc;
-          }, {}),
+          // ĐÃ SỬA (theo phản hồi — mất điểm khi "Tìm hồ sơ cũ" hồ sơ Excel-import): dùng
+          // chung hàm khoiPhucDiemTungMon() (xem chú thích đầy đủ tại chỗ khai báo, ngay sau
+          // tinhToHopCaoNhat()) thay vì chỉ đọc thẳng rawObj — có dự phòng bằng điểm trung
+          // bình cuối cùng (normData[label], VD normData["TOÁN"]) khi rawObj hoàn toàn
+          // không có dữ liệu tách Lớp/Kỳ cho 1 môn (đúng tình huống hồ sơ Excel-import,
+          // executeImport() luôn ghi "RAW_DIEM_HK": "" vì file mẫu chỉ có 1 cột điểm/môn).
+          ...khoiPhucDiemTungMon(rawObj, (subj) => normData[subj.label]),
 
           // ĐÃ SỬA: thêm fallback đọc đúng tên cột thật "ĐIỂM TB TOÀN KHÓA HỆ 4/10" (xem
           // chú thích bug tại chỗ ghi "ĐIỂM TB TOÀN KHÓA HỆ 4/10" phía trên) — thiếu dòng
@@ -932,6 +1059,11 @@ const XetTuyenPage = () => {
               [doc.id]: getDocVal(doc)
           }), {})
       }));
+      // ĐÃ THÊM (xem chú thích đầy đủ tại chỗ khai báo editingAction): hồ sơ tải qua "Tìm hồ
+      // sơ cũ" chắc chắn đã có sẵn trên Goc01 (tìm được nghĩa là đã tồn tại) nên luôn ép
+      // "UPDATE" — khác với handleEditRowLocal (sửa dòng còn trong "Danh sách chờ đồng bộ",
+      // có thể chưa từng đẩy lên, phải giữ nguyên _Action gốc của dòng đó).
+      setEditingAction("UPDATE");
       setIsEditMode(true);
       closeSearchModal();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -990,6 +1122,12 @@ const XetTuyenPage = () => {
           // thật — xem chú thích tại chỗ ghi "PHƯƠNG THỨC XÉT TUYỂN" ở handleAddRow) —
           // thêm mô tả ngắn để người nhập liệu hiểu ô này không bắt buộc lúc import.
           descRow['PHƯƠNG THỨC XÉT TUYỂN'] = 'Điểm thi THPT / Điểm học bạ / Điểm học bạ (TBTS 2025) — có thể để trống';
+          // ĐÃ THÊM (theo phản hồi — đã bổ sung cột "ĐIỂM PHỎNG VẤN" thật trên Goc01): chú
+          // thích ngắn để người nhập liệu hiểu đúng cột này chỉ áp dụng phương thức Học bạ.
+          // ĐÃ SỬA (theo phản hồi): ghi rõ luôn việc điền cột này sẽ tự đổi "PHƯƠNG THỨC
+          // XÉT TUYỂN" của dòng đó thành "Phỏng vấn" (thay vì "Điểm học bạ") sau khi đẩy
+          // lên hệ thống — xem laHocBaThuongTuChuoi() ở phần import Excel.
+          descRow['ĐIỂM PHỎNG VẤN'] = 'Chỉ áp dụng PT Điểm học bạ, tối đa 2 — có thể để trống. Có điền là Phương thức tự đổi thành "Phỏng vấn"';
 
           // Tô màu nhóm cho dòng tiêu đề: "chung" (luôn áp dụng, gồm cả "Phiếu đăng ký dự
           // tuyển" vì cột này lặp lại y hệt ở MỌI nhóm tiên quyết) + 1 màu riêng cho từng
@@ -1185,7 +1323,15 @@ const XetTuyenPage = () => {
                           "HÌNH THỨC ĐÀO TẠO": getField(rowArr, ["HÌNH THỨC ĐÀO TẠO", "HÌNH THỨC"]), "LINK HỒ SƠ": getField(rowArr, ["LINK HỒ SƠ"]),
                           "GIẤY TỜ ƯU TIÊN": getField(rowArr, ["GIẤY TỜ ƯU TIÊN", "GIẤY ƯU TIÊN"]),
                           
-                          "PHƯƠNG THỨC XÉT TUYỂN": getField(rowArr, ["PHƯƠNG THỨC XÉT TUYỂN", "LOẠI ĐIỂM"]),
+                          // ĐÃ SỬA (theo phản hồi — cùng lý do với handleAddRow phía trên): nếu
+                          // ô "PHƯƠNG THỨC XÉT TUYỂN" trong file Excel ghi "Điểm học bạ" (thường,
+                          // dùng laHocBaThuongTuChuoi() vì đây là ô gõ tay tự do) VÀ ô "ĐIỂM PHỎNG
+                          // VẤN" cùng dòng có dữ liệu > 0 thì tự đổi thành "Phỏng vấn".
+                          "PHƯƠNG THỨC XÉT TUYỂN": (() => {
+                              const ptRaw = getField(rowArr, ["PHƯƠNG THỨC XÉT TUYỂN", "LOẠI ĐIỂM"]);
+                              const pvRaw = parseFloat(String(getField(rowArr, ["ĐIỂM PHỎNG VẤN", "ĐIỂM PV"])).replace(',', '.')) || 0;
+                              return (laHocBaThuongTuChuoi(ptRaw) && pvRaw > 0) ? 'Phỏng vấn' : ptRaw;
+                          })(),
                           "TOÁN": getField(rowArr, ["TOÁN"]), "VẬT LÍ": getField(rowArr, ["VẬT LÍ", "VẬT LÝ"]), "HÓA HỌC": getField(rowArr, ["HÓA HỌC"]), 
                           "SINH HỌC": getField(rowArr, ["SINH HỌC"]), "NGỮ VĂN": getField(rowArr, ["NGỮ VĂN"]), "LỊCH SỬ": getField(rowArr, ["LỊCH SỬ"]), 
                           "ĐỊA LÝ": getField(rowArr, ["ĐỊA LÝ", "ĐỊA LÍ"]), "TIẾNG ANH": getField(rowArr, ["TIẾNG ANH"]), "TIẾNG TRUNG": getField(rowArr, ["TIẾNG TRUNG"]), 
@@ -1306,29 +1452,92 @@ const XetTuyenPage = () => {
     </div>
   );
 
+  // ĐÃ THÊM (theo yêu cầu): điều hướng bằng phím mũi tên (lên/xuống/trái/phải) TỰ DO giữa
+  // các ô điểm của bảng Học bạ/TBTS 2025 — bên cạnh phím Tab vốn đã nhảy tuần tự theo thứ
+  // tự DOM sẵn có (không đụng gì tới Tab). Coi CẢ 2 khối trái/phải là 1 bảng logic duy nhất
+  // 11 hàng (đúng 11 môn của SUBJECTS_UI, đánh số hàng 0-10 theo thứ tự cố định trong mảng
+  // đó — khối trái là hàng 0-5, khối phải là hàng 6-10, xem tham số chiSoBatDau truyền vào
+  // renderHK2025TableHalf/renderHocBaTableHalf) x 3 cột điểm (0-2) — MỖI Ô ĐIỂM được gắn
+  // data-diem-row/data-diem-col tương ứng để tìm ra đúng ô lân cận, dù ô đó nằm ở bảng
+  // <table> vật lý nào (2 khối là 2 <table> tách biệt trong DOM, không phải 1 bảng thật).
+  // Dùng querySelector trong phạm vi ".score-container" (khối bọc ngoài toàn bộ mục III.
+  // THÔNG TIN ĐIỂM SỐ, đã có sẵn) để không đụng chạm gì tới các ô input khác trong form.
+  // Tại biên bảng (hàng 0/10, cột 0/2) thì DỪNG LẠI, không vòng qua hàng/cột kế tiếp — y
+  // hệt cách phím mũi tên hoạt động trong Excel/Google Sheets (khác Tab — Tab vẫn tự nhảy
+  // qua hàng/khối tiếp theo như hành vi trình duyệt mặc định, không đổi gì).
+  const handleDiemArrowKey = (e, row, col) => {
+      const DELTA = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+      const delta = DELTA[e.key];
+      if (!delta) return;
+      let targetRow = row + delta[0];
+      let targetCol = col + delta[1];
+      // ĐÃ THÊM (theo phản hồi): mũi tên Trái ở cột đầu (cột 0) sẽ "vòng" sang cột
+      // cuối (cột 2) của HÀNG TRƯỚC ĐÓ, thay vì đứng yên — và ngược lại, mũi tên
+      // Phải ở cột cuối (cột 2) sẽ vòng sang cột đầu (cột 0) của HÀNG KẾ TIẾP —
+      // giống cách gõ văn bản/di chuyển con trỏ, chỉ áp dụng cho Trái/Phải. Lên/Xuống
+      // vẫn giữ nguyên hành vi cũ (dừng lại ở hàng đầu/cuối, không vòng).
+      if (e.key === 'ArrowLeft' && targetCol < 0) {
+          if (targetRow < 0) return; // đã ở ô đầu tiên của cả bảng — không vòng nữa
+          targetCol = 2;
+      } else if (e.key === 'ArrowRight' && targetCol > 2) {
+          if (targetRow > SUBJECTS_UI.length - 1) return; // đã ở ô cuối cùng của cả bảng
+          targetCol = 0;
+      }
+      if (targetRow < 0 || targetRow > SUBJECTS_UI.length - 1 || targetCol < 0 || targetCol > 2) return;
+      const scope = e.currentTarget.closest('.score-container');
+      if (!scope) return;
+      const target = scope.querySelector(`input[data-diem-row="${targetRow}"][data-diem-col="${targetCol}"]`);
+      if (target) {
+          e.preventDefault();
+          target.focus();
+          target.select();
+      }
+  };
+
   // ĐÃ THÊM: render nửa bảng điểm TBTS 2025 (dùng chung cho 2 khối trái/phải,
   // yêu cầu #3 — chia đôi danh sách môn thành 2 bảng nằm cạnh nhau).
-  const renderHK2025TableHalf = (subjList) => (
+  // ĐÃ SỬA (theo phản hồi): cột đầu là "HK2-11" (Học kỳ 2 lớp 11), KHÔNG phải "HK1-11" như
+  // bản trước ghi nhầm — đã đổi luôn cả tên field lưu trong state (diem_..._hk2_11) và
+  // trong JSON RAW_DIEM_HK để nhất quán với nhãn hiển thị, không chỉ đổi mỗi chữ hiện ra.
+  // ĐÃ SỬA: thêm tham số chiSoBatDau (offset hàng toàn cục — 0 cho khối trái, 6 cho khối
+  // phải) để gắn đúng data-diem-row cho từng ô, phục vụ điều hướng phím mũi tên ở trên.
+  const renderHK2025TableHalf = (subjList, chiSoBatDau) => (
     <div className="table-responsive border rounded">
-      <table className="table table-bordered table-sm align-middle text-center mb-0">
+      <table className="table table-bordered table-sm align-middle text-center mb-0 xettuyen-toanhop-table">
+        {/* ĐÃ THÊM (theo phản hồi — sửa lỗi lệch cột/che cột TB khi 2 khối gộp trên
+            màn hình nhỏ): mỗi khối là 1 <table> vật lý riêng nên với table-layout
+            mặc định ("auto"), trình duyệt tự tính bề rộng từng cột DỰA TRÊN NỘI DUNG
+            của riêng bảng đó — khối 2 lại bị ẩn <thead> ở mobile (mất luôn "gợi ý" bề
+            rộng từ tiêu đề) nên bề rộng cột giữa 2 khối lệch nhau, cột TB khối dưới bị
+            bóp gần như mất hẳn. Gắn <colgroup> với % cố định GIỐNG HỆT NHAU cho cả 2
+            khối + table-layout:fixed (trong CSS) để bề rộng cột luôn đồng nhất, không
+            phụ thuộc nội dung hay tiêu đề còn/ẩn nữa. */}
+        <colgroup>
+          <col style={{width: '26%'}} />
+          <col style={{width: '19%'}} />
+          <col style={{width: '19%'}} />
+          <col style={{width: '19%'}} />
+          <col style={{width: '17%'}} />
+        </colgroup>
         <thead className="table-light">
           <tr>
             <th style={{width: '110px'}} className="text-primary">MÔN</th>
-            <th>HK1-11</th>
+            <th>HK2-11</th>
             <th>HK1-12</th>
             <th>HK2-12</th>
             <th className="text-danger" style={{width: '90px'}}>TB</th>
           </tr>
         </thead>
         <tbody>
-          {subjList.map(subj => {
+          {subjList.map((subj, viTriTrongKhoi) => {
             const avg = getSubjectAverage(subj.id, formData);
+            const hang = chiSoBatDau + viTriTrongKhoi;
             return (
               <tr key={subj.id}>
                 <td className="fw-bold text-primary">{subj.label}</td>
-                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk1_11`} value={formData[`diem_${subj.id}_hk1_11`]} onChange={handleChange} placeholder="-" /></td>
-                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk1_12`} value={formData[`diem_${subj.id}_hk1_12`]} onChange={handleChange} placeholder="-" /></td>
-                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_hk2_12`} value={formData[`diem_${subj.id}_hk2_12`]} onChange={handleChange} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" data-diem-row={hang} data-diem-col={0} name={`diem_${subj.id}_hk2_11`} value={formData[`diem_${subj.id}_hk2_11`]} onChange={handleChange} onKeyDown={(e) => handleDiemArrowKey(e, hang, 0)} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" data-diem-row={hang} data-diem-col={1} name={`diem_${subj.id}_hk1_12`} value={formData[`diem_${subj.id}_hk1_12`]} onChange={handleChange} onKeyDown={(e) => handleDiemArrowKey(e, hang, 1)} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" data-diem-row={hang} data-diem-col={2} name={`diem_${subj.id}_hk2_12`} value={formData[`diem_${subj.id}_hk2_12`]} onChange={handleChange} onKeyDown={(e) => handleDiemArrowKey(e, hang, 2)} placeholder="-" /></td>
                 <td className="fw-bold text-danger bg-light">{avg > 0 ? avg : '-'}</td>
               </tr>
             );
@@ -1346,19 +1555,36 @@ const XetTuyenPage = () => {
   // như khối trái nên dư đúng 1 hàng, tận dụng luôn để nhét ô "ĐIỂM CỘNG" + nút "Xóa hết"
   // (và giờ thêm ô "ĐIỂM PV" khi đủ điều kiện) vào CÙNG khối với các môn thay vì để 1
   // thanh riêng bên dưới như TBTS 2025 — vừa gọn vừa đúng ý đã yêu cầu.
-  const renderHocBaTableHalf = (subjList, coNutDieuKhien) => {
-    // ĐÃ SỬA (theo phản hồi): chỉ hiện ô "ĐIỂM PV" khi (điểm TỔ HỢP + ĐIỂM CỘNG) nằm
-    // trong khoảng (15, 16) — DÙNG ĐÚNG 1 NGƯỠNG DUY NHẤT với chỗ áp dụng vào công thức
-    // tính điểm xét tuyển (xem effect tính admissionResult) — trước đây bản đầu chỉ xét
-    // riêng điểm tổ hợp (thiếu cộng điểm cộng) nên có thể lệch với ngưỡng áp dụng, đã bỏ.
-    // Dùng chung hàm tinhToHopCaoNhat() để không lệch điểm tổ hợp giữa 2 chỗ.
+  // Tham số thứ 3 (chiSoBatDau) — xem chú thích tại handleDiemArrowKey/renderHK2025TableHalf
+  // phía trên: offset hàng toàn cục để gắn đúng data-diem-row, phục vụ điều hướng phím mũi
+  // tên xuyên suốt cả 2 khối.
+  const renderHocBaTableHalf = (subjList, coNutDieuKhien, chiSoBatDau) => {
+    // ĐÃ SỬA (theo phản hồi — CHỐT LẠI CÔNG THỨC ĐÚNG): chỉ hiện ô "ĐIỂM PV" khi (điểm TỔ
+    // HỢP CAO NHẤT + ĐIỂM CỘNG + ĐIỂM ƯU TIÊN) BẰNG 15 ĐẾN DƯỚI 16 (>= 15 và < 16) — trước
+    // đây (bản trước đó) THIẾU hẳn Điểm ưu tiên trong tổng này, chỉ mới cộng Tổ hợp + Điểm
+    // cộng, SAI theo đúng yêu cầu gốc. DÙNG ĐÚNG 1 NGƯỠNG DUY NHẤT với chỗ áp dụng vào công
+    // thức tính điểm xét tuyển (xem effect tính admissionResult) — dùng chung
+    // tinhToHopCaoNhat() để không lệch điểm tổ hợp giữa 2 chỗ. Điểm ưu tiên tính y hệt công
+    // thức DICT_KHU_VUC/DICT_DOI_TUONG ở effect đó — KHÔNG cần áp công thức giảm trừ theo
+    // maxScore>=22.5 (công thức đó CHỈ áp dụng cho phương thức Điểm thi THPT, hàm này chỉ
+    // gọi khi loai_diem === 'HOC_BA').
     const toHopHienTai = tinhToHopCaoNhat(formData.nganh, formData).maxScore;
     const diemCongHienTai = lamTronDiem(formData.diem_cong);
-    const hienOPhongVan = (toHopHienTai + diemCongHienTai) > 15 && (toHopHienTai + diemCongHienTai) < 16;
+    const uTienHienTai = (DICT_KHU_VUC[formData.khuvucuutien] || 0) + (DICT_DOI_TUONG[formData.doituonguutien] || 0);
+    const hienOPhongVan = (toHopHienTai + diemCongHienTai + uTienHienTai) >= 15 && (toHopHienTai + diemCongHienTai + uTienHienTai) < 16;
 
     return (
     <div className="table-responsive border rounded">
-      <table className="table table-bordered table-sm align-middle text-center mb-0">
+      <table className="table table-bordered table-sm align-middle text-center mb-0 xettuyen-toanhop-table">
+        {/* Xem chú thích colgroup ở renderHK2025TableHalf phía trên — cùng lý do,
+            % cột phải khớp y hệt giữa 2 hàm render để 2 khối luôn đều cột. */}
+        <colgroup>
+          <col style={{width: '26%'}} />
+          <col style={{width: '19%'}} />
+          <col style={{width: '19%'}} />
+          <col style={{width: '19%'}} />
+          <col style={{width: '17%'}} />
+        </colgroup>
         <thead className="table-light">
           <tr>
             <th style={{width: '110px'}} className="text-primary">MÔN</th>
@@ -1369,14 +1595,15 @@ const XetTuyenPage = () => {
           </tr>
         </thead>
         <tbody>
-          {subjList.map(subj => {
+          {subjList.map((subj, viTriTrongKhoi) => {
             const avg = getSubjectAverage(subj.id, formData);
+            const hang = chiSoBatDau + viTriTrongKhoi;
             return (
               <tr key={subj.id}>
                 <td className="fw-bold text-primary">{subj.label}</td>
-                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_lop10`} value={formData[`diem_${subj.id}_lop10`]} onChange={handleChange} placeholder="-" /></td>
-                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_lop11`} value={formData[`diem_${subj.id}_lop11`]} onChange={handleChange} placeholder="-" /></td>
-                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_lop12`} value={formData[`diem_${subj.id}_lop12`]} onChange={handleChange} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" data-diem-row={hang} data-diem-col={0} name={`diem_${subj.id}_lop10`} value={formData[`diem_${subj.id}_lop10`]} onChange={handleChange} onKeyDown={(e) => handleDiemArrowKey(e, hang, 0)} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" data-diem-row={hang} data-diem-col={1} name={`diem_${subj.id}_lop11`} value={formData[`diem_${subj.id}_lop11`]} onChange={handleChange} onKeyDown={(e) => handleDiemArrowKey(e, hang, 1)} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" data-diem-row={hang} data-diem-col={2} name={`diem_${subj.id}_lop12`} value={formData[`diem_${subj.id}_lop12`]} onChange={handleChange} onKeyDown={(e) => handleDiemArrowKey(e, hang, 2)} placeholder="-" /></td>
                 <td className="fw-bold text-danger bg-light">{avg > 0 ? avg : '-'}</td>
               </tr>
             );
@@ -1392,7 +1619,7 @@ const XetTuyenPage = () => {
                     {hienOPhongVan && (
                       <div className="d-flex align-items-center gap-2">
                         <label className="form-label small fw-bold mb-0 text-primary">ĐIỂM PV:</label>
-                        <input type="text" className="form-control form-control-sm border-primary" style={{width: '70px'}} name="diem_phong_van" value={formData.diem_phong_van} onChange={handleChange} placeholder="0.0" title="Tối đa 2 điểm — chỉ cộng vào điểm xét tuyển khi (Tổ hợp + Điểm cộng) trong khoảng 15-16" />
+                        <input type="text" className="form-control form-control-sm border-primary" style={{width: '70px'}} name="diem_phong_van" value={formData.diem_phong_van} onChange={handleChange} placeholder="0.0" title="Tối đa 2 điểm — chỉ cộng vào điểm xét tuyển khi (Tổ hợp + Điểm cộng + Điểm ưu tiên) từ 15 đến dưới 16" />
                       </div>
                     )}
                     <div className="d-flex align-items-center gap-2">
@@ -1598,12 +1825,19 @@ const XetTuyenPage = () => {
                               {/* ĐÃ SỬA (yêu cầu #3): chia danh sách môn làm 2 nửa, mỗi nửa 1 bảng,
                                   đặt cạnh nhau bằng col-md-6 — Bootstrap tự dồn xuống 1 cột trên
                                   màn hình nhỏ (< md) mà không cần thêm media query. */}
-                              <div className="row g-3">
-                                  <div className="col-md-6">
-                                      {renderHK2025TableHalf(SUBJECTS_UI.slice(0, 6))}
+                              {/* ĐÃ SỬA (theo yêu cầu): 3 class "xettuyen-toanhop-*" bên dưới — xem
+                                  media query cùng tên trong XetTuyen.css — chỉ có tác dụng ở màn
+                                  hình < md (lúc 2 khối dồn xuống 1 cột): ẩn tiêu đề khối 2 (MÔN/
+                                  LỚP hoặc HK...) + xoá khoảng cách + bo góc giữa 2 khối, để các
+                                  hàng điểm của khối 1 và khối 2 nối liền nhau như 1 bảng duy nhất.
+                                  Ở màn hình >= md (2 khối nằm cạnh nhau) thì các class này KHÔNG
+                                  có hiệu lực gì cả, layout y hệt như cũ. */}
+                              <div className="row g-3 xettuyen-toanhop-row">
+                                  <div className="col-md-6 xettuyen-toanhop-khoi-1">
+                                      {renderHK2025TableHalf(SUBJECTS_UI.slice(0, 6), 0)}
                                   </div>
-                                  <div className="col-md-6">
-                                      {renderHK2025TableHalf(SUBJECTS_UI.slice(6))}
+                                  <div className="col-md-6 xettuyen-toanhop-khoi-2">
+                                      {renderHK2025TableHalf(SUBJECTS_UI.slice(6), 6)}
                                   </div>
                               </div>
                               <div className="d-flex justify-content-between align-items-center px-1 py-2 mt-2 bg-white border rounded border-danger border-opacity-25">
@@ -1626,12 +1860,15 @@ const XetTuyenPage = () => {
                           // hàng cuối của khối bên phải (khối này chỉ có 5 môn, dư đúng 1 hàng so
                           // với khối trái 6 môn) thay vì để thanh riêng bên dưới cả 2 khối.
                           <div className="mt-3 position-relative">
-                              <div className="row g-3">
-                                  <div className="col-md-6">
-                                      {renderHocBaTableHalf(SUBJECTS_UI.slice(0, 6))}
+                              {/* ĐÃ SỬA (theo yêu cầu) — xem chú thích đầy đủ tại khối TBTS 2025 phía
+                                  trên, y hệt ở đây: 3 class "xettuyen-toanhop-*" chỉ có tác dụng khi
+                                  màn hình < md (2 khối dồn xuống 1 cột). */}
+                              <div className="row g-3 xettuyen-toanhop-row">
+                                  <div className="col-md-6 xettuyen-toanhop-khoi-1">
+                                      {renderHocBaTableHalf(SUBJECTS_UI.slice(0, 6), false, 0)}
                                   </div>
-                                  <div className="col-md-6">
-                                      {renderHocBaTableHalf(SUBJECTS_UI.slice(6), true)}
+                                  <div className="col-md-6 xettuyen-toanhop-khoi-2">
+                                      {renderHocBaTableHalf(SUBJECTS_UI.slice(6), true, 6)}
                                   </div>
                               </div>
                           </div>
@@ -1703,11 +1940,17 @@ const XetTuyenPage = () => {
         {dataList.length > 0 && (
             <>
               <h5 className="fw-bold text-primary mb-3 mt-5 border-bottom pb-2">📋 DANH SÁCH CHỜ ĐỒNG BỘ ({dataList.filter(r => r["TRẠNG THÁI ĐẨY"] === "Waiting" || r["TRẠNG THÁI ĐẨY"].includes("Lỗi")).length} hồ sơ)</h5>
-              <div className="table-responsive border rounded mb-3">
+              {/* ĐÃ SỬA (theo phản hồi): thêm class "xettuyen-ds-scroll" (xem XetTuyen.css) —
+                  bảng giờ tự có thanh cuộn DỌC riêng (giới hạn chiều cao, không cuốn theo cả
+                  trang), tiêu đề đứng yên khi cuộn dọc, chỉ trượt khi cuộn ngang. */}
+              <div className="table-responsive border rounded mb-3 xettuyen-ds-scroll">
                   <table className="table table-bordered table-hover table-striped mb-0 align-middle" style={{ minWidth: 'max-content', fontSize: '11px', whiteSpace: 'nowrap', borderColor: '#dee2e6' }}>
-                      <thead className="table-light sticky-top">
+                      <thead className="table-light">
                           <tr>
                               <th className="text-center">STT</th>
+                              {/* ĐÃ SỬA (theo yêu cầu): cột THAO TÁC (Sửa/Xóa) chuyển từ CUỐI bảng
+                                  lên ngay sau STT — đỡ phải cuộn ngang hết cả bảng mới bấm được. */}
+                              <th className="text-center" style={{width: '90px'}}>THAO TÁC</th>
                               <th className="text-center">TRẠNG THÁI</th>
                               <th className="text-center">KẾT QUẢ SƠ TUYỂN</th>
                               <th className="text-center">SỐ CCCD</th>
@@ -1740,7 +1983,6 @@ const XetTuyenPage = () => {
                               <th className="text-center">ĐIỂM TB HỆ 10</th>
                               <th className="text-center text-danger">ĐIỂM CỘNG</th>
                               <th className="text-center text-primary">ĐIỂM PHỎNG VẤN</th>
-                              <th className="text-center" style={{width: '90px'}}>THAO TÁC</th>
                           </tr>
                       </thead>
                       <tbody>
@@ -1749,6 +1991,14 @@ const XetTuyenPage = () => {
                               return (
                                   <tr key={idx} className={isUp ? 'table-secondary text-muted' : ''}>
                                       <td className="text-center fw-bold">{row["STT"]}</td>
+                                      <td className="text-center">
+                                          {!isUp && (
+                                              <div className="d-flex justify-content-center gap-1">
+                                                  <button className="btn btn-sm btn-outline-primary" onClick={() => handleEditRowLocal(idx)} title="Sửa hồ sơ">✏️</button>
+                                                  <button className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteRow(idx)} title="Xóa hồ sơ">🗑️</button>
+                                              </div>
+                                          )}
+                                      </td>
                                       <td className="text-center">
                                           <span className={`badge ${row["_Action"] === 'UPDATE' ? 'bg-info text-dark' : 'bg-success'} me-1`}>{row["_Action"]}</span>
                                           <span className={`badge ${isUp ? 'bg-success' : row["TRẠNG THÁI ĐẨY"].includes("Lỗi") ? 'bg-danger' : 'bg-warning text-dark'}`}>{row["TRẠNG THÁI ĐẨY"]}</span>
@@ -1784,14 +2034,6 @@ const XetTuyenPage = () => {
                                       <td className="text-center">{row["ĐIỂM TB HỆ 10"] || row["ĐIỂM TB TOÀN KHÓA HỆ 10"]}</td>
                                       <td className="text-center fw-bold text-danger">{row["ĐIỂM CỘNG"]}</td>
                                       <td className="text-center fw-bold text-primary">{row["ĐIỂM PHỎNG VẤN"]}</td>
-                                      <td className="text-center">
-                                          {!isUp && (
-                                              <div className="d-flex justify-content-center gap-1">
-                                                  <button className="btn btn-sm btn-outline-primary" onClick={() => handleEditRowLocal(idx)} title="Sửa hồ sơ">✏️</button>
-                                                  <button className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteRow(idx)} title="Xóa hồ sơ">🗑️</button>
-                                              </div>
-                                          )}
-                                      </td>
                                   </tr>
                               );
                           })}

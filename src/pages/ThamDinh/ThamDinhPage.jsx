@@ -2,6 +2,10 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
 import html2pdf from 'html2pdf.js';
+// ĐÃ THÊM (theo phản hồi — nút "Xuất Excel" mới trong menu tài khoản): dùng lại đúng thư
+// viện "xlsx" (SheetJS) đã có sẵn trong dự án (xem StudentTable.jsx, cùng cách dùng
+// json_to_sheet/book_new/writeFile) — không thêm thư viện mới.
+import * as XLSX from 'xlsx';
 import {
   fetchThamDinhData, duyetTrungTuyen, baoThieuHoSo, luuKetQuaThamDinh, banGiaoDaoTao,
   scanTranscriptImage, compareCurriculumAI, exportThamDinhTemplate
@@ -11,7 +15,7 @@ import {
   getRawScoreNumber, getRawDateNumber, getMissingDocs, getMissingTienQuyet, getAppState,
   calculateScores, isSafeDriveUrl, getCandidateScanKey
 } from './thamDinhHelpers';
-import { DICT_NGANH } from './thamDinhConfig';
+import { DICT_NGANH, DICT_TO_HOP, SUBJ_MAP } from './thamDinhConfig';
 import DateRangePicker from './DateRangePicker';
 import './ThamDinh.css';
 import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
@@ -21,6 +25,17 @@ import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ
 // mặc định trong bảng, (2) khoá các nút Duyệt/Báo thiếu để không ai lỡ tay ghi đè trạng
 // thái "Đã trúng tuyển" của hồ sơ này thành "Đã duyệt"/"Đã báo thiếu".
 const KENH_TRUC_TIEP = "Thu hồ sơ trực tiếp";
+
+// ĐÃ THÊM (theo phản hồi — hiện tên môn thay vì chỉ mã tổ hợp trong modal chi tiết): tra
+// theo DICT_TO_HOP (mã tổ hợp -> 3 field điểm, VD "diem_toan") rồi SUBJ_MAP (field điểm ->
+// tên cột thật trên Goc01, viết hoa toàn bộ, VD "TOÁN") — chuyển về dạng viết hoa chữ cái
+// đầu mỗi từ (VD "TIẾNG ANH" -> "Tiếng Anh") cho dễ đọc, không đổi dữ liệu gốc ở đâu khác.
+const tenMonDep = (tenHoa) => String(tenHoa || '').toLowerCase().split(' ').map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(' ');
+const tenMonToHop = (maToHop) => {
+  const fields = DICT_TO_HOP[maToHop];
+  if (!fields) return '';
+  return fields.map(f => tenMonDep(SUBJ_MAP[f])).join(', ');
+};
 
 // ===================================================================
 // TRANG BAN THẨM ĐỊNH — Pha 3 (KPI/bộ lọc/bảng, chỉ đọc) + Pha 4 (Duyệt trúng
@@ -123,6 +138,28 @@ const ThamDinhPage = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [exportMenuOpen]);
 
+  // ĐÃ THÊM (theo phản hồi — modal thẩm định chưa tắt được bằng ESC): cả modal chi tiết
+  // (viewingIndex) lẫn modal xác nhận thao tác hàng loạt (batchPreview) trước giờ chỉ tự
+  // dựng bằng div/state (không dùng Bootstrap JS thật — xem chú thích exportMenuOpen phía
+  // trên), nên KHÔNG có sẵn hành vi đóng-bằng-ESC như modal Bootstrap chuẩn — phải tự bắt
+  // sự kiện keydown ở cấp document. Ưu tiên đóng modal chi tiết trước (kèm đóng luôn menu
+  // "Xuất file" nếu đang mở, giống hệt cách nút "X"/click ra ngoài đang làm) — modal chi
+  // tiết và modal batchPreview không bao giờ mở cùng lúc trong luồng hiện tại, nhưng vẫn
+  // ưu tiên rõ ràng phòng trường hợp mở rộng luồng sau này.
+  useEffect(() => {
+    const handleEscKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (viewingIndex !== null) {
+        setViewingIndex(null);
+        setExportMenuOpen(false);
+      } else if (batchPreview) {
+        setBatchPreview(null);
+      }
+    };
+    document.addEventListener('keydown', handleEscKey);
+    return () => document.removeEventListener('keydown', handleEscKey);
+  }, [viewingIndex, batchPreview]);
+
   const [localOverrides, setLocalOverrides] = useState({});
   const getEffectiveState = (row) => localOverrides[getRowKey(row)]?.appState ?? getAppState(row);
   const getEffectiveSaved = (row) => localOverrides[getRowKey(row)]?.saved ?? false;
@@ -224,6 +261,72 @@ const ThamDinhPage = () => {
       return next;
     });
   };
+
+  // ĐÃ THÊM (theo phản hồi — nút "Xuất Excel" trong menu tài khoản, App.jsx): xuất TOÀN BỘ
+  // filteredData (đúng danh sách đang hiển thị trên bảng theo bộ lọc HIỆN TẠI — search,
+  // khoảng ngày, ngành, trạng thái..., KHÔNG chỉ riêng trang đang xem/pageRows, vì phân
+  // trang chỉ là hiển thị) ra file Excel tải về máy.
+  // ĐÃ SỬA (theo phản hồi lần 2):
+  //  1) "ĐIỂM TRÚNG TUYỂN" giờ GÁN CỨNG cho MỌI hồ sơ (kể cả chưa đủ điều kiện điểm chuẩn,
+  //     miễn có xác định được tổ hợp) và lấy đúng ĐIỂM CUỐI CÙNG — đã cộng Điểm ưu tiên +
+  //     Điểm cộng + Điểm phỏng vấn (nếu có) — dùng calculateScores() (đã có sẵn công thức
+  //     đúng, dùng chung với modal chi tiết) thay vì getRawScoreNumber() cũ (hàm đó KHÔNG
+  //     hề cộng Điểm phỏng vấn, xem getBestScore() ở thamDinhHelpers.js).
+  //  2) Thêm cột "TỔ HỢP" (mã tổ hợp + tên 3 môn, VD "D01 (Toán, Ngữ Văn, Tiếng Anh)") ngay
+  //     sau cột "ĐIỂM TRÚNG TUYỂN" — dùng chung tenMonToHop() đã có ở modal chi tiết.
+  //  3) Bỏ 3 cột không cần thiết khi xuất báo cáo: "SV_KEY" (định danh nội bộ), "TT" (cột lạ
+  //     trùng nghĩa với STT, có sẵn thẳng trên Goc01), "RAW_DIEM_HK" (JSON nội bộ dùng khôi
+  //     phục điểm Lớp/Kỳ bên trang Xét tuyển, không phải dữ liệu để đọc/báo cáo) — so khớp
+  //     tên cột không phân biệt hoa/thường/khoảng trắng thừa (giữ tên cột GỐC khi xuất,
+  //     chỉ dùng bản chuẩn hoá để SO SÁNH loại trừ).
+  const CAC_COT_LOAI_BO_KHI_XUAT = new Set(["SV_KEY", "TT", "RAW_DIEM_HK"]);
+  const handleExportExcel = () => {
+    if (filteredData.length === 0) {
+      Swal.fire({ icon: 'warning', title: 'Không có dữ liệu', text: 'Không có hồ sơ nào đang hiển thị (đang bị bộ lọc loại hết) để xuất.' });
+      return;
+    }
+    const exportRows = filteredData.map((row, idx) => {
+      const rowSach = {};
+      Object.keys(row).forEach(k => {
+        const kChuan = String(k).trim().toUpperCase();
+        if (!CAC_COT_LOAI_BO_KHI_XUAT.has(kChuan)) rowSach[k] = row[k];
+      });
+
+      const nganhRow = getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]);
+      const scoreInfo = calculateScores(row, nganhRow);
+      const diemTrungTuyenFinal = scoreInfo.type === 'thpt'
+        ? (scoreInfo.hasScore ? parseFloat(scoreInfo.finalTotalScore) : 0)
+        : getRawScoreNumber(row);
+      const toHopText = (scoreInfo.type === 'thpt' && scoreInfo.hasScore && scoreInfo.bestCombo)
+        ? `${scoreInfo.bestCombo} (${tenMonToHop(scoreInfo.bestCombo)})`
+        : '';
+
+      return {
+        "STT": idx + 1,
+        ...rowSach,
+        "MÃ SINH VIÊN": generateMaSV(row),
+        "ĐIỂM TRÚNG TUYỂN": diemTrungTuyenFinal,
+        "TỔ HỢP": toHopText,
+        "TRẠNG THÁI THẨM ĐỊNH": getEffectiveState(row),
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ThamDinh");
+    const hienTai = new Date();
+    const tenFile = `ThamDinh_${String(hienTai.getDate()).padStart(2, '0')}-${String(hienTai.getMonth() + 1).padStart(2, '0')}-${hienTai.getFullYear()}.xlsx`;
+    XLSX.writeFile(wb, tenFile);
+  };
+
+  // ĐÃ THÊM: lắng nghe sự kiện "thamdinh:export-excel" do App.jsx bắn ra khi bấm mục "Xuất
+  // Excel" trong menu tài khoản (mục đó chỉ hiện khi đang ở trang này, xem isThamDinhPage
+  // bên App.jsx) — App.jsx không có sẵn filteredData nên không tự xuất được, phải nhờ đúng
+  // component đang giữ dữ liệu này xử lý. Phụ thuộc filteredData để luôn dùng đúng danh
+  // sách MỚI NHẤT tại thời điểm bấm xuất (bộ lọc đổi liên tục).
+  useEffect(() => {
+    window.addEventListener('thamdinh:export-excel', handleExportExcel);
+    return () => window.removeEventListener('thamdinh:export-excel', handleExportExcel);
+  }, [filteredData]);
 
   // ĐÃ SỬA: bỏ icon emoji đầu chữ trong cột THẨM ĐỊNH của bảng datalist theo yêu cầu
   // (chỉ còn chữ, cột không bị chật thêm bởi icon nữa).
@@ -825,7 +928,9 @@ const ThamDinhPage = () => {
             <button className="btn btn-sm btn-success" onClick={() => openBatchPreview('duyet')}>✅ Duyệt hàng loạt</button>
             <button className="btn btn-sm btn-warning" onClick={() => openBatchPreview('baothieu')}>⚠️ Báo thiếu hàng loạt</button>
             <button className="btn btn-sm btn-primary" onClick={() => openBatchPreview('luucsdl')}>💾 Lưu CSDL hàng loạt</button>
-            <button className="btn btn-sm btn-outline-secondary ms-auto" onClick={() => setSelectedKeys(new Set())}>Bỏ chọn hết</button>
+            {/* ĐÃ XOÁ (theo phản hồi): nút "Bỏ chọn hết" — thay bằng ô tick "chọn tất" ngay
+                trong hàng tiêu đề bảng (cạnh STT, xem <thead> bên dưới), bỏ tick ô đó là bỏ
+                chọn hết các dòng đang hiện trên trang hiện tại. */}
           </div>
         </div>
       )}
@@ -834,11 +939,33 @@ const ThamDinhPage = () => {
         {/* ĐÃ SỬA: chỉ đổi class thead từ "table-light" mặc định của Bootstrap sang
             "thamdinh-list-thead" riêng (đậm hơn 1 tý, xem CSS) để KHÔNG ảnh hưởng các
             bảng table-light khác trong modal chi tiết (bảng tổ hợp điểm, bảng quét AI...). */}
-        <div className="table-responsive">
+        {/* ĐÃ SỬA (theo phản hồi — đồng bộ scroll/tiêu đề cố định với bên Xét tuyển): thêm
+            class "thamdinh-list-scroll" (xem ThamDinh.css) — bảng tự có thanh cuộn DỌC
+            riêng (giới hạn chiều cao, không cuốn theo cả trang), tiêu đề đứng yên khi cuộn
+            dọc, chỉ trượt khi cuộn ngang. */}
+        <div className="table-responsive thamdinh-list-scroll">
           <table className="table table-hover align-middle mb-0" style={{ fontSize: '12px' }}>
             <thead className="thamdinh-list-thead">
               <tr>
-                <th style={{ width: 34 }}></th>
+                {/* ĐÃ SỬA (theo phản hồi): ô trống ở đây giờ là ô tick "chọn tất/bỏ chọn tất"
+                    — chỉ áp dụng cho các dòng đang hiển thị TRÊN TRANG HIỆN TẠI (pageRows),
+                    không đụng tới lựa chọn ở các trang khác (selectedKeys vẫn giữ nguyên khi
+                    chuyển trang, xem pageRows/toggleSelect) — tick ô này khi đang xem trang
+                    khác không "chọn tất mọi hồ sơ khớp bộ lọc" để tránh duyệt/báo thiếu/lưu
+                    hàng loạt nhầm những hồ sơ chưa từng xem qua. */}
+                <th style={{ width: 34 }} className="text-center">
+                  <input type="checkbox" className="form-check-input"
+                    checked={pageRows.length > 0 && pageRows.every(r => selectedKeys.has(getRowKey(r)))}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setSelectedKeys(prev => {
+                        const next = new Set(prev);
+                        pageRows.forEach(r => { const k = getRowKey(r); if (checked) next.add(k); else next.delete(k); });
+                        return next;
+                      });
+                    }}
+                    title={pageRows.length > 0 && pageRows.every(r => selectedKeys.has(getRowKey(r))) ? "Bỏ chọn tất cả (trang này)" : "Chọn tất cả (trang này)"} />
+                </th>
                 <th style={{ width: 40 }} className="text-center">STT</th>
                 <th style={{ width: 80 }} className="text-center">NGÀY CN</th>
                 <th style={{ width: 90 }}>MÃ SV</th>
@@ -869,7 +996,20 @@ const ThamDinhPage = () => {
                 const badge = stateBadge(state, saved);
 
                 return (
-                  <tr key={key || index} className={selectedKeys.has(key) ? 'table-primary' : ''}>
+                  // ĐÃ THÊM (theo phản hồi): sau khi đã tick ÍT NHẤT 1 dòng bằng cách bấm
+                  // đúng ô tick (lần tick đầu tiên vẫn bắt buộc phải bấm đúng ô tick — xem
+                  // điều kiện selectedKeys.size > 0 dưới đây), các lần sau chỉ cần bấm vào
+                  // BẤT KỲ ĐÂU trên dòng là tự tick/bỏ tick dòng đó, không cần bấm chính xác
+                  // vào ô tick nữa — trừ khi bấm đúng vào nút "THẨM ĐỊNH"/ô tick/link trong
+                  // dòng (dùng closest('button, input, a') để loại trừ, tránh vừa tick dòng
+                  // vừa vô tình mở modal chi tiết hoặc tick đúp do ô tick tự có onChange riêng).
+                  <tr key={key || index} className={selectedKeys.has(key) ? 'table-primary' : ''}
+                    style={{ cursor: selectedKeys.size > 0 ? 'pointer' : 'default' }}
+                    onClick={e => {
+                      if (selectedKeys.size === 0) return;
+                      if (e.target.closest('button, input, a')) return;
+                      toggleSelect(key, !selectedKeys.has(key));
+                    }}>
                     <td className="text-center">
                       <input type="checkbox" className="form-check-input" checked={selectedKeys.has(key)}
                         onChange={e => toggleSelect(key, e.target.checked)} />
@@ -916,10 +1056,13 @@ const ThamDinhPage = () => {
             {filteredData.length === 0 ? 'Không có hồ sơ nào.' : `Đang hiển thị ${pageStart + 1}–${Math.min(pageStart + pageSize, filteredData.length)} / ${filteredData.length} hồ sơ`}
           </span>
           <div className="d-flex align-items-center gap-2">
-            <select className="form-select form-select-sm" style={{ width: 90 }} value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}>
+            {/* ĐÃ SỬA (theo phản hồi): thêm mốc "100 / trang", đồng thời nới rộng ô thêm 25%
+                (90px -> 113px) vì chữ "trang" đang bị che mất ở các mốc số dài hơn. */}
+            <select className="form-select form-select-sm" style={{ width: 113 }} value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}>
               <option value={10}>10 / trang</option>
               <option value={20}>20 / trang</option>
               <option value={50}>50 / trang</option>
+              <option value={100}>100 / trang</option>
             </select>
             <button className="btn btn-sm btn-outline-secondary" disabled={safePage <= 1} onClick={() => setCurrentPage(p => p - 1)}>‹</button>
             <span className="small">{safePage}/{totalPages}</span>
@@ -995,7 +1138,18 @@ const ThamDinhPage = () => {
                         <tr><th>Khu vực / Đối tượng ưu tiên</th><td>{getVal(row, ["KHU VỰC ƯU TIÊN"])} / {getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"])}</td></tr>
                         {/* ĐÃ CHUYỂN từ khung "Panel điểm chi tiết" phía dưới lên đây, ngay dưới dòng
                             Khu vực/Đối tượng ưu tiên, theo yêu cầu. */}
-                        <tr><th>Điểm cộng / Điểm ưu tiên</th><td>{scores.diemCong ?? 0}đ / {(scores.uuTien ?? 0).toFixed ? scores.uuTien.toFixed(2) : scores.uuTien}đ</td></tr>
+                        {/* ĐÃ VÁ BUG THẬT (nguyên nhân trắng trang khi mở hồ sơ "chưa đủ điểm"):
+                            calculateScores() trả về KHÔNG có field "uuTien" khi hồ sơ THPT
+                            không tính được điểm nào (hasScore: false) — biểu thức cũ
+                            "(scores.uuTien ?? 0).toFixed ? scores.uuTien.toFixed(2) : ..."
+                            chỉ dùng "?? 0" để kiểm tra ĐIỀU KIỆN (0.toFixed luôn tồn tại nên
+                            luôn đúng), rồi lại gọi .toFixed(2) trên chính "scores.uuTien" GỐC
+                            (vẫn là undefined) ở nhánh true -> "Cannot read properties of
+                            undefined (reading 'toFixed')" -> React crash -> trắng trang, y hệt
+                            khi bấm vào hoặc điều hướng tới đúng nhóm hồ sơ "Chưa đủ dữ liệu
+                            điểm". Sửa: áp "?? 0" trực tiếp trước khi gọi .toFixed(2), không qua
+                            kiểm tra vòng vo nữa — luôn ra số, không bao giờ crash. */}
+                        <tr><th>Điểm cộng / Điểm ưu tiên</th><td>{scores.diemCong ?? 0}đ / {(scores.uuTien ?? 0).toFixed(2)}đ</td></tr>
                         <tr><th>Trạng thái thẩm định</th><td>{state}</td></tr>
                         {/* ĐÃ SỬA theo góp ý: chỉ tô đỏ nhạt ô BÊN PHẢI (ô chứa chữ "Thiếu...") thay
                             vì cả dòng — class "hoso-thieu-cell" đặt trực tiếp trên <td>, không còn
@@ -1068,8 +1222,36 @@ const ThamDinhPage = () => {
                           <div className="small" style={{ color: '#2e7d32' }}>Điểm trúng tuyển / Tổ hợp / Điểm chuẩn</div>
                           {scores.hasScore ? (
                             <>
-                              <div className="fw-bold" style={{ color: '#2e7d32' }}>{scores.finalTotalScore} <span className="small text-muted">({scores.bestCombo})</span></div>
-                              <div className="small text-muted">/ {scores.diemChuanLabel}</div>
+                              {/* ĐÃ THÊM: hiện rõ "(+PV: x)" khi điểm xét tuyển có cộng Điểm phỏng
+                                  vấn (xem calculateScores() — chỉ cộng khi PT là Điểm học bạ và
+                                  tổ hợp+điểm cộng từ 15 đến dưới 16) — để người thẩm định biết
+                                  điểm hiển thị đã bao gồm PV, không tưởng nhầm là chỉ có điểm
+                                  tổ hợp+ưu tiên+điểm cộng như trước. */}
+                              {/* ĐÃ SỬA (theo phản hồi): đưa "/ điểm chuẩn" lên CHUNG 1 hàng với
+                                  điểm+tổ hợp (trước đây nằm riêng 1 hàng bên dưới) — hàng bên dưới
+                                  giờ dùng để hiện TÊN 3 MÔN của tổ hợp trúng tuyển (VD "Toán, Vật
+                                  lí, Tiếng Anh") thay vì lặp lại điểm chuẩn, xem tenMonToHop() ở
+                                  đầu file. */}
+                              <div className="fw-bold" style={{ color: '#2e7d32' }}>{scores.finalTotalScore} <span className="small text-muted">({scores.bestCombo}{scores.diemPhongVan > 0 ? `, +PV: ${scores.diemPhongVan}` : ''}) / {scores.diemChuanLabel}</span></div>
+                              <div className="small text-muted">{tenMonToHop(scores.bestCombo)}</div>
+                              {/* ĐÃ THÊM (theo phản hồi — "check được bằng cách nào không?" khi PV
+                                  không lên điểm): hồ sơ có nhập PV (cột "ĐIỂM PHỎNG VẤN" > 0) NHƯNG
+                                  chưa đủ điều kiện cộng (diemPhongVan === 0) thì tự hiện dòng giải
+                                  thích NGAY TẠI ĐÂY — kèm luôn giá trị đang đọc được cho PT/Tổ hợp
+                                  +Điểm cộng+Điểm ưu tiên, để đối chiếu trực tiếp mà không cần hỏi
+                                  lại/dò code: chỉ cộng PV khi PT = "Điểm học bạ" (không áp dụng
+                                  Điểm thi THPT/TBTS 2025) VÀ (Tổ hợp cao nhất + Điểm cộng + Điểm
+                                  ưu tiên) BẰNG 15 ĐẾN DƯỚI 16 — ĐÃ SỬA theo phản hồi 2 lần: (1)
+                                  trước đây NGHIÊM NGẶT (15, 16), đúng 15.0 bị loại oan, giờ 15.0
+                                  vẫn tính, chỉ đúng 16.0 là bị loại; (2) tổng để so ngưỡng trước
+                                  đây THIẾU Điểm ưu tiên (scores.uuTien), giờ đã cộng thêm vào. */}
+                              {scores.diemPhongVanRaw > 0 && scores.diemPhongVan === 0 && (
+                                <div className="small text-danger fst-italic mt-1">
+                                  ⚠️ Có nhập PV: {scores.diemPhongVanRaw} nhưng CHƯA được cộng.
+                                  PT đang đọc được: <b>{scores.phuongThuc || 'chưa rõ (thiếu cột "PHƯƠNG THỨC XÉT TUYỂN")'}</b> (chỉ cộng PV khi PT = Điểm học bạ).
+                                  Tổ hợp + Điểm cộng + Điểm ưu tiên = <b>{(scores.maxScore + scores.diemCong + scores.uuTien).toFixed(2)}</b> (chỉ cộng PV khi từ 15 đến dưới 16 — đúng 16.0 KHÔNG tính).
+                                </div>
+                              )}
                             </>
                           ) : <div className="small fst-italic text-muted">Chưa đủ dữ liệu điểm</div>}
                         </div>
@@ -1234,12 +1416,16 @@ const ThamDinhPage = () => {
                           <tr><td style={{ padding: '3px 4px' }}>Hệ / Hình thức đào tạo</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["HỆ ĐÀO TẠO"])} / {getVal(row, ["HÌNH THỨC ĐÀO TẠO"])}</td></tr>
                           <tr><td style={{ padding: '3px 4px' }}>Đối tượng đầu vào</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"])}</td></tr>
                           <tr><td style={{ padding: '3px 4px' }}>Khu vực / Đối tượng ưu tiên</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["KHU VỰC ƯU TIÊN"])} / {getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"])}</td></tr>
-                          <tr><td style={{ padding: '3px 4px' }}>Điểm cộng / Điểm ưu tiên</td><td style={{ padding: '3px 4px' }}>{scores.diemCong ?? 0}đ / {(scores.uuTien ?? 0).toFixed ? scores.uuTien.toFixed(2) : scores.uuTien}đ</td></tr>
+                          {/* Cùng bug/cách sửa với khung "thamdinh-info-box" phía trên — xem chú
+                              thích đầy đủ ở đó (ĐÃ VÁ BUG THẬT: crash trắng trang do gọi
+                              .toFixed(2) trên "scores.uuTien" gốc, undefined khi hasScore:false). */}
+                          <tr><td style={{ padding: '3px 4px' }}>Điểm cộng / Điểm ưu tiên</td><td style={{ padding: '3px 4px' }}>{scores.diemCong ?? 0}đ / {(scores.uuTien ?? 0).toFixed(2)}đ</td></tr>
                           <tr>
                             <td style={{ padding: '3px 4px' }}>{scores.type === 'thpt' ? 'Điểm trúng tuyển / Tổ hợp / Điểm chuẩn' : scores.dtbLabel}</td>
                             <td style={{ padding: '3px 4px', fontWeight: 'bold' }}>
+                              {/* Cùng nội dung "+PV: x" với khung điểm phía trên — xem chú thích ở đó. */}
                               {scores.type === 'thpt'
-                                ? (scores.hasScore ? `${scores.finalTotalScore} (${scores.bestCombo}) / ${scores.diemChuanLabel}` : 'Chưa đủ dữ liệu điểm')
+                                ? (scores.hasScore ? `${scores.finalTotalScore} (${scores.bestCombo}${scores.diemPhongVan > 0 ? `, +PV: ${scores.diemPhongVan}` : ''}) / ${scores.diemChuanLabel}` : 'Chưa đủ dữ liệu điểm')
                                 : `${scores.dtbVal} / ${scores.diemChuanText}`}
                             </td>
                           </tr>

@@ -267,3 +267,23 @@
 .thamdinh-page .table tbody td .btn {
   white-space: nowrap;
 }
+
+/* ========================================================
+   ĐÃ THÊM (theo phản hồi — đồng bộ với bảng "Danh sách chờ đồng bộ" bên Xét tuyển,
+   xem .xettuyen-ds-scroll, XetTuyen.css): bảng datalist Thẩm định cũng giới hạn
+   chiều cao + tự cuộn DỌC riêng (không cuốn theo cả trang), tiêu đề đứng yên khi
+   cuộn dọc — dùng position:sticky đặt trên từng <th> (không đặt thẳng lên <thead>
+   vì Safari không hỗ trợ ổn định), cuộn ngang vẫn hoạt động bình thường như cũ.
+   Màu nền tiêu đề khi cuộn (để chữ/dòng cuộn bên dưới không lộ qua) đã có sẵn từ
+   .thamdinh-list-thead th (#dde2e6) ở trên, không cần khai báo lại.
+   ======================================================== */
+.thamdinh-list-scroll {
+  max-height: 65vh;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+.thamdinh-list-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
