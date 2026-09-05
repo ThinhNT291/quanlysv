@@ -7,7 +7,7 @@ import './XetTuyen.css';
 import { fetchConfig, fetchXetTuyenHeaders } from '../../api/studentApi';
 import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
 import { chuanHoaNgaySinhImport } from '../../utils/ngaySinh';
-import { taiFileMauExcel } from '../../Utils/ExcelTemplate';
+import { taiFileMauExcel } from '../../utils/excelTemplate';
 
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
@@ -48,6 +48,18 @@ const HK_FIELDS = SUBJECTS_UI.reduce((acc, subj) => {
     acc[`diem_${subj.id}_hk1_11`] = '';
     acc[`diem_${subj.id}_hk1_12`] = '';
     acc[`diem_${subj.id}_hk2_12`] = '';
+    return acc;
+}, {});
+
+// ĐÃ THÊM: y hệt HK_FIELDS ở trên nhưng dành riêng cho phương thức "Điểm học bạ" (thường,
+// KHÔNG phải TBTS 2025) — trước đây phương thức này chỉ có 1 ô điểm/môn (dùng chung field
+// `diem_${id}` với "Điểm thi THPT"), dễ gây nhầm vì học bạ thực ra phải lấy điểm TB của 3
+// năm Lớp 10/11/12, không phải nhập tay 1 số duy nhất. Giờ tách riêng 3 field/môn cho đúng
+// bản chất, TB được tính tự động ở getSubjectAverage() bên dưới.
+const HOC_BA_FIELDS = SUBJECTS_UI.reduce((acc, subj) => {
+    acc[`diem_${subj.id}_lop10`] = '';
+    acc[`diem_${subj.id}_lop11`] = '';
+    acc[`diem_${subj.id}_lop12`] = '';
     return acc;
 }, {});
 
@@ -108,23 +120,106 @@ const initialFormState = {
   has_giay_uutien: false, giay_uutien: '', 
   loai_diem: '', time_goc: '', 
   diem_toan: '', diem_vatli: '', diem_hoahoc: '', diem_sinhhoc: '', diem_nguvan: '', diem_lichsu: '', 
-  diem_dialy: '', diem_tienganh: '', diem_tiengtrung: '', diem_tinhoc: '', diem_gdktpl: '', 
-  ...HK_FIELDS, 
-  diem_tb_he4: '', diem_tb_he10: '', diem_cong: '', diem_chuan: '', 
+  diem_dialy: '', diem_tienganh: '', diem_tiengtrung: '', diem_tinhoc: '', diem_gdktpl: '',
+  ...HK_FIELDS, ...HOC_BA_FIELDS,
+  diem_tb_he4: '', diem_tb_he10: '', diem_cong: '', diem_chuan: '', diem_phong_van: '',
   ...ALL_HO_SO_DOCS.reduce((acc, doc) => ({ ...acc, [doc.id]: false }), {})
+};
+
+// ĐÃ THÊM: làm tròn 1 giá trị điểm về đúng 2 số thập phân — áp dụng ở MỌI chỗ giá trị 1 ô
+// điểm được đưa vào tính toán (trung bình, tổ hợp, điểm xét tuyển...). KHÔNG đổi giá trị
+// đang hiển thị trong ô nhập (ô vẫn hiện nguyên như đã gõ, VD "4.567") — chỉ con số dùng
+// để TÍNH mới bị làm tròn. Theo đúng ví dụ đã cho: 4.567 -> 4.57 (số thập phân thứ 3 là
+// 7, từ 5 trở lên thì làm tròn lên số thứ 2), 4.554 -> 4.55 (số thập phân thứ 3 là 4, dưới
+// 5 thì giữ nguyên) — quy tắc làm tròn thông thường (Math.round), không phải luôn ép làm
+// tròn lên bất kể chữ số thứ 3 là gì.
+const lamTronDiem = (raw) => {
+    const num = parseFloat(raw);
+    if (isNaN(num)) return 0;
+    return Math.round(num * 100) / 100;
+};
+
+// ĐÃ THÊM: bản "giữ rỗng" của lamTronDiem() — dùng khi GHI giá trị 1 ô điểm nhập tay
+// xuống danh sách/hồ sơ (VD ĐIỂM CỘNG, ĐIỂM PHỎNG VẤN, ĐIỂM TB HỆ 4/10 ở handleAddRow),
+// khác lamTronDiem() ở chỗ: ô đang để TRỐNG hoặc gõ chữ không phải số thì GIỮ NGUYÊN
+// (không ép thành 0) — tránh biến 1 ô cố tình để trống (VD hệ 4 bỏ trống vì đã dùng hệ
+// 10) thành số 0 sai nghĩa khi lưu.
+const lamTronDiemGiuRong = (raw) => {
+    if (raw === '' || raw === null || raw === undefined) return raw;
+    const num = parseFloat(raw);
+    if (isNaN(num)) return raw;
+    return Math.round(num * 100) / 100;
+};
+
+// ĐÃ THÊM: tự động chèn dấu chấm thập phân khi gõ liền số nguyên nhiều chữ số, đỡ tốn công
+// bấm dấu chấm — áp dụng cho MỌI ô nhập điểm (tên field bắt đầu bằng "diem_"), xem chỗ gọi
+// trong handleChange. Quy tắc (đã chốt với người dùng):
+// - Gõ 1 chữ số (VD "7") -> giữ nguyên, hiểu ngầm là 7.0.
+// - Gõ ĐÚNG "10" -> NGOẠI LỆ, giữ nguyên 10.0 (điểm tối đa thang 10 — số nguyên 2 chữ số
+//   hợp lệ DUY NHẤT trong toàn hệ thống, không được tách đôi thành "1.0").
+// - Gõ 2 chữ số trở lên KHÁC "10" (VD "45", "4567", "99") -> tự chèn dấu chấm ngay SAU
+//   chữ số đầu tiên: "45"->"4.5", "4567"->"4.567", "99"->"9.9".
+// - Chuỗi đã có dấu chấm/phẩy (người dùng tự gõ) -> giữ nguyên, không đụng vào.
+const tuDongChenDauThapPhan = (val) => {
+    if (val === '10') return val;
+    if (/^\d{2,}$/.test(val)) {
+        return val[0] + '.' + val.slice(1);
+    }
+    return val;
 };
 
 const getSubjectAverage = (subjId, data) => {
     if (data.loai_diem === 'HOC_BA_2025') {
-        const v1 = parseFloat(data[`diem_${subjId}_hk1_11`]);
-        const v2 = parseFloat(data[`diem_${subjId}_hk1_12`]);
-        const v3 = parseFloat(data[`diem_${subjId}_hk2_12`]);
-        if (!isNaN(v1) && !isNaN(v2) && !isNaN(v3)) {
+        const raw1 = data[`diem_${subjId}_hk1_11`], raw2 = data[`diem_${subjId}_hk1_12`], raw3 = data[`diem_${subjId}_hk2_12`];
+        // ĐÃ SỬA: giữ ĐÚNG điều kiện hợp lệ gốc (cả 3 ô đều phải parse ra số thật —
+        // isNaN(parseFloat(...)) === false) rồi MỚI làm tròn từng giá trị qua lamTronDiem()
+        // để cộng trung bình — không đổi thành so sánh chuỗi rỗng (dễ lọt chuỗi rác kiểu
+        // "abc" vì lamTronDiem() luôn trả về 0 cho giá trị không hợp lệ, không còn NaN để
+        // check được nữa nếu gọi lamTronDiem() trước).
+        if (!isNaN(parseFloat(raw1)) && !isNaN(parseFloat(raw2)) && !isNaN(parseFloat(raw3))) {
+            const v1 = lamTronDiem(raw1), v2 = lamTronDiem(raw2), v3 = lamTronDiem(raw3);
             return Math.round(((v1 + v2 + v3) / 3) * 100) / 100;
         }
-        return 0; 
+        return 0;
     }
-    return parseFloat(data[`diem_${subjId}`]) || 0;
+    // ĐÃ THÊM: "Điểm học bạ" (thường) giờ cũng tính TB từ 3 năm Lớp 10/11/12 (giống hệt
+    // cách làm với TBTS 2025 ở nhánh trên, chỉ khác tên field) — TB này chính là điểm dùng
+    // để xét tổ hợp/tính điểm xét tuyển (cộng ưu tiên + điểm cộng) ở effect bên dưới, KHÔNG
+    // cần sửa gì thêm ở chỗ tính điểm vì nó gọi qua đúng hàm này.
+    if (data.loai_diem === 'HOC_BA') {
+        const raw1 = data[`diem_${subjId}_lop10`], raw2 = data[`diem_${subjId}_lop11`], raw3 = data[`diem_${subjId}_lop12`];
+        if (!isNaN(parseFloat(raw1)) && !isNaN(parseFloat(raw2)) && !isNaN(parseFloat(raw3))) {
+            const v1 = lamTronDiem(raw1), v2 = lamTronDiem(raw2), v3 = lamTronDiem(raw3);
+            return Math.round(((v1 + v2 + v3) / 3) * 100) / 100;
+        }
+        return 0;
+    }
+    return lamTronDiem(data[`diem_${subjId}`]);
+};
+
+// ĐÃ THÊM: tách logic "tìm tổ hợp môn cho điểm cao nhất" ra thành 1 hàm riêng — trước đây
+// nằm thẳng trong effect tính admissionResult (chỗ tính finalScore). Giờ CHỖ RENDER FORM
+// (quyết định có hiện ô "Điểm phỏng vấn" hay không, theo yêu cầu: hiện khi điểm tổ hợp
+// nằm trong khoảng 15-16) và effect tính điểm xét tuyển dùng CHUNG đúng 1 nguồn duy nhất,
+// tránh 2 nơi tính lệch nhau nếu sau này sửa công thức.
+const tinhToHopCaoNhat = (nganh, data) => {
+    let maxScore = 0, bestCombo = "";
+    (DICT_NGANH[nganh] || []).forEach(maToHop => {
+        const subjects = DICT_TO_HOP[maToHop];
+        if (subjects) {
+            const s1_id = subjects[0].replace('diem_', '');
+            const s2_id = subjects[1].replace('diem_', '');
+            const s3_id = subjects[2].replace('diem_', '');
+            const v1 = getSubjectAverage(s1_id, data);
+            const v2 = getSubjectAverage(s2_id, data);
+            const v3 = getSubjectAverage(s3_id, data);
+            const total = v1 + v2 + v3;
+            if (total > maxScore && v1 > 0 && v2 > 0 && v3 > 0) {
+                maxScore = total; bestCombo = maToHop;
+            }
+        }
+    });
+    return { maxScore, bestCombo };
 };
 
 const compareIsoDates = (a, b) => {
@@ -259,11 +354,20 @@ const XetTuyenPage = () => {
 
     if (name.startsWith('diem_') && type === 'text') {
         finalValue = finalValue.replace(',', '.');
+        // ĐÃ THÊM: tự động chèn dấu chấm thập phân khi gõ liền số nguyên nhiều chữ số (xem
+        // chú thích đầy đủ tại khai báo tuDongChenDauThapPhan(), phía trên component) — làm
+        // TRƯỚC bước kiểm tra khoảng giá trị bên dưới, để giá trị đã chèn dấu chấm ("4.5"
+        // thay vì "45") mới là giá trị được kiểm tra min/max.
+        finalValue = tuDongChenDauThapPhan(finalValue);
         if (finalValue !== '') {
             const num = Number(finalValue);
-            if (isNaN(num) || num < 0) return; 
-            if (name === 'diem_tb_he4' && num > 4) return; 
-            if (name !== 'diem_tb_he4' && num > 10) return;
+            if (isNaN(num) || num < 0) return;
+            if (name === 'diem_tb_he4' && num > 4) return;
+            // ĐÃ THÊM: điểm phỏng vấn tối đa 2 điểm theo yêu cầu — chặn riêng TRƯỚC điều
+            // kiện chung "tối đa 10" bên dưới (điều kiện chung phải loại trừ field này ra,
+            // nếu không 1 giá trị như "5" vẫn lọt qua điều kiện > 10 rồi mới bị chặn sai chỗ).
+            if (name === 'diem_phong_van' && num > 2) return;
+            if (name !== 'diem_tb_he4' && name !== 'diem_phong_van' && num > 10) return;
         }
     }
     
@@ -283,6 +387,20 @@ const XetTuyenPage = () => {
               newState[`diem_${subj.id}_hk1_11`] = '';
               newState[`diem_${subj.id}_hk1_12`] = '';
               newState[`diem_${subj.id}_hk2_12`] = '';
+          });
+          return newState;
+      });
+  };
+
+  // ĐÃ THÊM: y hệt handleClearHK2025 ở trên, dùng cho khối "Điểm học bạ" (thường) mới —
+  // xóa hết điểm Lớp 10/11/12 đã nhập của cả 11 môn.
+  const handleClearHocBa = () => {
+      setFormData(prev => {
+          const newState = { ...prev };
+          SUBJECTS_UI.forEach(subj => {
+              newState[`diem_${subj.id}_lop10`] = '';
+              newState[`diem_${subj.id}_lop11`] = '';
+              newState[`diem_${subj.id}_lop12`] = '';
           });
           return newState;
       });
@@ -315,41 +433,46 @@ const XetTuyenPage = () => {
     else if (missingChung.length > 0) { hsStatus = "WARN"; hsColor = "#856404"; hsMsg = `⚠️ Yêu cầu bổ sung: ${missingChung.join(', ')}.`; }
 
     let diemStatus = "FAIL", diemMsg = "";
-    let diemCong = parseFloat(formData.diem_cong) || 0;
+    // ĐÃ SỬA: dùng lamTronDiem() thay vì parseFloat() trần — làm tròn 2 số thập phân NGAY
+    // TỪ ĐÂY (đúng yêu cầu "khi đưa vào tính toán sẽ làm tròn"), phòng trường hợp ô "ĐIỂM
+    // CỘNG" có nhiều hơn 2 số thập phân do tính năng tự chèn dấu chấm (VD gõ liền "1234"
+    // -> ô hiện "1.234", lúc tính sẽ dùng 1.23).
+    let diemCong = lamTronDiem(formData.diem_cong);
 
     if (doituongdauvao === "Tốt nghiệp THPT") {
         if (!formData.loai_diem) {
             diemMsg = `Vui lòng tick chọn Phương thức xét điểm.`;
         } else {
-            let maxScore = 0, bestCombo = "";
-            (DICT_NGANH[nganh] || []).forEach(maToHop => {
-                let subjects = DICT_TO_HOP[maToHop];
-                if(subjects) {
-                    let s1_id = subjects[0].replace('diem_', '');
-                    let s2_id = subjects[1].replace('diem_', '');
-                    let s3_id = subjects[2].replace('diem_', '');
-
-                    let v1 = getSubjectAverage(s1_id, formData);
-                    let v2 = getSubjectAverage(s2_id, formData);
-                    let v3 = getSubjectAverage(s3_id, formData);
-                    
-                    let total = v1 + v2 + v3;
-                    if (total > maxScore && v1 > 0 && v2 > 0 && v3 > 0) { 
-                        maxScore = total; bestCombo = maToHop; 
-                    }
-                }
-            });
+            // ĐÃ SỬA: gọi qua hàm dùng chung tinhToHopCaoNhat() (xem chú thích tại khai báo
+            // hàm, phía trên component) thay vì lặp lại logic tìm tổ hợp ngay tại đây — để
+            // chỗ quyết định hiện ô "Điểm phỏng vấn" (trong renderHocBaTableHalf) tính ra
+            // đúng CÙNG 1 con số maxScore này, không lệch nhau.
+            const { maxScore } = tinhToHopCaoNhat(nganh, formData);
 
             if (maxScore === 0) diemMsg = `Chưa nhập đủ điểm để xét tổ hợp.`;
             else {
                 let uTienBanDau = (DICT_KHU_VUC[khuvucuutien] || 0) + (DICT_DOI_TUONG[doituonguutien] || 0);
                 let uTienChinhThuc = uTienBanDau;
-                
+
                 if (formData.loai_diem === 'THI_THPT' && maxScore >= 22.5) {
                     uTienChinhThuc = ((30 - maxScore) / 7.5) * uTienBanDau;
                 }
 
-                let finalScore = Math.round((maxScore + uTienChinhThuc + diemCong) * 100) / 100;
+                // ĐÃ SỬA (theo phản hồi): điểm phỏng vấn — CHỈ áp dụng cho phương thức
+                // "Điểm học bạ" (HOC_BA), và CHỈ cộng vào điểm xét tuyển khi (điểm tổ hợp +
+                // điểm cộng) nằm trong khoảng (15, 16) — DÙNG ĐÚNG 1 NGƯỠNG DUY NHẤT này cho
+                // cả việc HIỆN Ô NHẬP (xem renderHocBaTableHalf, đã sửa lại dùng cùng ngưỡng
+                // (tổ hợp + điểm cộng) thay vì chỉ xét riêng tổ hợp như bản trước) lẫn việc
+                // ÁP DỤNG vào công thức — không còn lệch nhau giữa 2 chỗ nữa.
+                let diemPhongVan = 0;
+                if (formData.loai_diem === 'HOC_BA') {
+                    const tongToHopVaCong = maxScore + diemCong;
+                    if (tongToHopVaCong > 15 && tongToHopVaCong < 16) {
+                        diemPhongVan = Math.min(lamTronDiem(formData.diem_phong_van), 2);
+                    }
+                }
+
+                let finalScore = Math.round((maxScore + uTienChinhThuc + diemCong + diemPhongVan) * 100) / 100;
                 // ĐÃ SỬA: điểm chuẩn giờ tra theo Phương thức xét tuyển thay vì hardcode
                 // 15.0 chung cho cả 3 phương thức — GIỮ ĐỒNG BỘ với DIEM_CHUAN_THPT bên
                 // thamDinhHelpers.js (đổi mức điểm chuẩn thì phải đổi ở CẢ 2 nơi).
@@ -357,14 +480,17 @@ const XetTuyenPage = () => {
 
                 if (finalScore >= diemChuanThpt) {
                     diemStatus = "PASS";
-                    diemMsg = `Tổng: <strong>${finalScore}đ</strong> (Tổ hợp: ${maxScore.toFixed(2)} + ƯT: ${uTienChinhThuc.toFixed(2)}${diemCong > 0 ? ` + Cộng: ${diemCong}` : ''}). Chuẩn: ${diemChuanThpt.toFixed(1)}đ.`;
+                    diemMsg = `Tổng: <strong>${finalScore}đ</strong> (Tổ hợp: ${maxScore.toFixed(2)} + ƯT: ${uTienChinhThuc.toFixed(2)}${diemCong > 0 ? ` + Cộng: ${diemCong}` : ''}${diemPhongVan > 0 ? ` + PV: ${diemPhongVan}` : ''}). Chuẩn: ${diemChuanThpt.toFixed(1)}đ.`;
                 } else {
                     diemMsg = `Tổng điểm: ${finalScore}đ. Thiếu ${(diemChuanThpt - finalScore).toFixed(2)}đ (chuẩn ${diemChuanThpt.toFixed(1)}đ).`;
                 }
             }
         }
     } else {
-        let he4 = parseFloat(formData.diem_tb_he4); let he10 = parseFloat(formData.diem_tb_he10);
+        // ĐÃ SỬA: dùng lamTronDiem() thay vì parseFloat() trần — lưu ý lamTronDiem() trả về
+        // 0 cho ô trống thay vì NaN, nhưng không ảnh hưởng tới điều kiện so sánh bên dưới
+        // (0 >= 2.0 hay 0 >= 5.0 đều false, giống hệt hành vi cũ khi NaN >= x cũng luôn false).
+        let he4 = lamTronDiem(formData.diem_tb_he4); let he10 = lamTronDiem(formData.diem_tb_he10);
         if (he4 >= 2.0 || he10 >= 5.0) { 
             diemStatus = "PASS"; 
             diemMsg = `Đạt chuẩn điểm hệ CĐ/ĐH/TC. ${diemCong > 0 ? `(Điểm cộng: ${diemCong})` : ''}`; 
@@ -415,6 +541,17 @@ const XetTuyenPage = () => {
             rawObj[`${subj.id}_hk2_12`] = formData[`diem_${subj.id}_hk2_12`] || "";
         });
         packedDiemHK = JSON.stringify(rawObj);
+    } else if (formData.loai_diem === 'HOC_BA') {
+        // ĐÃ THÊM: y hệt nhánh trên, nhưng đóng gói điểm Lớp 10/11/12 của phương thức
+        // "Điểm học bạ" (thường) — vẫn dùng chung cột RAW_DIEM_HK trên Goc01 (đã có sẵn,
+        // chỉ khác nội dung JSON bên trong) để không phải xin thêm cột mới.
+        const rawObj = {};
+        SUBJECTS_UI.forEach(subj => {
+            rawObj[`${subj.id}_lop10`] = formData[`diem_${subj.id}_lop10`] || "";
+            rawObj[`${subj.id}_lop11`] = formData[`diem_${subj.id}_lop11`] || "";
+            rawObj[`${subj.id}_lop12`] = formData[`diem_${subj.id}_lop12`] || "";
+        });
+        packedDiemHK = JSON.stringify(rawObj);
     }
 
     const newRow = {
@@ -446,8 +583,18 @@ const XetTuyenPage = () => {
         // giờ đều bị ghi TRỐNG 2 cột điểm này vào Goc01. Hồ sơ cũ đã đẩy lên (nếu có,
         // dùng Học bạ) cần rà soát/bổ sung lại tay — hệ thống không tự khôi phục được dữ
         // liệu đã mất do bug này trước đây.
-        "ĐIỂM TB TOÀN KHÓA HỆ 4": formData.diem_tb_he4, "ĐIỂM TB TOÀN KHÓA HỆ 10": formData.diem_tb_he10, "ĐIỂM CỘNG": formData.diem_cong,
-        "ĐIỂM CHUẨN": formData.diem_chuan, 
+        // ĐÃ SỬA: làm tròn 2 số thập phân qua lamTronDiemGiuRong() trước khi lưu (đúng yêu
+        // cầu "khi đưa vào tính toán/lưu sẽ làm tròn") — ô nào đang để trống vẫn giữ trống,
+        // không ép thành 0.
+        "ĐIỂM TB TOÀN KHÓA HỆ 4": lamTronDiemGiuRong(formData.diem_tb_he4), "ĐIỂM TB TOÀN KHÓA HỆ 10": lamTronDiemGiuRong(formData.diem_tb_he10), "ĐIỂM CỘNG": lamTronDiemGiuRong(formData.diem_cong),
+        // ĐÃ THÊM: lưu điểm phỏng vấn (chỉ có giá trị khi phương thức Học bạ + đủ điều
+        // kiện hiện ô, xem renderHocBaTableHalf) — LƯU Ý: cột "ĐIỂM PHỎNG VẤN" hiện CHƯA
+        // có sẵn trên Goc01 (Trung Gian), cần bổ sung thêm 1 cột đúng tên này trên Google
+        // Sheet thì giá trị mới thực sự được ghi xuống khi "Đẩy dữ liệu lên hệ thống" —
+        // xem action 'importStudents' bên Quanlysv.gs, chỗ ghi cleanHeaders.forEach chỉ
+        // ghi được cột đã CÓ SẴN trên sheet, cột lạ bị bỏ qua (không lỗi, chỉ không lưu).
+        "ĐIỂM PHỎNG VẤN": lamTronDiemGiuRong(formData.diem_phong_van),
+        "ĐIỂM CHUẨN": formData.diem_chuan,
         
         "PHƯƠNG THỨC XÉT TUYỂN": formData.loai_diem === 'THI_THPT' ? 'Điểm thi THPT' : (formData.loai_diem === 'HOC_BA' ? 'Điểm học bạ' : (formData.loai_diem === 'HOC_BA_2025' ? 'Điểm học bạ (TBTS 2025)' : '')),
         "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "Mới bổ sung" : "Chưa thẩm định",
@@ -523,16 +670,23 @@ const XetTuyenPage = () => {
         diem_tinhoc: row["TIN HỌC"] || "",
         diem_gdktpl: row["GDKTPL"] || "",
         
+        // ĐÃ SỬA: khôi phục CẢ 2 bộ field (HK 2025 và Lớp 10/11/12) từ cùng 1 JSON
+        // RAW_DIEM_HK — không cần biết trước hồ sơ đang ở phương thức nào, bộ field không
+        // dùng tới sẽ tự rỗng (rawObj không có key tương ứng), vô hại.
         ...SUBJECTS_UI.reduce((acc, subj) => {
             acc[`diem_${subj.id}_hk1_11`] = rawObj[`${subj.id}_hk1_11`] || "";
             acc[`diem_${subj.id}_hk1_12`] = rawObj[`${subj.id}_hk1_12`] || "";
             acc[`diem_${subj.id}_hk2_12`] = rawObj[`${subj.id}_hk2_12`] || "";
+            acc[`diem_${subj.id}_lop10`] = rawObj[`${subj.id}_lop10`] || "";
+            acc[`diem_${subj.id}_lop11`] = rawObj[`${subj.id}_lop11`] || "";
+            acc[`diem_${subj.id}_lop12`] = rawObj[`${subj.id}_lop12`] || "";
             return acc;
         }, {}),
 
         diem_tb_he4: row["ĐIỂM TB HỆ 4"] || row["ĐIỂM TB TOÀN KHÓA HỆ 4"] || "",
         diem_tb_he10: row["ĐIỂM TB HỆ 10"] || row["ĐIỂM TB TOÀN KHÓA HỆ 10"] || "",
         diem_cong: row["ĐIỂM CỘNG"] || "",
+        diem_phong_van: row["ĐIỂM PHỎNG VẤN"] || "",
         diem_chuan: row["ĐIỂM CHUẨN"] || "",
         has_giay_uutien: !!row["GIẤY TỜ ƯU TIÊN"],
         giay_uutien: row["GIẤY TỜ ƯU TIÊN"] || "",
@@ -752,10 +906,15 @@ const XetTuyenPage = () => {
           diem_tinhoc: normData["TIN HỌC"] || "",
           diem_gdktpl: normData["GDKTPL"] || normData["GIÁO DỤC KINH TẾ"] || "",
           
+          // ĐÃ SỬA: khôi phục CẢ 2 bộ field (HK 2025 và Lớp 10/11/12) từ cùng 1 JSON
+          // RAW_DIEM_HK — vô hại nếu bộ nào không dùng tới (rawObj không có key đó).
           ...SUBJECTS_UI.reduce((acc, subj) => {
               acc[`diem_${subj.id}_hk1_11`] = rawObj[`${subj.id}_hk1_11`] || "";
               acc[`diem_${subj.id}_hk1_12`] = rawObj[`${subj.id}_hk1_12`] || "";
               acc[`diem_${subj.id}_hk2_12`] = rawObj[`${subj.id}_hk2_12`] || "";
+              acc[`diem_${subj.id}_lop10`] = rawObj[`${subj.id}_lop10`] || "";
+              acc[`diem_${subj.id}_lop11`] = rawObj[`${subj.id}_lop11`] || "";
+              acc[`diem_${subj.id}_lop12`] = rawObj[`${subj.id}_lop12`] || "";
               return acc;
           }, {}),
 
@@ -765,6 +924,7 @@ const XetTuyenPage = () => {
           diem_tb_he4: normData["ĐIỂM TB TOÀN KHÓA HỆ 4"] || normData["ĐIỂM TB HỆ 4"] || normData["HỆ 4"] || "",
           diem_tb_he10: normData["ĐIỂM TB TOÀN KHÓA HỆ 10"] || normData["ĐIỂM TB HỆ 10"] || normData["HỆ 10"] || "",
           diem_cong: normData["ĐIỂM CỘNG"] || "",
+          diem_phong_van: normData["ĐIỂM PHỎNG VẤN"] || "",
           diem_chuan: normData["ĐIỂM CHUẨN"] || "",
 
           ...ALL_HO_SO_DOCS.reduce((acc, doc) => ({
@@ -1038,6 +1198,9 @@ const XetTuyenPage = () => {
                           // đúng mô tả dòng 2 "Điền 1 trong 2 hệ", vẫn nhận cả tên đầy đủ nếu ai đó
                           // tự đổi lại) — không đổi.
                           "ĐIỂM TB TOÀN KHÓA HỆ 4": he4Final, "ĐIỂM TB TOÀN KHÓA HỆ 10": he10Final, "ĐIỂM CỘNG": getField(rowArr, ["ĐIỂM CỘNG"]),
+                          // ĐÃ THÊM: đọc luôn điểm phỏng vấn nếu file Excel có điền (đồng bộ với ô
+                          // nhập tay mới thêm) — không bắt buộc, để trống nếu file không có cột này.
+                          "ĐIỂM PHỎNG VẤN": getField(rowArr, ["ĐIỂM PHỎNG VẤN", "ĐIỂM PV"]),
                           
                           "TRẠNG THÁI THẨM ĐỊNH": "Chưa thẩm định",
                           "TIME": currentTimestamp,
@@ -1174,6 +1337,81 @@ const XetTuyenPage = () => {
       </table>
     </div>
   );
+
+  // ĐÃ THÊM: render nửa bảng điểm "Học bạ" (thường) — y hệt bố cục renderHK2025TableHalf ở
+  // trên (2 khối trái/phải, cùng style bảng) theo đúng yêu cầu, chỉ khác 3 cột lấy điểm
+  // theo Lớp 10/11/12 (thay vì 3 học kỳ) rồi ra TB = trung bình 3 năm đó.
+  //
+  // Tham số thứ 2 (coNutDieuKhien) chỉ bật ở khối bên phải — khối này có 5 môn thay vì 6
+  // như khối trái nên dư đúng 1 hàng, tận dụng luôn để nhét ô "ĐIỂM CỘNG" + nút "Xóa hết"
+  // (và giờ thêm ô "ĐIỂM PV" khi đủ điều kiện) vào CÙNG khối với các môn thay vì để 1
+  // thanh riêng bên dưới như TBTS 2025 — vừa gọn vừa đúng ý đã yêu cầu.
+  const renderHocBaTableHalf = (subjList, coNutDieuKhien) => {
+    // ĐÃ SỬA (theo phản hồi): chỉ hiện ô "ĐIỂM PV" khi (điểm TỔ HỢP + ĐIỂM CỘNG) nằm
+    // trong khoảng (15, 16) — DÙNG ĐÚNG 1 NGƯỠNG DUY NHẤT với chỗ áp dụng vào công thức
+    // tính điểm xét tuyển (xem effect tính admissionResult) — trước đây bản đầu chỉ xét
+    // riêng điểm tổ hợp (thiếu cộng điểm cộng) nên có thể lệch với ngưỡng áp dụng, đã bỏ.
+    // Dùng chung hàm tinhToHopCaoNhat() để không lệch điểm tổ hợp giữa 2 chỗ.
+    const toHopHienTai = tinhToHopCaoNhat(formData.nganh, formData).maxScore;
+    const diemCongHienTai = lamTronDiem(formData.diem_cong);
+    const hienOPhongVan = (toHopHienTai + diemCongHienTai) > 15 && (toHopHienTai + diemCongHienTai) < 16;
+
+    return (
+    <div className="table-responsive border rounded">
+      <table className="table table-bordered table-sm align-middle text-center mb-0">
+        <thead className="table-light">
+          <tr>
+            <th style={{width: '110px'}} className="text-primary">MÔN</th>
+            <th>LỚP 10</th>
+            <th>LỚP 11</th>
+            <th>LỚP 12</th>
+            <th className="text-danger" style={{width: '90px'}}>TB</th>
+          </tr>
+        </thead>
+        <tbody>
+          {subjList.map(subj => {
+            const avg = getSubjectAverage(subj.id, formData);
+            return (
+              <tr key={subj.id}>
+                <td className="fw-bold text-primary">{subj.label}</td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_lop10`} value={formData[`diem_${subj.id}_lop10`]} onChange={handleChange} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_lop11`} value={formData[`diem_${subj.id}_lop11`]} onChange={handleChange} placeholder="-" /></td>
+                <td><input type="text" className="form-control form-control-sm text-center fw-bold text-dark" name={`diem_${subj.id}_lop12`} value={formData[`diem_${subj.id}_lop12`]} onChange={handleChange} placeholder="-" /></td>
+                <td className="fw-bold text-danger bg-light">{avg > 0 ? avg : '-'}</td>
+              </tr>
+            );
+          })}
+          {coNutDieuKhien && (
+            <tr>
+              <td colSpan={5} className="p-2 bg-white">
+                <div className="d-flex justify-content-between align-items-center">
+                  <div className="d-flex align-items-center gap-3">
+                    {/* ĐÃ THÊM: ô "ĐIỂM PV" đặt BÊN TRÁI ô "ĐIỂM CỘNG" — khi hiện thêm ô
+                        này, khối flex bên trái dài ra, tự đẩy "ĐIỂM CỘNG" ra giữa khối
+                        hơn so với lúc chỉ có 1 mình nó, đúng ý đã yêu cầu. */}
+                    {hienOPhongVan && (
+                      <div className="d-flex align-items-center gap-2">
+                        <label className="form-label small fw-bold mb-0 text-primary">ĐIỂM PV:</label>
+                        <input type="text" className="form-control form-control-sm border-primary" style={{width: '70px'}} name="diem_phong_van" value={formData.diem_phong_van} onChange={handleChange} placeholder="0.0" title="Tối đa 2 điểm — chỉ cộng vào điểm xét tuyển khi (Tổ hợp + Điểm cộng) trong khoảng 15-16" />
+                      </div>
+                    )}
+                    <div className="d-flex align-items-center gap-2">
+                      <label className="form-label small fw-bold mb-0 text-danger">ĐIỂM CỘNG:</label>
+                      <input type="text" className="form-control form-control-sm border-danger" style={{width: '80px'}} name="diem_cong" value={formData.diem_cong} onChange={handleChange} placeholder="0.0" />
+                    </div>
+                  </div>
+                  <button type="button" className="btn btn-sm btn-outline-danger fw-bold shadow-sm" onClick={handleClearHocBa}>
+                    <i className="bi bi-trash"></i> Xóa hết
+                  </button>
+                </div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+    );
+  };
 
   return (
     <div className="xettuyen-wrapper">
@@ -1378,6 +1616,25 @@ const XetTuyenPage = () => {
                                   </div>
                               </div>
                           </div>
+                      ) : formData.loai_diem === 'HOC_BA' ? (
+                          // ĐÃ SỬA (theo yêu cầu): trước đây "Điểm học bạ" (thường) dùng chung
+                          // layout 1-ô/môn với "Điểm thi THPT" (nhánh else bên dưới) — dễ gây
+                          // nhầm lẫn vì bản chất học bạ phải lấy điểm TB của cả 3 năm Lớp
+                          // 10/11/12, không phải 1 số duy nhất. Giờ tách riêng, dùng đúng bố cục
+                          // 2 khối bảng như TBTS 2025 (renderHK2025TableHalf ở trên), chỉ đổi 3
+                          // cột thành Lớp 10/11/12. Ô ĐIỂM CỘNG + nút Xóa hết được nhét vào ngay
+                          // hàng cuối của khối bên phải (khối này chỉ có 5 môn, dư đúng 1 hàng so
+                          // với khối trái 6 môn) thay vì để thanh riêng bên dưới cả 2 khối.
+                          <div className="mt-3 position-relative">
+                              <div className="row g-3">
+                                  <div className="col-md-6">
+                                      {renderHocBaTableHalf(SUBJECTS_UI.slice(0, 6))}
+                                  </div>
+                                  <div className="col-md-6">
+                                      {renderHocBaTableHalf(SUBJECTS_UI.slice(6), true)}
+                                  </div>
+                              </div>
+                          </div>
                       ) : (
                           <div className="score-grid mt-3">
                               {SUBJECTS_UI.map(subj => (
@@ -1482,6 +1739,7 @@ const XetTuyenPage = () => {
                               <th className="text-center">ĐIỂM TB HỆ 4</th>
                               <th className="text-center">ĐIỂM TB HỆ 10</th>
                               <th className="text-center text-danger">ĐIỂM CỘNG</th>
+                              <th className="text-center text-primary">ĐIỂM PHỎNG VẤN</th>
                               <th className="text-center" style={{width: '90px'}}>THAO TÁC</th>
                           </tr>
                       </thead>
@@ -1525,6 +1783,7 @@ const XetTuyenPage = () => {
                                       <td className="text-center">{row["ĐIỂM TB HỆ 4"] || row["ĐIỂM TB TOÀN KHÓA HỆ 4"]}</td>
                                       <td className="text-center">{row["ĐIỂM TB HỆ 10"] || row["ĐIỂM TB TOÀN KHÓA HỆ 10"]}</td>
                                       <td className="text-center fw-bold text-danger">{row["ĐIỂM CỘNG"]}</td>
+                                      <td className="text-center fw-bold text-primary">{row["ĐIỂM PHỎNG VẤN"]}</td>
                                       <td className="text-center">
                                           {!isUp && (
                                               <div className="d-flex justify-content-center gap-1">
