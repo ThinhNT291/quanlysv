@@ -11,6 +11,12 @@ import { taiFileMauExcel } from '../../utils/excelTemplate';
 
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
+// ĐÃ THÊM LẠI (theo phản hồi — repo Xét tuyển cũ có, bản React này bị thiếu): link CSV xuất
+// bản (publish to web -> CSV) của Google Sheet danh mục "Khu vực ưu tiên" (trường/mã trường
+// -> khu vực tuyển sinh), y hệt hằng số KV_CSV_URL trong data_config.js của repo cũ — port
+// nguyên link, KHÔNG đổi gì vì vẫn cùng 1 Sheet nguồn.
+const KV_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSrXGUBLFQJJy2lIJ_O1u_8iHupsFVt8BPYmLzgAMPI0E3hecCanmaUJ831RvgF-A/pub?gid=1073726209&single=true&output=csv";
+
 const DICT_KHU_VUC = { "KV 01": 0.75, "KV 02-NT": 0.5, "KV 02": 0.25, "KV 03": 0 };
 const DICT_DOI_TUONG = { "Không ưu tiên": 0, "ĐT 01": 2, "ĐT 02": 2, "ĐT 03": 2, "ĐT 04": 2, "ĐT 05": 1, "ĐT 06": 1, "ĐT 07": 1 };
 
@@ -322,6 +328,66 @@ const laHocBaThuongTuChuoi = (str) => {
     return chuan.includes('hoc ba') && !chuan.includes('2025') && !chuan.includes('tbts');
 };
 
+// ĐÃ THÊM LẠI (theo phản hồi — "Tra cứu khu vực ưu tiên", tính năng repo Xét tuyển cũ có
+// nhưng bản React này bị bỏ sót khi viết lại): repo cũ (app.js cũ) dùng thư viện ngoài
+// PapaParse để đọc file CSV publish-to-web của Google Sheet (KV_CSV_URL ở trên). Bản này
+// KHÔNG thêm PapaParse làm dependency mới (đỡ phải npm install/cập nhật package-lock) mà tự
+// viết 1 hàm parse CSV nhỏ tương đương chế độ "header:true, skipEmptyLines:true" của
+// PapaParse: dòng đầu làm tên cột, có xử lý field nằm trong dấu ngoặc kép (phòng khi tên
+// trường/địa chỉ chứa dấu phẩy), dấu " lặp đôi "" bên trong ngoặc kép hiểu là 1 dấu " thật.
+function parseCsvToObjects(csvText) {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+    for (let i = 0; i < csvText.length; i++) {
+        const c = csvText[i];
+        if (inQuotes) {
+            if (c === '"') {
+                if (csvText[i + 1] === '"') { field += '"'; i++; }
+                else { inQuotes = false; }
+            } else {
+                field += c;
+            }
+        } else if (c === '"') {
+            inQuotes = true;
+        } else if (c === ',') {
+            row.push(field); field = '';
+        } else if (c === '\r') {
+            // bỏ qua, xuống dòng thật xử lý ở nhánh '\n' ngay dưới (đỡ tạo dòng rỗng thừa
+            // với file CSV xuống dòng kiểu Windows \r\n).
+        } else if (c === '\n') {
+            row.push(field); rows.push(row); row = []; field = '';
+        } else {
+            field += c;
+        }
+    }
+    if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+    if (rows.length === 0) return [];
+    const headers = rows[0].map(h => String(h || '').trim());
+    return rows.slice(1)
+        .filter(r => r.some(v => String(v || '').trim() !== '')) // tương đương skipEmptyLines
+        .map(r => {
+            const obj = {};
+            headers.forEach((h, idx) => { obj[h] = r[idx] !== undefined ? r[idx] : ''; });
+            return obj;
+        });
+}
+
+// Đoạn mô tả hiển thị TRƯỚC khi gõ từ khoá tìm kiếm (y hệt nội dung trong openLookupModal()/
+// searchLookupTable() của repo cũ khi ô tìm kiếm còn trống) — tách ra hằng số dùng chung 1
+// chỗ, thay vì lặp lại chuỗi HTML này ở 2-3 nơi như bản cũ.
+const LookupMoTaMacDinh = () => (
+    <div className="text-primary" style={{ fontSize: '0.92em' }}>
+        <p className="text-center fw-bold">ℹ️ Căn cứ xác định khu vực tuyển sinh của cá nhân thí sinh:</p>
+        <ul className="mb-0 ps-3">
+            <li>KVTS của mỗi thí sinh được xác định theo địa điểm trường mà thí sinh đã học lâu nhất trong thời gian học cấp THPT (hoặc trung cấp, trung học nghề).</li>
+            <li>Nếu thời gian học (dài nhất) tại các khu vực tương đương nhau thì xác định theo khu vực của trường mà thí sinh theo học sau cùng.</li>
+            <li>Thí sinh được hưởng chính sách ưu tiên khu vực theo quy định trong năm tốt nghiệp THPT (hoặc trung cấp, trung học nghề) và một năm kế tiếp.</li>
+        </ul>
+    </div>
+);
+
 const XetTuyenPage = () => {
   const [formData, setFormData] = useState(() => loadSession('xt_form', initialFormState));
   const [dataList, setDataList] = useState(() => loadSession('xt_list', [])); 
@@ -370,11 +436,52 @@ const XetTuyenPage = () => {
   const [importFile, setImportFile] = useState(null);
   const [importStatus, setImportStatus] = useState("");
 
+  // ĐÃ THÊM LẠI (theo phản hồi): modal "Tra cứu khu vực ưu tiên" — port từ repo Xét tuyển cũ
+  // (openLookupModal/loadLookupData/searchLookupTable trong app.js cũ). lookupData chỉ tải 1
+  // lần rồi giữ trong state (giống lookupData toàn cục của bản cũ) — mở lại modal các lần sau
+  // không tải lại CSV nữa, trừ khi tải lỗi (lookupError) thì cho bấm tải lại.
+  const [isLookupModalOpen, setIsLookupModalOpen] = useState(false);
+  const [lookupKeyword, setLookupKeyword] = useState("");
+  const [lookupData, setLookupData] = useState([]);
+  const [isLookupLoading, setIsLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+
   const closeSearchModal = () => {
       setIsSearchModalOpen(false);
       setSearchKeyword("");
       setSearchResults([]);
   };
+
+  const loadLookupData = async () => {
+      setIsLookupLoading(true);
+      setLookupError("");
+      try {
+          const resp = await fetch(KV_CSV_URL);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const csvText = await resp.text();
+          setLookupData(parseCsvToObjects(csvText));
+      } catch (e) {
+          console.error("Lỗi tải dữ liệu tra cứu khu vực:", e);
+          setLookupError("❌ Lỗi kết nối! Không thể tải dữ liệu khu vực. " + (e.message || ""));
+      } finally {
+          setIsLookupLoading(false);
+      }
+  };
+
+  const openLookupModal = () => {
+      setIsLookupModalOpen(true);
+      setLookupKeyword("");
+      if (lookupData.length === 0 && !isLookupLoading) loadLookupData();
+  };
+
+  const closeLookupModal = () => setIsLookupModalOpen(false);
+
+  // Lọc y hệt searchLookupTable() bản cũ: rỗng -> [] (để hiện lại đoạn mô tả mặc định),
+  // có từ khoá -> so khớp không phân biệt hoa/thường trên MỌI cột của từng dòng.
+  const lookupKeywordChuan = lookupKeyword.trim().toLowerCase();
+  const lookupFiltered = lookupKeywordChuan
+      ? lookupData.filter(row => Object.values(row).some(v => String(v || '').toLowerCase().includes(lookupKeywordChuan)))
+      : [];
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -403,13 +510,14 @@ const XetTuyenPage = () => {
   useEffect(() => {
     const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
-            if (isImportModalOpen) { setIsImportModalOpen(false); setImportFile(null); setImportStatus(""); } 
+            if (isImportModalOpen) { setIsImportModalOpen(false); setImportFile(null); setImportStatus(""); }
             else if (isSearchModalOpen) { closeSearchModal(); }
+            else if (isLookupModalOpen) { closeLookupModal(); }
         }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isImportModalOpen, isSearchModalOpen]);
+  }, [isImportModalOpen, isSearchModalOpen, isLookupModalOpen]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -1659,6 +1767,12 @@ const XetTuyenPage = () => {
               <button className="btn btn-sm btn-success fw-bold" onClick={() => fileInputRef.current.click()}>
                   <i className="bi bi-camera me-1"></i> Quét CCCD/Hộ chiếu
               </button>
+              {/* ĐÃ THÊM LẠI (theo phản hồi): nút "Tra cứu KV" từng có ở repo Xét tuyển cũ (đặt
+                  cạnh ô "Khu vực ưu tiên") — đặt bên phải cụm nút thao tác nhanh này theo đúng
+                  ý muốn, thay vì gắn lại vào sát ô chọn Khu vực ưu tiên như bản cũ. */}
+              <button type="button" className="btn btn-sm btn-info fw-bold text-dark" onClick={openLookupModal}>
+                  <i className="bi bi-geo-alt-fill me-1"></i> Tra cứu KV
+              </button>
               <input type="file" ref={fileInputRef} onChange={processCCCDImage} accept="image/*" style={{ display: 'none' }} />
           </div>
         </div>
@@ -1683,6 +1797,9 @@ const XetTuyenPage = () => {
             </button>
             <button type="button" className="btn btn-sm btn-success fw-bold" onClick={() => fileInputRef.current.click()}>
                 <i className="bi bi-camera me-1"></i> Quét CCCD/Hộ chiếu
+            </button>
+            <button type="button" className="btn btn-sm btn-info fw-bold text-dark" onClick={openLookupModal}>
+                <i className="bi bi-geo-alt-fill me-1"></i> Tra cứu KV
             </button>
         </div>
 
@@ -2108,6 +2225,72 @@ const XetTuyenPage = () => {
                                   </tbody>
                               </table>
                           </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+        )}
+
+        {/* MODAL TRA CỨU KHU VỰC ƯU TIÊN — ĐÃ THÊM LẠI (theo phản hồi), port từ repo Xét
+            tuyển cũ (lookupModal/openLookupModal/loadLookupData/searchLookupTable trong
+            app.js cũ + index.html cũ). Cùng nguồn dữ liệu (KV_CSV_URL), cùng nội dung mô tả
+            hiển thị khi chưa gõ từ khoá (LookupMoTaMacDinh ở đầu file), chỉ đổi vỏ HTML thô
+            sang JSX + Bootstrap modal cho khớp phong cách 2 modal còn lại (Import Excel/Tìm
+            hồ sơ cũ) ngay phía trên. */}
+        {isLookupModalOpen && (
+          <div className="modal show d-block" id="lookup-modal-backdrop" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={(e) => { if (e.target.id === 'lookup-modal-backdrop') closeLookupModal(); }}>
+              <div className="modal-dialog modal-xl modal-dialog-centered">
+                  <div className="modal-content shadow-lg">
+                      <div className="modal-header bg-info text-white">
+                          <h5 className="modal-title fw-bold">🗺️ TRA CỨU KHU VỰC ƯU TIÊN</h5>
+                          <button type="button" className="btn-close btn-close-white" onClick={closeLookupModal}></button>
+                      </div>
+                      <div className="modal-body p-4">
+                          <div className="d-flex gap-2 mb-3">
+                              <input
+                                  type="text"
+                                  className="form-control"
+                                  placeholder="🔍 Nhập tên trường, xã, huyện để tìm kiếm..."
+                                  value={lookupKeyword}
+                                  onChange={e => setLookupKeyword(e.target.value)}
+                                  autoFocus
+                              />
+                          </div>
+
+                          {isLookupLoading ? (
+                              <p className="text-center text-muted fw-bold mt-4">⏳ Đang tải dữ liệu, vui lòng chờ...</p>
+                          ) : lookupError ? (
+                              <div className="text-center mt-3">
+                                  <p className="text-danger fw-bold mb-2">{lookupError}</p>
+                                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={loadLookupData}>🔄 Thử tải lại</button>
+                              </div>
+                          ) : !lookupKeywordChuan ? (
+                              <LookupMoTaMacDinh />
+                          ) : lookupFiltered.length === 0 ? (
+                              <p className="text-center text-danger fw-bold mt-3">❌ Không tìm thấy kết quả phù hợp.</p>
+                          ) : (
+                              <>
+                                  <div className="table-responsive xettuyen-ds-scroll border rounded" style={{ maxHeight: '48vh' }}>
+                                      <table className="table table-hover table-sm mb-0" style={{ fontSize: '12.5px' }}>
+                                          <thead className="table-light">
+                                              <tr>
+                                                  {Object.keys(lookupFiltered[0]).map(h => <th key={h}>{h}</th>)}
+                                              </tr>
+                                          </thead>
+                                          <tbody>
+                                              {lookupFiltered.slice(0, 100).map((row, idx) => (
+                                                  <tr key={idx}>
+                                                      {Object.keys(row).map(h => <td key={h}>{row[h]}</td>)}
+                                                  </tr>
+                                              ))}
+                                          </tbody>
+                                      </table>
+                                  </div>
+                                  {lookupFiltered.length > 100 && (
+                                      <p className="text-center text-warning fst-italic fw-bold small mt-2 mb-0">⚠️ Chỉ hiển thị 100 kết quả đầu tiên. Gõ chi tiết hơn để thu hẹp phạm vi tìm kiếm.</p>
+                                  )}
+                              </>
+                          )}
                       </div>
                   </div>
               </div>

@@ -92,24 +92,59 @@ const App = () => {
   }, [isUserDropdownOpen]);
 
   // ĐÃ THÊM: gom menu chính thành 3 nhóm xổ xuống (Tuyển sinh / Thẩm định / Hệ thống) cho
-  // hàng menu đỡ dài — openGroup giữ đúng 1 tên nhóm đang mở ('tuyensinh'|'thamdinh'|
-  // 'hethong') hoặc null. Dùng CHUNG 1 cơ chế đóng khi bấm ra ngoài/Esc như dropdown tài
-  // khoản ở trên, chỉ khác là phải tra đúng ref của nhóm đang mở (mỗi nhóm 1 ref riêng vì
-  // 3 nhóm là 3 khối DOM tách biệt trong <ul className="navbar-nav">).
-  const [openGroup, setOpenGroup] = useState(null);
+  // hàng menu đỡ dài.
+  // ĐÃ SỬA (theo phản hồi — mobile KHÔNG được tự đóng nhóm khác khi mở 1 nhóm mới, desktop
+  // giữ nguyên kiểu cũ): trước đây openGroup là 1 CHUỖI (chỉ giữ được đúng 1 tên nhóm đang mở
+  // cùng lúc) -> mở nhóm này tự đóng nhóm kia, kể cả trên di động. Đổi thành openGroups (object
+  // cờ bật/tắt ĐỘC LẬP từng nhóm) để trên di động có thể mở đồng thời nhiều nhóm, mỗi nhóm chỉ
+  // đóng lại khi bấm ĐÚNG vào nhóm cha đang mở đó — không đụng các nhóm khác. Desktop
+  // (>=992px) vẫn giữ hành vi cũ (mở nhóm mới tự đóng nhóm đang mở) vì đó là kiểu dropdown
+  // thường thấy, không phải lỗi. Phân biệt 2 hành vi qua isMobileNav, theo dõi breakpoint lg
+  // bằng matchMedia (chỉ cập nhật khi THỰC SỰ vượt qua mốc 991.98px, không phải mỗi lần resize
+  // nhỏ lẻ).
+  const [openGroups, setOpenGroups] = useState({});
+  const [isMobileNav, setIsMobileNav] = useState(() => window.matchMedia('(max-width: 991.98px)').matches);
   const tuyenSinhRef = useRef(null);
   const thamDinhRef = useRef(null);
   const heThongRef = useRef(null);
 
   useEffect(() => {
-    if (!openGroup) return;
+    const mql = window.matchMedia('(max-width: 991.98px)');
+    const onChange = (e) => setIsMobileNav(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
+  // Bấm vào 1 nhóm cha: di động -> chỉ đổi đúng nhóm đó, giữ nguyên các nhóm khác đang mở.
+  // Desktop -> bấm nhóm đang mở thì đóng, bấm nhóm khác thì tự đóng nhóm cũ (chỉ 1 nhóm mở).
+  const toggleNavGroup = (name) => {
+    setOpenGroups(prev => {
+      const dangMo = !!prev[name];
+      if (isMobileNav) return { ...prev, [name]: !dangMo };
+      return dangMo ? {} : { [name]: true };
+    });
+  };
+  const closeAllNavGroups = () => setOpenGroups({});
+
+  useEffect(() => {
+    const cacNhomDangMo = Object.keys(openGroups).filter(k => openGroups[k]);
+    if (cacNhomDangMo.length === 0) return;
     const refTheoNhom = { tuyensinh: tuyenSinhRef, thamdinh: thamDinhRef, hethong: heThongRef };
+    // Bấm ra ngoài 1 nhóm cụ thể -> chỉ đóng ĐÚNG nhóm đó, không đóng luôn các nhóm khác đang
+    // mở cùng lúc trên di động.
     const handleClickOutside = (e) => {
-      const ref = refTheoNhom[openGroup];
-      if (ref && ref.current && !ref.current.contains(e.target)) setOpenGroup(null);
+      setOpenGroups(prev => {
+        let changed = false;
+        const next = { ...prev };
+        cacNhomDangMo.forEach(name => {
+          const ref = refTheoNhom[name];
+          if (ref && ref.current && !ref.current.contains(e.target)) { next[name] = false; changed = true; }
+        });
+        return changed ? next : prev;
+      });
     };
     const handleEscape = (e) => {
-      if (e.key === 'Escape') setOpenGroup(null);
+      if (e.key === 'Escape') closeAllNavGroups();
     };
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('keydown', handleEscape);
@@ -117,7 +152,7 @@ const App = () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [openGroup]);
+  }, [openGroups]);
 
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = localStorage.getItem('tuyensinh_user');
@@ -431,21 +466,21 @@ const App = () => {
                     <a
                       className="nav-link px-3 rounded dropdown-toggle text-light"
                       href="#"
-                      onClick={(e) => { e.preventDefault(); setOpenGroup(openGroup === 'tuyensinh' ? null : 'tuyensinh'); }}
+                      onClick={(e) => { e.preventDefault(); toggleNavGroup('tuyensinh'); }}
                       style={{ cursor: 'pointer' }}
                     >
                       <i className="bi bi-mortarboard-fill me-1"></i> Tuyển sinh
-                      <i className={`bi ${openGroup === 'tuyensinh' ? 'bi-chevron-up' : 'bi-chevron-down'} ms-2 small app-menu-chevron`}></i>
+                      <i className={`bi bi-chevron-right ms-2 small app-menu-chevron ${openGroups.tuyensinh ? 'app-menu-chevron-open' : ''}`}></i>
                     </a>
                     <ul
-                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroup === 'tuyensinh' ? 'show' : ''}`}
+                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroups.tuyensinh ? 'show' : ''}`}
                       style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
                     >
                       {hasAnyRole(currentUser.roles, ['CanBo', 'ThamDinh', 'Admin']) && (
                         <li>
                           <NavLink
                             to="/thu-ho-so-nhap-hoc"
-                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
                             <i className="bi bi-people-fill me-2"></i>Quản lý hồ sơ (Nhập học)
@@ -456,7 +491,7 @@ const App = () => {
                         <li>
                           <NavLink
                             to="/xet-tuyen"
-                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
                             <i className="bi bi-card-checklist me-2"></i>Nhập liệu Xét tuyển
@@ -473,21 +508,21 @@ const App = () => {
                     <a
                       className="nav-link px-3 rounded dropdown-toggle text-light"
                       href="#"
-                      onClick={(e) => { e.preventDefault(); setOpenGroup(openGroup === 'thamdinh' ? null : 'thamdinh'); }}
+                      onClick={(e) => { e.preventDefault(); toggleNavGroup('thamdinh'); }}
                       style={{ cursor: 'pointer' }}
                     >
                       <i className="bi bi-clipboard-check me-1"></i> Thẩm định
-                      <i className={`bi ${openGroup === 'thamdinh' ? 'bi-chevron-up' : 'bi-chevron-down'} ms-2 small app-menu-chevron`}></i>
+                      <i className={`bi bi-chevron-right ms-2 small app-menu-chevron ${openGroups.thamdinh ? 'app-menu-chevron-open' : ''}`}></i>
                     </a>
                     <ul
-                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroup === 'thamdinh' ? 'show' : ''}`}
+                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroups.thamdinh ? 'show' : ''}`}
                       style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
                     >
                       {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
                         <li>
                           <NavLink
                             to="/tham-dinh"
-                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
                             <i className="bi bi-clipboard-check me-2"></i>Ban Thẩm định
@@ -498,7 +533,7 @@ const App = () => {
                         <li>
                           <NavLink
                             to="/xac-nhan-dinh-danh"
-                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
                             <i className="bi bi-person-fill-exclamation me-2"></i>Xác nhận định danh
@@ -515,21 +550,21 @@ const App = () => {
                     <a
                       className="nav-link px-3 rounded dropdown-toggle text-light"
                       href="#"
-                      onClick={(e) => { e.preventDefault(); setOpenGroup(openGroup === 'hethong' ? null : 'hethong'); }}
+                      onClick={(e) => { e.preventDefault(); toggleNavGroup('hethong'); }}
                       style={{ cursor: 'pointer' }}
                     >
                       <i className="bi bi-hdd-stack-fill me-1"></i> Hệ thống
-                      <i className={`bi ${openGroup === 'hethong' ? 'bi-chevron-up' : 'bi-chevron-down'} ms-2 small app-menu-chevron`}></i>
+                      <i className={`bi bi-chevron-right ms-2 small app-menu-chevron ${openGroups.hethong ? 'app-menu-chevron-open' : ''}`}></i>
                     </a>
                     <ul
-                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroup === 'hethong' ? 'show' : ''}`}
+                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroups.hethong ? 'show' : ''}`}
                       style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
                     >
                       {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
                         <li>
                           <NavLink
                             to="/quan-ly-ho-so-moi"
-                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
                             <i className="bi bi-archive-fill me-2"></i>Kho tra cứu sinh viên
@@ -540,7 +575,7 @@ const App = () => {
                         <li>
                           <NavLink
                             to="/settings"
-                            onClick={() => { setIsNavCollapsed(true); setOpenGroup(null); }}
+                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
                             <i className="bi bi-gear-fill me-2"></i>Cấu hình hệ thống
