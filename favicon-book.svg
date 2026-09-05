@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Icon sách: bìa/gáy màu xanh nước biển, trang giấy trắng ngà -->
+  <!-- Gáy sách (phần cong bên trái) -->
+  <path d="M10 12c0-2.2 1.8-4 4-4h4v48h-4c-2.2 0-4-1.8-4-4V12z" fill="#0d3b78"/>
+  <!-- Bìa sau -->
+  <path d="M14 8h34c2.2 0 4 1.8 4 4v36c0 2.2-1.8 4-4 4H14V8z" fill="#154a8f"/>
+  <!-- Trang sách (bên trong, màu trắng ngà) -->
+  <path d="M18 12h30c1.1 0 2 .9 2 2v30c0 1.1-.9 2-2 2H18c-1.1 0-2-.9-2-2V14c0-1.1.9-2 2-2z" fill="#f7f5ef"/>
+  <!-- Đường gân sách ở giữa -->
+  <path d="M18 12c3 1 3 33 0 34" fill="none" stroke="#d8d3c4" stroke-width="1.2"/>
+  <!-- Các dòng chữ cách điệu -->
+  <line x1="24" y1="20" x2="44" y2="20" stroke="#9aa6b2" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="24" y1="26" x2="44" y2="26" stroke="#9aa6b2" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="24" y1="32" x2="40" y2="32" stroke="#9aa6b2" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="24" y1="38" x2="44" y2="38" stroke="#9aa6b2" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- Dải đánh dấu trang (bookmark) màu vàng nhấn -->
+  <path d="M36 8v14l4-3.5 4 3.5V8h-8z" fill="#f2b134"/>
+</svg>
