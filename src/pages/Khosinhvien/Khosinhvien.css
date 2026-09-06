@@ -73,35 +73,77 @@
   .kho-print-area .kho-hide-on-print * {
     display: none !important;
   }
+  /* ĐÃ THÊM (đi cùng đợt chuyển trang chi tiết hồ sơ sang dạng TAB): 1 tab-pane chỉ hiện khi
+     đang được chọn (class "active", xem quy tắc mặc định của Bootstrap ".tab-pane { display:
+     none } .tab-pane.active { display: block }") — nhưng lúc IN thì phải hiện 1 số pane MÀ
+     KHÔNG PHỤ THUỘC người dùng đang đứng ở tab nào trên màn hình (VD "Lịch sử hồ sơ"/"Điểm
+     số" luôn cần có trong bản in, y hệt tinh thần cũ là những phần "cần in" không nằm trong
+     .kho-hide-on-print). Đánh dấu các pane đó bằng class "kho-print-tab-force" ngay trong
+     JSX (ChiTietHoSoKhoPage.jsx) rồi ép hiện ở đây, ghi đè lại rule display:none mặc định của
+     Bootstrap khi KHÔNG active.
+     Ngược lại, pane nào lỡ đang active nhưng thuộc dạng dữ liệu thô đã có .kho-hide-on-print
+     (thấy ở rule ngay phía trên) vẫn tiếp tục bị ẩn khi in như cũ. */
+  .kho-print-area .kho-print-tab-force {
+    display: block !important;
+  }
 }
 
-/* ĐÃ THÊM: timeline dọc 3 bước ở trang chi tiết hồ sơ (Nộp hồ sơ -> Duyệt trúng tuyển ->
-   Bàn giao Đào tạo). Bước "xong" tô xanh, bước "chưa tới" tô xám nhạt. */
+/* ========================================================
+   TIMELINE "LỘ TRÌNH HỒ SƠ" — ĐÃ SỬA (theo phản hồi): trước đây xếp DỌC (icon + chữ nằm
+   ngang nhau, nối bằng 1 đường kẻ dọc), giờ đổi sang NẰM NGANG — các bước xếp thành 1 hàng
+   ngang (icon tròn ở trên, chữ ở dưới, canh giữa), hết chỗ ngang thì flex-wrap tự "quẹo
+   xuống" 1 hàng mới rồi tiếp tục từ trái sang phải (không đảo chiều đọc — đủ cho lộ trình
+   hiện chỉ có 3 bước, và co giãn tốt trên di động khi 1 hàng không đủ chỗ cho cả 3).
+   Đường nối giữa 2 bước vẽ bằng 2 nửa đường kẻ ngang (::before/::after) chạy đúng qua tâm
+   chấm tròn của MỖI bước — bước đầu tiên không có nửa trái, bước cuối cùng không có nửa
+   phải, để không thừa đoạn kẻ ở 2 đầu. Màu đường nối ăn theo trạng thái "xong"/"chưa" của
+   chính bước sở hữu nó (dùng lại đúng 2 class .kho-timeline-xong/.kho-timeline-chua đã có),
+   nên đoạn nối giữa 1 bước đã xong và 1 bước chưa tới sẽ đổi màu ngay đúng điểm chuyển tiếp
+   — vừa đẹp vừa cho biết chính xác lộ trình đang dừng ở đâu. */
 .kho-timeline {
   display: flex;
-  flex-direction: column;
-  gap: 0;
+  flex-wrap: wrap;
+  row-gap: 28px;
 }
 .kho-timeline-buoc {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   position: relative;
-  padding-bottom: 24px;
+  flex: 1 1 140px;
+  min-width: 140px;
+  max-width: 220px;
+  padding: 0 8px;
 }
-.kho-timeline-buoc:last-child {
-  padding-bottom: 0;
-}
-.kho-timeline-buoc:not(:last-child)::before {
+.kho-timeline-buoc::before,
+.kho-timeline-buoc::after {
   content: '';
   position: absolute;
-  left: 15px;
-  top: 32px;
-  bottom: 0;
-  width: 2px;
+  top: 16px; /* = nửa chiều cao chấm tròn (32px/2), để đường kẻ đi đúng qua tâm chấm */
+  height: 2px;
   background-color: #dee2e6;
+  z-index: 0;
+}
+.kho-timeline-buoc::before {
+  left: 0;
+  width: calc(50% - 16px);
+}
+.kho-timeline-buoc::after {
+  right: 0;
+  width: calc(50% - 16px);
+}
+.kho-timeline-buoc:first-child::before,
+.kho-timeline-buoc:last-child::after {
+  content: none;
+}
+.kho-timeline-xong::before,
+.kho-timeline-xong::after {
+  background-color: #198754;
 }
 .kho-timeline-cham {
+  position: relative;
+  z-index: 1;
   flex: 0 0 32px;
   width: 32px;
   height: 32px;
@@ -110,7 +152,7 @@
   align-items: center;
   justify-content: center;
   font-size: 16px;
-  z-index: 1;
+  margin-bottom: 10px;
 }
 .kho-timeline-xong .kho-timeline-cham {
   background-color: #198754;

@@ -40,7 +40,7 @@ const DICT_NGANH = {
     "Quản trị kinh doanh": ["A00", "A01", "D01", "D09", "D10", "D45", "D65", "X01", "X25", "X37"],
     "Ngôn ngữ Anh": ["A01", "C03", "C04", "D01", "D09", "D10", "D14", "D15", "X25", "X26"],
     "Ngôn ngữ Trung Quốc": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X01", "X37"],
-    "Quản trị dịch vụ du lịch & lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
+    "Quản trị dịch vụ du lịch và lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
 };
 
 const SUBJECTS_UI = [
@@ -120,8 +120,27 @@ const isDocApplicable = (doc, data) => {
 // cho chấm điểm chính thức ở Thẩm định) — đổi mức điểm chuẩn thì phải đổi ở CẢ 2 nơi.
 const DIEM_CHUAN_THPT = { THI_THPT: 15, HOC_BA: 16, HOC_BA_2025: 15 };
 
+// ĐÃ THÊM (theo phản hồi — Thông tư về tuyển sinh đại học mới áp dụng từ 15/2/2026: khu vực
+// ưu tiên bị giới hạn theo năm tốt nghiệp THPT): mốc năm tính THEO ĐÚNG năm dương lịch thực
+// tế lúc phần mềm đang chạy (new Date() ngay lúc file này được nạp) trừ đi 1 — đã hỏi lại và
+// xác nhận dùng đúng cách này (KHÔNG neo theo "Năm xét tuyển" chọn trên form, KHÔNG hardcode
+// cố định 1 năm) — nhờ vậy 2 nhãn lựa chọn bên dưới TỰ NHÍCH LÊN đúng mỗi năm mà không cần
+// sửa lại code.
+const NAM_HIEN_TAI_TTTHPT = new Date().getFullYear();
+const MOC_NAM_TN_THPT = NAM_HIEN_TAI_TTTHPT - 1;
+const NTN_THPT_TRUOC = `Trước ${MOC_NAM_TN_THPT}`;
+const NTN_THPT_TU = `Từ ${MOC_NAM_TN_THPT} về sau`;
+// Hồ sơ có "Năm tốt nghiệp THPT" khớp ĐÚNG chuỗi "Trước..." ở trên -> bị Thông tư mới cấm
+// cộng điểm khu vực ưu tiên. Dùng ĐÚNG 1 hàm này ở MỌI nơi có tính/ghi điểm khu vực ưu tiên
+// (nhập tay lẫn đọc thẳng dữ liệu Trung Gian) để không lệch nhau giữa các chỗ — xem các chỗ
+// gọi: effect tính điểm xem trước, renderHocBaTableHalf, handleChange, newRow lúc thêm/sửa hồ
+// sơ, import Excel, và bên thamDinhHelpers.js (calculateScores/getBestScore, dùng cho trang
+// Thẩm định) — CHẶN CẢ trường hợp ai đó điền trực tiếp cột "KHU VỰC ƯU TIÊN" trên sheet Trung
+// Gian mà bỏ qua form, miễn cột "NĂM TỐT NGHIỆP THPT" của dòng đó khớp mốc "Trước...".
+const biChanKhuVucUTTheoNamTN = (namTotNghiep) => String(namTotNghiep || '').trim() === NTN_THPT_TRUOC;
+
 const initialFormState = {
-  hoten: '', cccd: '', ngaysinh: '', khoa: '', nganh: '', khuvucuutien: '', doituonguutien: '', 
+  hoten: '', cccd: '', ngaysinh: '', khoa: '', nganh: '', namtotnghiepthpt: '', khuvucuutien: '', doituonguutien: '',
   doituongdauvao: '', namtt: '', hedaotao: '', htdaotao: '', link_folder: '', 
   has_giay_uutien: false, giay_uutien: '', 
   loai_diem: '', time_goc: '', 
@@ -533,6 +552,17 @@ const XetTuyenPage = () => {
     if (name === 'check_hoc_ba') { setFormData(prev => ({...prev, loai_diem: checked ? 'HOC_BA' : ''})); return; }
     if (name === 'check_hoc_ba_2025') { setFormData(prev => ({...prev, loai_diem: checked ? 'HOC_BA_2025' : ''})); return; }
 
+    // ĐÃ THÊM (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): đổi "Năm tốt
+    // nghiệp THPT" sang mốc "Trước..." thì XOÁ LUÔN giá trị đang chọn ở "Khu vực ưu tiên" (ô
+    // này sẽ bị ẩn ngay sau đó, xem JSX) — tránh giữ lại giá trị "ma" trong formData dù không
+    // còn hiện trên form (đằng nào cũng bị chặn cộng điểm ở effect tính điểm dù có giữ lại
+    // hay không, đây chỉ là dọn sạch dữ liệu cho gọn + đúng với những gì thật sự ghi xuống
+    // Trung Gian lúc đẩy lên, xem newRow ở handleAddRow).
+    if (name === 'namtotnghiepthpt') {
+        setFormData(prev => ({ ...prev, namtotnghiepthpt: value, khuvucuutien: biChanKhuVucUTTheoNamTN(value) ? '' : prev.khuvucuutien }));
+        return;
+    }
+
     if (name.startsWith('diem_') && type === 'text') {
         finalValue = finalValue.replace(',', '.');
         // ĐÃ THÊM: tự động chèn dấu chấm thập phân khi gõ liền số nguyên nhiều chữ số (xem
@@ -598,7 +628,7 @@ const XetTuyenPage = () => {
   };
 
   useEffect(() => {
-    const { nganh, doituongdauvao, khuvucuutien, doituonguutien } = formData;
+    const { nganh, doituongdauvao, khuvucuutien, doituonguutien, namtotnghiepthpt } = formData;
     if (!nganh || !doituongdauvao) { setAdmissionResult(null); return; }
 
     let missingChung = []; let missingTienQuyet = [];
@@ -632,7 +662,11 @@ const XetTuyenPage = () => {
 
             if (maxScore === 0) diemMsg = `Chưa nhập đủ điểm để xét tổ hợp.`;
             else {
-                let uTienBanDau = (DICT_KHU_VUC[khuvucuutien] || 0) + (DICT_DOI_TUONG[doituonguutien] || 0);
+                // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): ép
+                // phần đóng góp của DICT_KHU_VUC về 0 khi hồ sơ khớp mốc "Trước..." (xem
+                // biChanKhuVucUTTheoNamTN phía trên component) — Đối tượng ưu tiên (DICT_DOI_TUONG)
+                // KHÔNG bị ảnh hưởng, Thông tư mới chỉ giới hạn khu vực ưu tiên.
+                let uTienBanDau = (biChanKhuVucUTTheoNamTN(namtotnghiepthpt) ? 0 : (DICT_KHU_VUC[khuvucuutien] || 0)) + (DICT_DOI_TUONG[doituonguutien] || 0);
                 let uTienChinhThuc = uTienBanDau;
 
                 if (formData.loai_diem === 'THI_THPT' && maxScore >= 22.5) {
@@ -692,9 +726,15 @@ const XetTuyenPage = () => {
   }, [formData]);
 
   const handleAddRow = () => {
-    const requiredFields = ['hoten', 'cccd', 'ngaysinh', 'nganh', 'khoa', 'khuvucuutien', 'doituonguutien', 'doituongdauvao', 'namtt', 'hedaotao', 'htdaotao'];
+    // ĐÃ SỬA (theo phản hồi — thêm "Năm tốt nghiệp THPT"): "khuvucuutien" bỏ khỏi danh sách
+    // bắt buộc CHUNG, tự kiểm tra riêng ngay dưới đây — vì ô này bị ẨN HẲN (không còn bắt
+    // buộc) khi chọn mốc "Trước..." (xem biChanKhuVucUTTheoNamTN/JSX ô "Khu vực ưu tiên").
+    const requiredFields = ['hoten', 'cccd', 'ngaysinh', 'nganh', 'khoa', 'namtotnghiepthpt', 'doituonguutien', 'doituongdauvao', 'namtt', 'hedaotao', 'htdaotao'];
     for (let field of requiredFields) {
         if (!formData[field]) { alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); return; }
+    }
+    if (!biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) && !formData.khuvucuutien) {
+        alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); return;
     }
 
     if (formData.doituongdauvao === 'Tốt nghiệp THPT' && !formData.loai_diem) {
@@ -752,7 +792,15 @@ const XetTuyenPage = () => {
         "KẾT QUẢ SƠ TUYỂN": admissionResult ? admissionResult.title : "",
         "CĂN CƯỚC": formData.cccd.trim(), "TÊN SINH VIÊN": formData.hoten.trim(), "NGÀY SINH": formData.ngaysinh,
         "NGÀNH": formData.nganh, "KHÓA": formData.khoa, "ĐỐI TƯỢNG ƯU TIÊN": formData.doituonguutien,
-        "KHU VỰC ƯU TIÊN": formData.khuvucuutien, "ĐỐI TƯỢNG ĐẦU VÀO": formData.doituongdauvao,
+        // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): ghi rỗng
+        // xuống Trung Gian (thay vì giá trị đang chọn) khi khớp mốc "Trước..." — lớp phòng
+        // thủ THỨ NHẤT (form không cho chọn/ẩn ô ngay khi chọn mốc này); lớp phòng thủ THỨ
+        // HAI (chặn cả khi ai đó SỬA TRỰC TIẾP cột "KHU VỰC ƯU TIÊN" trên sheet, bỏ qua form)
+        // nằm ở effect tính điểm xem trước, renderHocBaTableHalf và thamDinhHelpers.js — xem
+        // biChanKhuVucUTTheoNamTN.
+        "KHU VỰC ƯU TIÊN": biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) ? "" : formData.khuvucuutien,
+        "NĂM TỐT NGHIỆP THPT": formData.namtotnghiepthpt,
+        "ĐỐI TƯỢNG ĐẦU VÀO": formData.doituongdauvao,
         "NĂM XÉT TUYỂN": formData.namtt, "HỆ ĐÀO TẠO": formData.hedaotao, "HÌNH THỨC ĐÀO TẠO": formData.htdaotao,
         "LINK HỒ SƠ": formData.link_folder, 
         "GIẤY TỜ ƯU TIÊN": validHasGiayUuTien ? validGiayUuTien : "", 
@@ -868,6 +916,9 @@ const XetTuyenPage = () => {
         ngaysinh: row["NGÀY SINH"] || "",
         khoa: row["KHÓA"] || "",
         khuvucuutien: row["KHU VỰC ƯU TIÊN"] || "",
+        // ĐÃ THÊM (theo phản hồi — "Năm tốt nghiệp THPT"): đọc ngược lại đúng lựa chọn đã
+        // lưu, để mở hồ sơ ra sửa vẫn hiện/ẩn đúng ô "Khu vực ưu tiên" như lúc lưu.
+        namtotnghiepthpt: row["NĂM TỐT NGHIỆP THPT"] || "",
         doituonguutien: row["ĐỐI TƯỢNG ƯU TIÊN"] || "",
         doituongdauvao: row["ĐỐI TƯỢNG ĐẦU VÀO"] || "",
         namtt: row["NĂM XÉT TUYỂN"] || "",
@@ -1122,6 +1173,9 @@ const XetTuyenPage = () => {
           ngaysinh: chuanHoaNgaySinhImport(normData["NGÀY SINH"]) || "",
           khoa: normData["KHÓA"] || "", 
           khuvucuutien: normData["KHU VỰC ƯU TIÊN"] || normData["KHU VỰC"] || "",
+          // ĐÃ THÊM (theo phản hồi — "Năm tốt nghiệp THPT"): đọc ngược lại đúng lựa chọn đã
+          // lưu, để "Tìm hồ sơ cũ" mở lại vẫn hiện/ẩn đúng ô "Khu vực ưu tiên" như lúc lưu.
+          namtotnghiepthpt: normData["NĂM TỐT NGHIỆP THPT"] || "",
           doituonguutien: normData["ĐỐI TƯỢNG ƯU TIÊN"] || "", 
           doituongdauvao: normData["ĐỐI TƯỢNG ĐẦU VÀO"] || "",
           namtt: normData["NĂM XÉT TUYỂN"] || normData["NĂM TRÚNG TUYỂN"] || "", 
@@ -1214,6 +1268,11 @@ const XetTuyenPage = () => {
             'KHÓA': config.KhoaNhapHoc,
             'ĐỐI TƯỢNG ƯU TIÊN': config.DoiTuongUT,
             'KHU VỰC ƯU TIÊN': config.KhuVucUT,
+            // ĐÃ THÊM (theo phản hồi — "Năm tốt nghiệp THPT"): 2 lựa chọn cố định, KHÔNG lấy
+            // từ sheet CauHinh (khác các dropdown còn lại) vì đây là 2 mốc tự tính theo năm
+            // dương lịch thực tế (xem NTN_THPT_TRUOC/NTN_THPT_TU phía trên), không phải danh
+            // mục do Admin tự cấu hình.
+            'NĂM TỐT NGHIỆP THPT': [NTN_THPT_TRUOC, NTN_THPT_TU],
             'ĐỐI TƯỢNG ĐẦU VÀO': config.DoiTuongDauVao,
             'NĂM XÉT TUYỂN': config.NamXetTuyen,
             'HỆ ĐÀO TẠO': config.HeDaoTao,
@@ -1426,7 +1485,14 @@ const XetTuyenPage = () => {
                           // trong danh sách xem trước giống hệt như khi nhập tay qua form.
                           "NGÀY SINH": chuanHoaNgaySinhImport(getField(rowArr, ["NGÀY SINH"])), "NGÀNH": nganhVal,
                           "KHÓA": getField(rowArr, ["KHÓA"]), "ĐỐI TƯỢNG ƯU TIÊN": getField(rowArr, ["ĐỐI TƯỢNG ƯU TIÊN"]),
-                          "KHU VỰC ƯU TIÊN": getField(rowArr, ["KHU VỰC ƯU TIÊN", "KHU VỰC"]), "ĐỐI TƯỢNG ĐẦU VÀO": getField(rowArr, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐẦU VÀO"]),
+                          // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT):
+                          // đọc thêm cột "NĂM TỐT NGHIỆP THPT" từ file Excel — nếu khớp mốc
+                          // "Trước..." thì ghi rỗng "KHU VỰC ƯU TIÊN" xuống Trung Gian dù file có
+                          // điền gì đi nữa (cùng lý do/hàm dùng chung với handleAddRow phía trên,
+                          // xem biChanKhuVucUTTheoNamTN — không tin tưởng mù quáng dữ liệu Excel).
+                          "KHU VỰC ƯU TIÊN": biChanKhuVucUTTheoNamTN(getField(rowArr, ["NĂM TỐT NGHIỆP THPT"])) ? "" : getField(rowArr, ["KHU VỰC ƯU TIÊN", "KHU VỰC"]),
+                          "NĂM TỐT NGHIỆP THPT": getField(rowArr, ["NĂM TỐT NGHIỆP THPT"]),
+                          "ĐỐI TƯỢNG ĐẦU VÀO": getField(rowArr, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐẦU VÀO"]),
                           "NĂM XÉT TUYỂN": getField(rowArr, ["NĂM XÉT TUYỂN", "NĂM TRÚNG TUYỂN"]), "HỆ ĐÀO TẠO": getField(rowArr, ["HỆ ĐÀO TẠO", "HỆ"]),
                           "HÌNH THỨC ĐÀO TẠO": getField(rowArr, ["HÌNH THỨC ĐÀO TẠO", "HÌNH THỨC"]), "LINK HỒ SƠ": getField(rowArr, ["LINK HỒ SƠ"]),
                           "GIẤY TỜ ƯU TIÊN": getField(rowArr, ["GIẤY TỜ ƯU TIÊN", "GIẤY ƯU TIÊN"]),
@@ -1678,7 +1744,10 @@ const XetTuyenPage = () => {
     // gọi khi loai_diem === 'HOC_BA').
     const toHopHienTai = tinhToHopCaoNhat(formData.nganh, formData).maxScore;
     const diemCongHienTai = lamTronDiem(formData.diem_cong);
-    const uTienHienTai = (DICT_KHU_VUC[formData.khuvucuutien] || 0) + (DICT_DOI_TUONG[formData.doituonguutien] || 0);
+    // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): dùng chung
+    // biChanKhuVucUTTheoNamTN() để ô "ĐIỂM PV" hiện/ẩn ĐÚNG theo tổng điểm đã trừ khu vực ưu
+    // tiên (nếu bị chặn) — khớp với công thức chính thức ở effect tính admissionResult.
+    const uTienHienTai = (biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) ? 0 : (DICT_KHU_VUC[formData.khuvucuutien] || 0)) + (DICT_DOI_TUONG[formData.doituonguutien] || 0);
     const hienOPhongVan = (toHopHienTai + diemCongHienTai + uTienHienTai) >= 15 && (toHopHienTai + diemCongHienTai + uTienHienTai) < 16;
 
     return (
@@ -1866,6 +1935,23 @@ const XetTuyenPage = () => {
                     {sysConfig.DoiTuongUT.map(dt => <option key={dt} value={dt}>{dt}</option>)}
                 </select>
             </div>
+            {/* ĐÃ THÊM (theo phản hồi — Thông tư tuyển sinh đại học mới áp dụng từ 15/2/2026):
+                trường "Năm tốt nghiệp THPT" — 2 mốc tự tính theo năm dương lịch thực tế (xem
+                NTN_THPT_TRUOC/NTN_THPT_TU phía trên component). Chọn mốc "Trước..." sẽ ẩn hẳn
+                ô "Khu vực ưu tiên" ngay bên dưới (xem điều kiện render + biChanKhuVucUTTheoNamTN). */}
+            <div className="col-md-3">
+                <label className="form-label fw-bold small mb-1">Năm tốt nghiệp THPT <span className="text-danger">*</span></label>
+                <select className="form-select" name="namtotnghiepthpt" value={formData.namtotnghiepthpt} onChange={handleChange} required>
+                    <option value="">-- Chọn --</option>
+                    <option value={NTN_THPT_TRUOC}>{NTN_THPT_TRUOC}</option>
+                    <option value={NTN_THPT_TU}>{NTN_THPT_TU}</option>
+                </select>
+            </div>
+            {/* ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): ẨN HẲN
+                ô này (không chỉ khoá/làm mờ) khi chọn mốc "Trước..." — required cũng bỏ theo vì
+                ô không còn hiện trên form, việc bắt buộc chọn "Năm tốt nghiệp THPT" tự đủ để
+                validate (xem requiredFields ở handleAddRow). */}
+            {!biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) && (
             <div className="col-md-3">
                 <label className="form-label fw-bold small mb-1">Khu vực ưu tiên <span className="text-danger">*</span></label>
                 <select className="form-select" name="khuvucuutien" value={formData.khuvucuutien} onChange={handleChange} required>
@@ -1873,6 +1959,7 @@ const XetTuyenPage = () => {
                     {sysConfig.KhuVucUT.map(kv => <option key={kv} value={kv}>{kv}</option>)}
                 </select>
             </div>
+            )}
             <div className="col-md-3"><label className="form-label fw-bold small mb-1 text-primary">🔗 Link Folder hồ sơ:</label><input type="text" className="form-control border-primary" name="link_folder" value={formData.link_folder} onChange={handleChange} placeholder="Link Google Drive..." /></div>
           </div>
 
@@ -2076,6 +2163,11 @@ const XetTuyenPage = () => {
                               <th>NGÀNH</th>
                               <th className="text-center">KHÓA</th>
                               <th className="text-center">ĐỐI TƯỢNG ƯU TIÊN</th>
+                              {/* ĐÃ THÊM (theo phản hồi — "Năm tốt nghiệp THPT"): hiện thêm cột
+                                  này ngay cạnh "KHU VỰC ƯU TIÊN" để dễ đối chiếu bằng mắt — dòng
+                                  nào khớp mốc "Trước..." thì cột "KHU VỰC ƯU TIÊN" luôn để trống
+                                  (đã ép rỗng lúc lưu, xem newRow ở handleAddRow). */}
+                              <th className="text-center">NĂM TỐT NGHIỆP THPT</th>
                               <th className="text-center">KHU VỰC ƯU TIÊN</th>
                               <th className="text-center">ĐỐI TƯỢNG ĐẦU VÀO</th>
                               <th className="text-center">NĂM XÉT TUYỂN</th>
@@ -2127,6 +2219,7 @@ const XetTuyenPage = () => {
                                       <td>{row["NGÀNH"]}</td>
                                       <td className="text-center">{row["KHÓA"]}</td>
                                       <td className="text-center">{row["ĐỐI TƯỢNG ƯU TIÊN"]}</td>
+                                      <td className="text-center">{row["NĂM TỐT NGHIỆP THPT"]}</td>
                                       <td className="text-center">{row["KHU VỰC ƯU TIÊN"]}</td>
                                       <td className="text-center">{row["ĐỐI TƯỢNG ĐẦU VÀO"]}</td>
                                       <td className="text-center">{row["NĂM XÉT TUYỂN"]}</td>

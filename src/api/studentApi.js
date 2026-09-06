@@ -544,6 +544,27 @@ export const layChiTietHoSoKho = async ({ key8, cccd, nganh } = {}) => {
   throw new Error(response.data.message || 'Lỗi tải chi tiết hồ sơ');
 };
 
+// ĐÃ THÊM (theo yêu cầu — tab "Điểm số" ở trang chi tiết hồ sơ): đọc điểm từ file Google
+// Sheets đã mirror từ hệ thống Đào tạo (xem action 'layBangDiemDaoTao' bên Quanlysv.gs —
+// chỉ đọc, không ghi gì). Trả về code 200 kèm cờ "coDuLieu" cho cả trường hợp chưa có dữ
+// liệu (ngành chưa cấu hình/chưa tìm thấy sinh viên...) — KHÔNG throw ở các trường hợp đó,
+// để trang tự hiện thông báo nhẹ nhàng thay vì rơi vào nhánh lỗi của useQuery.
+export const layBangDiemDaoTao = async (nganh, maSinhVien) => {
+  const auth = getAuthParams();
+  const qs = new URLSearchParams({
+    action: 'layBangDiemDaoTao',
+    idToken: auth.idToken,
+    sessionToken: auth.sessionToken,
+    nganh: nganh || '',
+    maSinhVien: maSinhVien || '',
+  });
+  const response = await axios.get(`${GAS_URL}?${qs.toString()}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data; // { coDuLieu, monHoc: [{mon, diem}], ... } hoặc { coDuLieu:false, lyDo }
+  }
+  throw new Error(response.data.message || 'Lỗi tải bảng điểm');
+};
+
 // ==========================================
 // PHẦN 5: API XÁC THỰC (AUTHENTICATION)
 // ==========================================

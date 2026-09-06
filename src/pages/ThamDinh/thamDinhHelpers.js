@@ -74,7 +74,11 @@ export function getBestScore(row) {
     const diemCong = parseFloat(getVal(row, ["ĐIỂM CỘNG"]).replace(',', '.')) || 0;
     const kvVal = getVal(row, ["KHU VỰC ƯU TIÊN"]);
     const dtVal = getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"]);
-    const uTienBanDau = (DICT_KHU_VUC[kvVal] || 0) + (DICT_DOI_TUONG[dtVal] || 0);
+    // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): xem chú thích
+    // đầy đủ tại biChanKhuVucUTTheoNamTN_TD phía trên — chặn cả khi cột "KHU VỰC ƯU TIÊN" trên
+    // sheet có giá trị nhưng "NĂM TỐT NGHIỆP THPT" khớp mốc "Trước...".
+    const namTotNghiepVal = getVal(row, ["NĂM TỐT NGHIỆP THPT"]);
+    const uTienBanDau = (biChanKhuVucUTTheoNamTN_TD(namTotNghiepVal) ? 0 : (DICT_KHU_VUC[kvVal] || 0)) + (DICT_DOI_TUONG[dtVal] || 0);
 
     const combos = DICT_NGANH[nganh] || [];
     let maxScore = 0; let bestCombo = "";
@@ -190,6 +194,20 @@ export function getAppState(row) {
 // tay) — đổi mức điểm chuẩn thì phải đổi ở CẢ 2 nơi.
 const DIEM_CHUAN_THPT = { THI_THPT: 15, HOC_BA: 16, HOC_BA_2025: 15 };
 
+// ĐÃ THÊM (theo phản hồi — Thông tư về tuyển sinh đại học mới áp dụng từ 15/2/2026: khu vực
+// ưu tiên bị giới hạn theo năm tốt nghiệp THPT). "ĐỘC LẬP NHƯNG ĐỒNG BỘ" với XetTuyenPage.jsx
+// (xem NTN_THPT_TRUOC/NTN_THPT_TU/biChanKhuVucUTTheoNamTN ở đó) — file này không import trực
+// tiếp từ XetTuyenPage.jsx (không thuộc cùng "module dùng chung" nào cả) nên phải tự khai báo
+// lại Y HỆT: mốc năm = năm dương lịch thực tế lúc chạy trừ đi 1 (KHÔNG hardcode cố định 1
+// năm). Đổi công thức/nhãn thì phải đổi ở CẢ 2 nơi.
+// Đây chính là "lớp phòng thủ thứ 2" theo đúng yêu cầu gốc: trang Thẩm định đọc THẲNG dữ liệu
+// Trung Gian (không qua form Xét tuyển), nên hồ sơ nào bị ai đó sửa trực tiếp cột "KHU VỰC ƯU
+// TIÊN" trên sheet (bỏ qua form) vẫn bị chặn cộng điểm ở đây, miễn cột "NĂM TỐT NGHIỆP THPT"
+// của dòng đó khớp mốc "Trước...".
+const MOC_NAM_TN_THPT_TD = new Date().getFullYear() - 1;
+const NTN_THPT_TRUOC_TD = `Trước ${MOC_NAM_TN_THPT_TD}`;
+const biChanKhuVucUTTheoNamTN_TD = (namTotNghiep) => String(namTotNghiep || '').trim() === NTN_THPT_TRUOC_TD;
+
 // Suy ra khoá phương thức (THI_THPT/HOC_BA/HOC_BA_2025) từ nhãn tiếng Việt lưu trên
 // cột "PHƯƠNG THỨC XÉT TUYỂN" (hoặc chính khoá đó, phòng khi có nơi lưu thẳng khoá).
 // Trả về "" nếu không nhận diện được (hồ sơ cũ chưa có cột này, hoặc bị bỏ trống lúc
@@ -239,7 +257,10 @@ export function calculateScores(row, targetNganh) {
   const diemCong = parseFloat(getVal(row, ["ĐIỂM CỘNG"]).replace(',', '.')) || 0;
   const kvVal = getVal(row, ["KHU VỰC ƯU TIÊN"]);
   const dtVal = getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"]);
-  const uTienBanDau = (DICT_KHU_VUC[kvVal] || 0) + (DICT_DOI_TUONG[dtVal] || 0);
+  // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): xem chú thích
+  // đầy đủ tại biChanKhuVucUTTheoNamTN_TD phía trên (cùng lý do với getBestScore ở trên).
+  const namTotNghiepVal = getVal(row, ["NĂM TỐT NGHIỆP THPT"]);
+  const uTienBanDau = (biChanKhuVucUTTheoNamTN_TD(namTotNghiepVal) ? 0 : (DICT_KHU_VUC[kvVal] || 0)) + (DICT_DOI_TUONG[dtVal] || 0);
 
   if (dtDauVao === "Tốt nghiệp THPT") {
     const combos = DICT_NGANH[targetNganh] || [];
