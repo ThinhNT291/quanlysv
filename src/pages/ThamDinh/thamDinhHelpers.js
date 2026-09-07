@@ -260,7 +260,14 @@ export function calculateScores(row, targetNganh) {
   // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): xem chú thích
   // đầy đủ tại biChanKhuVucUTTheoNamTN_TD phía trên (cùng lý do với getBestScore ở trên).
   const namTotNghiepVal = getVal(row, ["NĂM TỐT NGHIỆP THPT"]);
-  const uTienBanDau = (biChanKhuVucUTTheoNamTN_TD(namTotNghiepVal) ? 0 : (DICT_KHU_VUC[kvVal] || 0)) + (DICT_DOI_TUONG[dtVal] || 0);
+  // ĐÃ SỬA (Ký điện tử Pha 1 — Bước 4, theo yêu cầu bổ sung placeholder GBTT): tách
+  // riêng 2 thành phần khu vực/đối tượng (trước đây cộng gộp thẳng vào uTienBanDau) —
+  // Giấy báo trúng tuyển cần hiện RIÊNG "điểm ưu tiên khu vực" và "điểm ưu tiên đối
+  // tượng", không chỉ tổng. Giữ NGUYÊN uTienBanDau = tổng 2 thành phần (không đổi kết
+  // quả finalTotalScore hiện có ở dưới).
+  const diemKhuVucRaw = biChanKhuVucUTTheoNamTN_TD(namTotNghiepVal) ? 0 : (DICT_KHU_VUC[kvVal] || 0);
+  const diemDoiTuongRaw = DICT_DOI_TUONG[dtVal] || 0;
+  const uTienBanDau = diemKhuVucRaw + diemDoiTuongRaw;
 
   if (dtDauVao === "Tốt nghiệp THPT") {
     const combos = DICT_NGANH[targetNganh] || [];
@@ -315,6 +322,15 @@ export function calculateScores(row, targetNganh) {
         : 0;
       const finalTotalScore = (maxScore + finalUTien + diemCong + diemPhongVan).toFixed(2);
 
+      // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): quy đổi lại 2 thành phần khu vực/đối tượng
+      // theo ĐÚNG tỉ lệ đã áp dụng cho finalUTien (công thức giảm dần khi maxScore >=
+      // 22.5 — xem finalUTien phía trên) — để diemUuTienKhuVuc + diemUuTienDoiTuong
+      // LUÔN CỘNG LẠI ĐÚNG BẰNG finalUTien đã thực tế cộng vào điểm trúng tuyển, không
+      // in ra 2 con số khu vực/đối tượng "thô" rồi lệch với tổng thật trên GBTT.
+      const heSoQuyDoiUuTien = uTienBanDau > 0 ? finalUTien / uTienBanDau : 1;
+      const diemUuTienKhuVuc = Math.round(diemKhuVucRaw * heSoQuyDoiUuTien * 100) / 100;
+      const diemUuTienDoiTuong = Math.round(diemDoiTuongRaw * heSoQuyDoiUuTien * 100) / 100;
+
       // ĐÃ THÊM (theo phản hồi — "check bằng cách nào không?" khi PV không lên điểm): trả
       // thêm "maxScore" (điểm tổ hợp thô, trước ưu tiên/điểm cộng/PV) và "diemPhongVanRaw"
       // (giá trị PV ĐÃ NHẬP trên cột "ĐIỂM PHỎNG VẤN", BẤT KỂ có đủ điều kiện cộng hay
@@ -327,6 +343,7 @@ export function calculateScores(row, targetNganh) {
         type: 'thpt', hasScore: true, diemCong, uuTien: finalUTien, diemPhongVan, diemPhongVanRaw, maxScore,
         finalTotalScore, bestCombo, comboResults, phuongThuc, diemChuanLabel, diemChuan,
         dat: diemChuan != null ? parseFloat(finalTotalScore) >= diemChuan : null,
+        diemUuTienKhuVuc, diemUuTienDoiTuong, // ĐÃ THÊM (Bước 4) — xem chú thích ở heSoQuyDoiUuTien phía trên
       };
     }
     return { type: 'thpt', hasScore: false, comboResults: [] };

@@ -597,3 +597,104 @@ export const fetchLogs = async (username) => {
 // PHẦN 6: PHẢN HỒI LỖI (gửi qua Google Chat, hiện ở footer toàn app)
 // ==========================================
 export const sendFeedback = (noiDung) => postAiAction('feedback', { noiDung });
+
+// ==========================================
+// PHẦN 7: API KÝ ĐIỆN TỬ (Pha 1 — chữ ký ảnh)
+// ĐÃ THÊM — Bước 2 (chữ ký cá nhân). Các hàm cho Bước 3 trở đi (cấu hình chức danh,
+// tạo yêu cầu ký, hàng chờ ký, xem trước, ký) sẽ được thêm dần vào phần này.
+// ==========================================
+
+// Factory POST dùng chung cho nhóm action Ký điện tử — giống hệt postThamDinhAction
+// ở PHẦN 3, chỉ khác gửi 1 OBJECT (data={...}) thay vì mảng, vì các action này thao
+// tác trên 1 tài khoản/1 yêu cầu tại 1 thời điểm, không phải danh sách hàng loạt.
+const postKySoAction = async (action, dataObj = {}) => {
+  const formData = new URLSearchParams();
+  formData.append('action', action);
+  const auth = getAuthParams();
+  formData.append('idToken', auth.idToken);
+  formData.append('sessionToken', auth.sessionToken);
+  formData.append('data', JSON.stringify(dataObj));
+
+  const response = await axios.post(GAS_URL, formData);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi thao tác ký duyệt');
+};
+
+// Lấy ảnh chữ ký cá nhân của người đang đăng nhập — trả { coChuKy, anhBase64, mimeType, capNhat }.
+export const layChuKyCuaToi = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layChuKyCuaToi&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải chữ ký cá nhân');
+};
+
+// Lưu/thay ảnh chữ ký cá nhân — { anhBase64 (đã bỏ tiền tố data:...;base64,), mimeType }.
+export const luuChuKyCuaToi = ({ anhBase64, mimeType }) => postKySoAction('luuChuKyCuaToi', { anhBase64, mimeType });
+
+// Xoá ảnh chữ ký cá nhân đang lưu.
+export const xoaChuKyCuaToi = () => postKySoAction('xoaChuKyCuaToi', {});
+
+// ĐÃ THÊM — Bước 3: đọc bảng cấu hình "chức danh ký" cho 1 loại tài liệu (mặc định
+// GBTT) — dùng để dựng bảng "Chọn người ký" trong ChonNguoiKyModal. Trả về
+// { chucDanh: [...], danhSachTaiKhoan: [...] }.
+export const layCauHinhChucDanhKy = async (loaiTaiLieu = 'GBTT') => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layCauHinhChucDanhKy&loaiTaiLieu=${encodeURIComponent(loaiTaiLieu)}&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải cấu hình chức danh ký');
+};
+
+// ĐÃ THÊM — Bước 4: tạo yêu cầu ký GBTT cho 1 lô sinh viên đã duyệt.
+// { sinhVien: [...], nguoiKy: [{maChucDanh, email, ten?}, ...] } -> { results: [...] }.
+export const taoYeuCauKyGBTT = ({ sinhVien, nguoiKy }) => postKySoAction('taoYeuCauKyGBTT', { sinhVien, nguoiKy });
+
+// Danh sách yêu cầu ký đang chờ người đang đăng nhập ký — cho trang "Hồ sơ chờ ký".
+export const fetchDanhSachChoToiKy = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layDanhSachChoToiKy&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải danh sách chờ ký');
+};
+
+// Đếm nhanh số hồ sơ đang chờ mình ký — cho badge trên menu tài khoản.
+export const laySoLuongChoToiKy = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=laySoLuongChoToiKy&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi đếm số hồ sơ chờ ký');
+};
+
+// Xem trước nội dung 1 yêu cầu ký (PDF base64, hoặc link PDF cuối nếu đã hoàn tất).
+export const xemTruocYeuCauKy = async (maYeuCau) => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=xemTruocYeuCauKy&maYeuCau=${encodeURIComponent(maYeuCau)}&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tạo bản xem trước');
+};
+
+// Thực hiện 1 lượt ký cho yêu cầu maYeuCau (dùng đúng chữ ký cá nhân đã lưu ở Hồ sơ cá nhân).
+export const kyYeuCau = ({ maYeuCau, ghiChu }) => postKySoAction('kyYeuCau', { maYeuCau, ghiChu });
+
+// ĐÃ THÊM — Bước 7: lịch sử MỌI yêu cầu ký người đang đăng nhập có liên quan (đã ký/
+// đang chờ/là người tạo), không chỉ riêng bước đang tới lượt — cho tab "Đã ký" trên
+// trang Hồ sơ chờ ký, để xem lại/tải PDF sau khi văn bản đã hoàn tất.
+export const fetchLichSuKyCuaToi = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layLichSuKyCuaToi&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải lịch sử ký');
+};

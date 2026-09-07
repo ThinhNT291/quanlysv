@@ -154,7 +154,11 @@ const HO_SO_TIEN_QUYET = {
 // hồ sơ/giấy tờ đã hiện riêng ở card "Hồ sơ đã nộp" (HoSoDaNop) ngay phía trên, bỏ khỏi đây
 // để khỏi lặp lại 2 lần.
 const KHOA_LOAI_TRU_THONG_TIN_CANHAN = [
-  'SV_KEY', 'LINK HỒ SƠ', 'TÀI KHOẢN NHẬP LIỆU',
+  // ĐÃ THÊM "RAW_DIEM_HK" (theo phản hồi — còn sót dòng raw điểm): cột JSON nội bộ trên
+  // Goc01 lưu chi tiết điểm từng Lớp/Kỳ (xem TOM_TAT_BAN_GIAO.md) — trang Thẩm định cũng
+  // loại cột này khi xuất (ThamDinhPage.jsx/CAC_COT_LOAI_BO_KHI_XUAT), không phải thứ người
+  // xem hồ sơ cần thấy dạng chuỗi JSON thô.
+  'SV_KEY', 'LINK HỒ SƠ', 'TÀI KHOẢN NHẬP LIỆU', 'RAW_DIEM_HK',
   'TOÁN', 'VẬT LÍ', 'HÓA HỌC', 'SINH HỌC', 'NGỮ VĂN', 'LỊCH SỬ', 'ĐỊA LÝ',
   'TIẾNG ANH', 'TIẾNG TRUNG', 'TIN HỌC', 'GDKTPL',
   'ĐIỂM TB TOÀN KHÓA HỆ 4', 'ĐIỂM TB TOÀN KHÓA HỆ 10', 'ĐIỂM CỘNG', 'ĐIỂM PHỎNG VẤN',

@@ -1,19 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query'; // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): badge số lượng "Hồ sơ chờ ký"
 import Swal from 'sweetalert2';
-import { sendFeedback } from './api/studentApi';
+import { sendFeedback, laySoLuongChoToiKy } from './api/studentApi';
 import './App.css';
 import logoPhuXuan from './assets/logo-phuxuan.png'; // ĐÃ THÊM: logo trường, đặt góc trên-trái navbar
 import Home from './pages/Home'; // ĐÃ THÊM: trang chủ dạng thẻ chức năng sau đăng nhập
 import AdmissionsPage from './pages/Admissions/AdmissionsPage';
-import SettingsPage from './pages/Settings/SettingsPage'; 
-import LoginPage from './pages/Auth/LoginPage'; 
-import UserStatsPage from './pages/Settings/UserStatsPage'; 
-import XetTuyenPage from './pages/XetTuyen/XetTuyenPage'; 
+import SettingsPage from './pages/Settings/SettingsPage';
+import LoginPage from './pages/Auth/LoginPage';
+import UserStatsPage from './pages/Settings/UserStatsPage';
+import XetTuyenPage from './pages/XetTuyen/XetTuyenPage';
 import ThamDinhPage from './pages/ThamDinh/ThamDinhPage'; // ĐÃ THÊM (Pha 2 roadmap)
 import XacNhanDinhDanhPage from './pages/DinhDanh/XacNhanDinhDanhPage'; // ĐÃ THÊM (Pha 1·D1 — bước 4)
 import KhoSinhVienPage from './pages/KhoSinhVien/KhoSinhVienPage'; // ĐÃ THÊM: "Kho tra cứu sinh viên" — gộp Trung Gian + KETQUA + Đào tạo
 import ChiTietHoSoKhoPage from './pages/KhoSinhVien/ChiTietHoSoKhoPage'; // ĐÃ THÊM: trang chi tiết 1 hồ sơ trong Kho
+import HoSoCaNhanPage from './pages/HoSoCaNhan/HoSoCaNhanPage'; // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 2): thay placeholder "đang xây dựng" cũ
+import ChoKyPage from './pages/KySo/ChoKyPage'; // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): trang "Hồ sơ chờ ký"
 
 // ĐÃ THÊM: helper so quyền không phân biệt hoa/thường, hỗ trợ 1 tài khoản có
 // nhiều role cùng lúc (userRoles là mảng, khớp với "roles" mảng backend trả về ở
@@ -159,6 +162,16 @@ const App = () => {
     return savedUser ? normalizeUserInfo(JSON.parse(savedUser)) : null;
   });
 
+  // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): badge số lượng "Hồ sơ chờ ký" trên menu tài
+  // khoản — chỉ gọi khi đã đăng nhập (enabled), tự làm mới mỗi 60s (đủ nhanh để không
+  // cảm giác "cũ", không tốn quota gọi liên tục như polling ngắn hơn).
+  const { data: soLuongChoKy } = useQuery({
+    queryKey: ['soLuongChoToiKy'],
+    queryFn: laySoLuongChoToiKy,
+    enabled: !!currentUser,
+    refetchInterval: 60000,
+  });
+
   // ĐÃ THÊM (theo phản hồi — tiêu đề tab trình duyệt hiện đúng tên trang đang xem, thay vì
   // luôn cố định "Quản lý sinh viên" như trong index.html): dùng chung currentHashPath đã
   // theo dõi ở trên (qua "hashchange"), không cần thêm cơ chế route nào khác. Đặt SAU khai
@@ -178,6 +191,7 @@ const App = () => {
     '/xac-nhan-dinh-danh': 'Định danh hồ sơ',
     '/user-stats': 'Thống kê cá nhân',
     '/ho-so-ca-nhan': 'Hồ sơ cá nhân',
+    '/ho-so-cho-ky': 'Hồ sơ chờ ký',
   };
   useEffect(() => {
     if (!currentUser) { document.title = 'Đăng nhập'; return; }
@@ -399,6 +413,25 @@ const App = () => {
                     }}
                   >
                     <i className="bi bi-graph-up-arrow me-2 text-primary"></i> Thống kê cá nhân
+                  </NavLink>
+                </li>
+                {/* ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): mục "Hồ sơ chờ ký" — kèm badge số
+                    lượng đang chờ (soLuongChoKy, xem useQuery khai báo cùng currentUser ở
+                    trên). Hiện cho MỌI tài khoản đã đăng nhập, không riêng vai trò nào —
+                    cùng lý do với route /ho-so-cho-ky (xem chú thích tại Routes bên dưới). */}
+                <li>
+                  <NavLink
+                    to="/ho-so-cho-ky"
+                    className="dropdown-item py-2 d-flex align-items-center justify-content-between"
+                    onClick={() => {
+                      setIsNavCollapsed(true);
+                      setIsUserDropdownOpen(false);
+                    }}
+                  >
+                    <span><i className="bi bi-vector-pen me-2 text-primary"></i> Hồ sơ chờ ký</span>
+                    {soLuongChoKy?.soLuong > 0 && (
+                      <span className="badge bg-danger rounded-pill">{soLuongChoKy.soLuong}</span>
+                    )}
                   </NavLink>
                 </li>
                 {/* ĐÃ THÊM (theo phản hồi): mục "Xuất Excel" — CHỈ hiện khi đang ở trang Thẩm
@@ -665,17 +698,20 @@ const App = () => {
             {/* Các trang chung ai cũng vào được */}
             <Route path="/user-stats" element={<UserStatsPage />} />
 
-            {/* ĐÃ THÊM: trang hồ sơ cá nhân — mở từ dòng username trong menu tài khoản.
-                PLACEHOLDER tạm thời (trang thật làm sau) — có route thật để bấm vào không
-                bị lỗi/trắng trang, không cần ProtectedRoute vì ai đăng nhập cũng xem được
-                hồ sơ của chính mình, giống /user-stats ở trên. */}
-            <Route path="/ho-so-ca-nhan" element={
-              <div className="d-flex flex-column align-items-center justify-content-center mt-5 pt-5 text-center">
-                <h1 className="text-info display-1"><i className="bi bi-person-badge"></i></h1>
-                <h3 className="text-muted mt-3 fw-bold">Trang hồ sơ cá nhân</h3>
-                <p className="text-secondary">Đang được xây dựng — sẽ sớm ra mắt.</p>
-              </div>
-            } />
+            {/* ĐÃ SỬA (Ký điện tử Pha 1 — Bước 2): thay placeholder "đang xây dựng" bằng
+                trang thật HoSoCaNhanPage (khối "Chữ ký cá nhân" — nền tảng cho luồng ký
+                GBTT ở các bước sau). Vẫn KHÔNG bọc ProtectedRoute — ai đăng nhập cũng xem/
+                sửa được hồ sơ của chính mình, giống /user-stats ở trên; backend cũng đã tự
+                scope theo đúng email đang đăng nhập (g.userInfo.email), không nhận tham số
+                email từ client nên không lộ dữ liệu người khác dù route mở. */}
+            <Route path="/ho-so-ca-nhan" element={<HoSoCaNhanPage />} />
+
+            {/* ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): trang "Hồ sơ chờ ký" — cũng KHÔNG bọc
+                ProtectedRoute, cùng lý do với /ho-so-ca-nhan: danh sách chờ ký là dữ liệu
+                BuocKy khớp theo email đang đăng nhập, không phải theo vai trò hệ thống —
+                khoá theo role sẽ chặn nhầm đúng người cần vào nhất (vd Hiệu trưởng có thể
+                chỉ mang role CanBo trong hệ thống). Backend tự lọc theo g.userInfo.email. */}
+            <Route path="/ho-so-cho-ky" element={<ChoKyPage />} />
 
             {/* Trang báo lỗi 404 */}
             <Route path="*" element={

@@ -140,7 +140,7 @@
   white-space: nowrap;
 }
 .thamdinh-pin-row2 .thamdinh-pin-status {
-  flex: 1 1 130px;
+  flex: 1 1 125px;
   min-width: 110px;
 }
 .thamdinh-pin-row2 .thamdinh-pin-sort {
@@ -150,7 +150,7 @@
 /* ĐÃ THÊM: Ngành đào tạo mới chuyển lên hàng ghim — thu ngắn còn ~nửa bề rộng so với
    2 ô Trạng thái thẩm định/Sắp xếp bên cạnh theo đúng yêu cầu. */
 .thamdinh-pin-row2 .thamdinh-pin-nganh {
-  flex: 0 1 70px;
+  flex: 0 1 160px;
   min-width: 60px;
 }
 /* Chấm cam trên nút "Lọc thêm" khi nhóm lọc xổ (Đối tượng/Trạng thái hồ sơ) đang có

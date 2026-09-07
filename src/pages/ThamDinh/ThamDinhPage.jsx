@@ -8,7 +8,8 @@ import html2pdf from 'html2pdf.js';
 import * as XLSX from 'xlsx';
 import {
   fetchThamDinhData, duyetTrungTuyen, baoThieuHoSo, luuKetQuaThamDinh, banGiaoDaoTao,
-  scanTranscriptImage, compareCurriculumAI, exportThamDinhTemplate
+  scanTranscriptImage, compareCurriculumAI, exportThamDinhTemplate,
+  taoYeuCauKyGBTT // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4)
 } from '../../api/studentApi';
 import {
   getVal, normalizeText, getRowKey, generateMaSV, getBestScore,
@@ -18,6 +19,9 @@ import {
 import { DICT_NGANH, DICT_TO_HOP, SUBJ_MAP } from './thamDinhConfig';
 import DateRangePicker from './DateRangePicker';
 import './ThamDinh.css';
+// ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3): bảng "chọn người ký" nhúng vào modal xác nhận
+// hàng loạt khi bấm "Xuất GBTT + gửi ký" — xem thêm chú thích tại nơi dùng bên dưới.
+import ChonNguoiKyModal from '../KySo/ChonNguoiKyModal';
 import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
 
 // ĐÃ THÊM: hồ sơ đến từ trang "Thu hồ sơ nhập học" (kênh "Thu hồ sơ trực tiếp") đã trúng
@@ -117,6 +121,11 @@ const ThamDinhPage = () => {
   const [scanCache, setScanCache] = useState(loadScanCache); // { [scanKey]: { transcriptJSON, compareResult, scanFileName } }
   const fileInputRef = useRef(null);
   const [batchPreview, setBatchPreview] = useState(null);
+  // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3): danh sách người ký đang chọn cho lần "Xuất
+  // GBTT" hiện tại — được ChonNguoiKyModal tự seed 1 lần từ cấu hình ChucDanhKy. Reset
+  // về [] mỗi khi mở lại batchPreview loại 'gbtt' (xem openBatchPreview bên dưới) để
+  // không giữ lựa chọn của lần xuất trước.
+  const [nguoiKyGBTT, setNguoiKyGBTT] = useState([]);
   // ĐÃ THÊM: cờ đóng/mở menu xổ xuống của nút "Xuất file" trong modal thẩm định chi
   // tiết — modal được render bằng IIFE gọi có điều kiện (viewingIndex !== null && ...)
   // nên KHÔNG được khai báo useState bên trong đó (vi phạm Rules of Hooks), phải khai
@@ -332,11 +341,20 @@ const ThamDinhPage = () => {
   // (chỉ còn chữ, cột không bị chật thêm bởi icon nữa).
   // ĐÃ THÊM: nếu hồ sơ đã bấm "Lưu vào CSDL" (saved = true, xem getEffectiveSaved) thì
   // ưu tiên hiển thị "Đã lưu" trước mọi trạng thái khác — kiểm tra saved TRƯỚC state.
-  const stateBadge = (state, saved) => {
+  // ĐÃ SỬA (theo phản hồi — hồ sơ ĐÃ DUYỆT có cập nhật/bổ sung thêm): nhận thêm tham số
+  // "row" (trước đây chỉ có state/saved) để tự đọc RAW "TRẠNG THÁI THẨM ĐỊNH" — backend
+  // (Quanlysv.gs/importStudents) giờ có thể ghi "Đã duyệt (Có cập nhật: ...)" thay vì hạ
+  // xuống "Mới bổ sung" khi sửa 1 hồ sơ đã duyệt (xem chú thích đầy đủ ở đó). Badge đổi màu
+  // cam + thêm dấu * để cán bộ nhận ra ngay hồ sơ này vừa có thay đổi cần xem lại.
+  const stateBadge = (row, state, saved) => {
     if (saved) return { text: "Đã lưu", cls: "btn-secondary" };
     // ĐÃ THÊM: hồ sơ Thu hồ sơ trực tiếp (Nhập học) — nhãn riêng, tách rõ khỏi luồng thẩm định.
     if (state === "Đã trúng tuyển") return { text: "Đã trúng tuyển (NH)", cls: "btn-dark" };
-    if (state === "Đã duyệt") return { text: "Đã duyệt", cls: "btn-success" };
+    if (state === "Đã duyệt") {
+      const rawTrangThai = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
+      if (rawTrangThai.indexOf("Có cập nhật") !== -1) return { text: "Đã duyệt *", cls: "btn-warning text-dark" };
+      return { text: "Đã duyệt", cls: "btn-success" };
+    }
     if (state === "Đã báo thiếu") return { text: "Đã yêu cầu BS", cls: "btn-warning" };
     if (state === "Mới bổ sung") return { text: "Mới bổ sung", cls: "btn-info" };
     return { text: "Thẩm định", cls: "btn-outline-primary" };
@@ -346,6 +364,9 @@ const ThamDinhPage = () => {
   const missingMutation = useMutation({ mutationFn: baoThieuHoSo });
   const saveMutation = useMutation({ mutationFn: luuKetQuaThamDinh });
   const daoTaoMutation = useMutation({ mutationFn: banGiaoDaoTao });
+  // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): tạo yêu cầu ký GBTT — KHÔNG đổi trạng thái
+  // thẩm định của hồ sơ (khác 3 mutation trên), nên không cần newOverrides khi xong.
+  const gbttMutation = useMutation({ mutationFn: taoYeuCauKyGBTT });
 
   // ===================== PHA 5: SCAN BẢNG ĐIỂM AI / ĐỐI SÁNH CTĐT / XUẤT TEMPLATE =====================
 
@@ -487,6 +508,55 @@ const ThamDinhPage = () => {
     kenhNop: getVal(row, ["KÊNH NỘP"]),
   });
 
+  // ĐÃ SỬA (Ký điện tử Pha 1 — Bước 4, theo yêu cầu bổ sung): dựng payload 1 sinh viên
+  // gửi cho taoYeuCauKyGBTT — tên field khớp đúng placeholder nội dung trong mẫu Doc
+  // GBTT. Trước đây chỉ gửi 1 chuỗi điểm gộp (getBestScore) — giờ chuyển sang
+  // calculateScores(row, nganh) để tách được điểm TỪNG MÔN của đúng tổ hợp đạt cao
+  // nhất (bestCombo) + điểm ưu tiên khu vực/đối tượng RIÊNG (xem
+  // diemUuTienKhuVuc/diemUuTienDoiTuong mới thêm trong thamDinhHelpers.js — đã quy đổi
+  // đúng theo tỉ lệ áp dụng thật, cộng lại = đúng phần ưu tiên đã tính vào điểm trúng
+  // tuyển). Field maSinhVien/khoa/heDaoTao/hinhThucDaoTao vẫn gửi kèm dù mẫu GBTT hiện
+  // tại của ông chưa dùng tới — replaceText() tự bỏ qua placeholder không tồn tại
+  // trong Doc, không lỗi gì cả, cứ để sẵn phòng khi mẫu bổ sung sau này.
+  const buildGbttPayload = (row) => {
+    const nganh = getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]);
+    const diem = calculateScores(row, nganh);
+
+    let diemTrungTuyen = "";
+    let mon1Ten = "", mon1Diem = "", mon2Ten = "", mon2Diem = "", mon3Ten = "", mon3Diem = "";
+    let diemUuTienKhuVuc = "", diemUuTienDoiTuong = "";
+
+    if (diem.type === 'thpt' && diem.hasScore) {
+      diemTrungTuyen = diem.finalTotalScore;
+      const monHoc = DICT_TO_HOP[diem.bestCombo] || [];
+      const ketQuaCombo = (diem.comboResults || []).find(c => c.combo === diem.bestCombo) || {};
+      mon1Ten = monHoc[0] ? SUBJ_MAP[monHoc[0]] : "";
+      mon2Ten = monHoc[1] ? SUBJ_MAP[monHoc[1]] : "";
+      mon3Ten = monHoc[2] ? SUBJ_MAP[monHoc[2]] : "";
+      mon1Diem = ketQuaCombo.s1 ?? "";
+      mon2Diem = ketQuaCombo.s2 ?? "";
+      mon3Diem = ketQuaCombo.s3 ?? "";
+      diemUuTienKhuVuc = diem.diemUuTienKhuVuc ?? "";
+      diemUuTienDoiTuong = diem.diemUuTienDoiTuong ?? "";
+    } else if (diem.type === 'other') {
+      diemTrungTuyen = diem.dtbVal || "";
+    }
+
+    return {
+      hoTen: getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]),
+      ngaySinh: getVal(row, ["NGÀY SINH", "NGÀNH SINH"]),
+      canCuoc: getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, ''),
+      maSinhVien: generateMaSV(row),
+      nganh,
+      khoa: getVal(row, ["KHÓA"]),
+      heDaoTao: getVal(row, ["HỆ ĐÀO TẠO", "Hệ đào tạo"]),
+      hinhThucDaoTao: getVal(row, ["HÌNH THỨC ĐÀO TẠO", "Hình thức đào tạo"]),
+      diemTrungTuyen,
+      mon1Ten, mon1Diem, mon2Ten, mon2Diem, mon3Ten, mon3Diem,
+      diemUuTienKhuVuc, diemUuTienDoiTuong,
+    };
+  };
+
   // ĐÃ THÊM: chặn ngay từ đầu nếu lỡ gọi trigger cho hồ sơ kênh "Thu hồ sơ trực tiếp" —
   // hồ sơ này không thuộc luồng thẩm định Xét tuyển (nút bấm cũng đã bị khoá ở UI, đây
   // là lớp phòng vệ thứ 2, phòng khi trigger được gọi từ chỗ khác sau này).
@@ -503,7 +573,20 @@ const ThamDinhPage = () => {
       return;
     }
     const hoTen = getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]);
-    const confirm = await Swal.fire({ icon: 'question', title: 'Duyệt trúng tuyển?', text: `Duyệt trúng tuyển cho thí sinh: ${hoTen}?`, showCancelButton: true, confirmButtonText: 'Xác nhận', cancelButtonText: 'Huỷ' });
+    // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT vừa có cập nhật): đổi hẳn nội dung hộp thoại
+    // xác nhận khi đây là lượt "duyệt lại" (không phải duyệt lần đầu) — nhắc rõ những cột đã
+    // đổi (đọc thẳng từ rawTrangThai, xem chú thích ở Quanlysv.gs/importStudents) để cán bộ
+    // không bấm nhầm khi chưa kịp xem lại phần vừa bổ sung.
+    const rawTrangThaiApprove = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
+    const chiTietCapNhatApprove = (rawTrangThaiApprove.match(/Có cập nhật: ([^)]*)\)/) || [])[1] || '';
+    const confirm = await Swal.fire({
+      icon: 'question',
+      title: chiTietCapNhatApprove ? 'Xác nhận LẠI hồ sơ vừa cập nhật?' : 'Duyệt trúng tuyển?',
+      text: chiTietCapNhatApprove
+        ? `Thí sinh ${hoTen} vừa cập nhật: ${chiTietCapNhatApprove}. Xác nhận lại "Đã duyệt"?`
+        : `Duyệt trúng tuyển cho thí sinh: ${hoTen}?`,
+      showCancelButton: true, confirmButtonText: 'Xác nhận', cancelButtonText: 'Huỷ'
+    });
     if (!confirm.isConfirmed) return;
 
     try {
@@ -603,6 +686,27 @@ const ThamDinhPage = () => {
     }
   };
 
+  // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3, bổ sung theo phản hồi): đường đi cho 1 hồ sơ
+  // lẻ — gọi từ nút trong menu "Xuất file" của modal thẩm định chi tiết. Không tái sử
+  // dụng openBatchPreview() vì hàm đó luôn lấy nguồn từ selectedKeys (tick chọn ở bảng
+  // danh sách); ở đây chỉ có đúng 1 "row" đang mở trong modal chi tiết, không liên quan
+  // gì tới các dòng đang được tick chọn ngoài bảng. Dùng lại đúng điều kiện hợp lệ như
+  // nhánh 'gbtt' của openBatchPreview để 2 đường đi (hàng loạt / 1 hồ sơ) luôn nhất
+  // quán với nhau.
+  const openGbttPreviewSingle = (row) => {
+    const state = getEffectiveState(row);
+    if (isTrucTiepKenh(row)) {
+      Swal.fire({ icon: 'warning', title: 'Không thể xuất GBTT', text: 'Hồ sơ Thu hồ sơ trực tiếp không thuộc luồng thẩm định.' });
+      return;
+    }
+    if (state !== "Đã duyệt") {
+      Swal.fire({ icon: 'warning', title: 'Không thể xuất GBTT', text: 'Chỉ xuất được Giấy báo trúng tuyển cho hồ sơ ĐÃ DUYỆT trúng tuyển.' });
+      return;
+    }
+    setNguoiKyGBTT([]);
+    setBatchPreview({ type: 'gbtt', validRows: [row], excludedNote: '' });
+  };
+
   const openBatchPreview = (type) => {
     const selectedRows = filteredData.filter(r => selectedKeys.has(getRowKey(r)));
     if (selectedRows.length === 0) {
@@ -625,6 +729,12 @@ const ThamDinhPage = () => {
         else if (state === "Đã báo thiếu") reason = "đã báo thiếu";
       } else if (type === 'luucsdl') {
         if (getEffectiveSaved(row)) reason = "đã lưu vào CSDL";
+      } else if (type === 'gbtt') {
+        // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3): chỉ hồ sơ ĐÃ DUYỆT trúng tuyển mới được
+        // xuất Giấy báo trúng tuyển để gửi ký — khác hẳn 'duyet'/'baothieu' (loại hồ sơ
+        // ĐÃ xử lý), ở đây loại hồ sơ CHƯA xử lý.
+        if (isTrucTiepKenh(row)) reason = "hồ sơ Thu hồ sơ trực tiếp (không thuộc luồng thẩm định)";
+        else if (state !== "Đã duyệt") reason = "chưa duyệt trúng tuyển";
       }
       if (reason) excludedReasons[reason] = (excludedReasons[reason] || 0) + 1;
       else validRows.push(row);
@@ -640,12 +750,45 @@ const ThamDinhPage = () => {
       ? `Đã loại ${excludedTotal} hồ sơ khỏi danh sách do: ${Object.keys(excludedReasons).map(r => `${excludedReasons[r]} ${r}`).join(', ')}.`
       : '';
 
+    // ĐÃ THÊM (Bước 3): mở lại bảng chọn người ký từ đầu mỗi lần bấm "Xuất GBTT" —
+    // ChonNguoiKyModal sẽ tự seed lại từ cấu hình ChucDanhKy vì nguoiKyGBTT về [].
+    if (type === 'gbtt') setNguoiKyGBTT([]);
+
     setBatchPreview({ type, validRows, excludedNote });
   };
 
   const executeBatchAction = async () => {
     if (!batchPreview) return;
     const { type, validRows } = batchPreview;
+
+    // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): nhánh GBTT tách hẳn khỏi 3 nhánh
+    // duyet/baothieu/luucsdl bên dưới — action taoYeuCauKyGBTT không đổi trạng thái
+    // thẩm định (không cần newOverrides) và trả kết quả theo TỪNG SINH VIÊN chứ không
+    // khớp lại theo CCCD như approveMutation/missingMutation/saveMutation.
+    if (type === 'gbtt') {
+      const dsNguoiKyChon = nguoiKyGBTT.filter(nk => nk.chon && nk.email);
+      if (dsNguoiKyChon.length === 0) {
+        Swal.fire({ icon: 'warning', title: 'Chưa chọn người ký', text: 'Cần chọn ít nhất 1 người ký trước khi xuất GBTT.' });
+        return;
+      }
+      try {
+        const ket = await gbttMutation.mutateAsync({
+          sinhVien: validRows.map(buildGbttPayload),
+          nguoiKy: dsNguoiKyChon.map(nk => ({ maChucDanh: nk.maChucDanh, email: nk.email, ten: nk.ten })),
+        });
+        const results = Array.isArray(ket?.results) ? ket.results : [];
+        const soLoi = results.filter(r => r.status === 'error').length;
+        setBatchPreview(null);
+        Swal.fire({
+          icon: soLoi > 0 ? 'warning' : 'success',
+          title: soLoi > 0 ? `Hoàn tất với ${soLoi} lỗi` : 'Đã tạo yêu cầu ký thành công',
+          html: results.map(r => `${r.status === 'error' ? '❌' : '✅'} <b>${r.hoTen}</b>: ${r.message}`).join('<br/>'),
+        });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Lỗi tạo yêu cầu ký', text: err.message });
+      }
+      return;
+    }
 
     let mutation, payload;
     if (type === 'duyet') {
@@ -719,7 +862,7 @@ const ThamDinhPage = () => {
     }
   };
 
-  const batchTitleMap = { duyet: "Xác nhận DUYỆT TRÚNG TUYỂN hàng loạt", baothieu: "Xác nhận YÊU CẦU BỔ SUNG HỒ SƠ hàng loạt", luucsdl: "Xác nhận LƯU VÀO CSDL hàng loạt" };
+  const batchTitleMap = { duyet: "Xác nhận DUYỆT TRÚNG TUYỂN hàng loạt", baothieu: "Xác nhận YÊU CẦU BỔ SUNG HỒ SƠ hàng loạt", luucsdl: "Xác nhận LƯU VÀO CSDL hàng loạt", gbtt: "Xuất GIẤY BÁO TRÚNG TUYỂN + gửi ký" };
 
   return (
     <div className="container-fluid py-3 thamdinh-page">
@@ -928,6 +1071,10 @@ const ThamDinhPage = () => {
             <button className="btn btn-sm btn-success" onClick={() => openBatchPreview('duyet')}>✅ Duyệt hàng loạt</button>
             <button className="btn btn-sm btn-warning" onClick={() => openBatchPreview('baothieu')}>⚠️ Báo thiếu hàng loạt</button>
             <button className="btn btn-sm btn-primary" onClick={() => openBatchPreview('luucsdl')}>💾 Lưu CSDL hàng loạt</button>
+            {/* ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3): nút xuất Giấy báo trúng tuyển +
+                gửi yêu cầu ký — hiện chỉ mở bảng xem trước, nút "Xác nhận" tạm khoá
+                cho tới Bước 4 (khi action taoYeuCauKyGBTT thật sự tồn tại). */}
+            <button className="btn btn-sm btn-info text-white" onClick={() => openBatchPreview('gbtt')}>📄 Xuất GBTT + gửi ký</button>
             {/* ĐÃ XOÁ (theo phản hồi): nút "Bỏ chọn hết" — thay bằng ô tick "chọn tất" ngay
                 trong hàng tiêu đề bảng (cạnh STT, xem <thead> bên dưới), bỏ tick ô đó là bỏ
                 chọn hết các dòng đang hiện trên trang hiện tại. */}
@@ -993,7 +1140,7 @@ const ThamDinhPage = () => {
                 const missing = getMissingDocs(row);
                 const cccdStr = getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '');
                 const score = getBestScore(row);
-                const badge = stateBadge(state, saved);
+                const badge = stateBadge(row, state, saved);
 
                 return (
                   // ĐÃ THÊM (theo phản hồi): sau khi đã tick ÍT NHẤT 1 dòng bằng cách bấm
@@ -1083,6 +1230,15 @@ const ThamDinhPage = () => {
         const isTrucTiep = isTrucTiepKenh(row);
         const missingTQ = getMissingTienQuyet(row);
         const missing = getMissingDocs(row);
+        // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT có cập nhật/bổ sung thêm): đọc RAW "TRẠNG
+        // THÁI THẨM ĐỊNH" (khác "state" đã bị chuẩn hoá chỉ còn "Đã duyệt") — khi sửa 1 hồ sơ
+        // đã duyệt, backend (Quanlysv.gs/importStudents) ghi thêm hậu tố "(Có cập nhật: <các
+        // cột vừa đổi>)" vào NGUYÊN ô này thay vì hạ về "Mới bổ sung". coCapNhatSauDuyet=true
+        // thì: nút Duyệt mở khoá LẠI (đổi màu cam, để cán bộ xác nhận lại) thay vì khoá cứng
+        // như hồ sơ đã duyệt bình thường; nút Y/C bổ sung cũng mở lại (tới khi hồ sơ đủ).
+        const rawTrangThai = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
+        const coCapNhatSauDuyet = isDuyet && rawTrangThai.indexOf("Có cập nhật") !== -1;
+        const chiTietCapNhat = (rawTrangThai.match(/Có cập nhật: ([^)]*)\)/) || [])[1] || '';
         const scores = calculateScores(row, targetNganh);
         const scanKey = getCandidateScanKey(row);
         const scanEntry = scanCache[scanKey] || {};
@@ -1094,15 +1250,23 @@ const ThamDinhPage = () => {
         // ĐÃ THÊM (Pha 5): khi đang "khảo sát ngành khác" (targetNganh != ngành đăng ký
         // thật), khoá cả 3 nút hành động — giống hệt bản cũ (isSurveying trong
         // updateModalActionButtons), tránh lỡ tay duyệt/lưu nhầm theo ngành đang xem thử.
-        const btnApproveDisabled = isSurveying || isDuyet || isBaoThieu || isTrucTiep || missingTQ.length > 0 || approveMutation.isPending;
+        // ĐÃ SỬA (theo phản hồi): "isDuyet" giờ CHỈ khoá nút Duyệt khi KHÔNG có cập nhật mới
+        // (coCapNhatSauDuyet=false) — hồ sơ đã duyệt mà vừa được sửa/bổ sung thì mở lại ĐÚNG
+        // nút này (đổi nhãn/màu) để cán bộ xác nhận lại, thay vì khoá cứng như trước (khoá
+        // cứng mới là nguyên nhân không có cách nào để "duyệt lại" hồ sơ có cập nhật).
+        const btnApproveDisabled = isSurveying || (isDuyet && !coCapNhatSauDuyet) || isBaoThieu || isTrucTiep || missingTQ.length > 0 || approveMutation.isPending;
         const btnApproveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác'
           : approveMutation.isPending ? '⏳ Đang xuất Biên nhận...'
           : isTrucTiep ? '— Ngoài luồng thẩm định —'
+          : coCapNhatSauDuyet ? '🔁 XÁC NHẬN LẠI (có cập nhật)'
           : isDuyet ? 'Đã duyệt'
           : missingTQ.length > 0 ? '❌ Thiếu HS Tiên Quyết'
           : '✅ DUYỆT TRÚNG TUYỂN';
 
-        const btnMissingDisabled = isSurveying || isDuyet || isBaoThieu || isTrucTiep || missingMutation.isPending;
+        // ĐÃ SỬA (theo phản hồi): hồ sơ đã duyệt NHƯNG có cập nhật mới thì nút Y/C bổ sung
+        // cũng mở lại — CHỈ khoá lại khi hồ sơ đã ĐỦ giấy tờ (missing.length === 0), đúng ý
+        // "chỉ khi nào hồ sơ ĐỦ thì nút Y/C bổ sung mới khóa".
+        const btnMissingDisabled = isSurveying || (isDuyet && !coCapNhatSauDuyet) || isBaoThieu || isTrucTiep || (coCapNhatSauDuyet && missing.length === 0) || missingMutation.isPending;
         const btnMissingText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : isTrucTiep ? '— Ngoài luồng thẩm định —' : missingMutation.isPending ? '⏳ Đang xử lý...' : isBaoThieu ? 'Đã Y/C bổ sung' : '⚠️ Y/C BỔ SUNG HS';
 
         const btnSaveDisabled = isSurveying || saved || saveMutation.isPending;
@@ -1150,7 +1314,11 @@ const ThamDinhPage = () => {
                             điểm". Sửa: áp "?? 0" trực tiếp trước khi gọi .toFixed(2), không qua
                             kiểm tra vòng vo nữa — luôn ra số, không bao giờ crash. */}
                         <tr><th>Điểm cộng / Điểm ưu tiên</th><td>{scores.diemCong ?? 0}đ / {(scores.uuTien ?? 0).toFixed(2)}đ</td></tr>
-                        <tr><th>Trạng thái thẩm định</th><td>{state}</td></tr>
+                        {/* ĐÃ SỬA (theo phản hồi — cần thấy hồ sơ đã duyệt vừa cập nhật CHỖ NÀO
+                            trước khi bấm duyệt lại): hiện nguyên "rawTrangThai" (có thể mang hậu
+                            tố "(Có cập nhật: ...)") thay vì "state" đã bị chuẩn hoá rút gọn — chỉ tô
+                            cam đậm khi có cập nhật để dễ nhận ra ngay trong bảng thông tin. */}
+                        <tr><th>Trạng thái thẩm định</th><td className={coCapNhatSauDuyet ? 'text-warning fw-bold' : ''}>{rawTrangThai || state}</td></tr>
                         {/* ĐÃ SỬA theo góp ý: chỉ tô đỏ nhạt ô BÊN PHẢI (ô chứa chữ "Thiếu...") thay
                             vì cả dòng — class "hoso-thieu-cell" đặt trực tiếp trên <td>, không còn
                             đặt trên <tr> nữa. Chữ in đậm, màu đỏ đậm tương phản tốt trên nền đỏ nhạt
@@ -1450,7 +1618,11 @@ const ThamDinhPage = () => {
                 <div className="modal-footer">
                   <button className="btn btn-warning" disabled={btnMissingDisabled} onClick={() => triggerMissing(row)}>{btnMissingText}</button>
                   <button className="btn btn-primary" disabled={btnSaveDisabled} onClick={() => triggerSave(row)}>{btnSaveText}</button>
-                  <button className="btn btn-success" disabled={btnApproveDisabled} onClick={() => triggerApprove(row)}>{btnApproveText}</button>
+                  {/* ĐÃ SỬA: đổi màu cam khi hồ sơ đã duyệt vừa có cập nhật (coCapNhatSauDuyet)
+                      — tái sử dụng ĐÚNG action Duyệt cũ (triggerApprove/action 'trungTuyen'),
+                      bấm lại sẽ ghi đè trạng thái về "Đã duyệt" sạch, không cần action/modal
+                      con riêng nào khác. */}
+                  <button className={`btn ${coCapNhatSauDuyet ? 'btn-warning text-dark' : 'btn-success'}`} disabled={btnApproveDisabled} onClick={() => triggerApprove(row)}>{btnApproveText}</button>
                   {/* ĐÃ THÊM: nút "Xuất file" — tự dựng menu xổ xuống bằng React state (dự án
                       không có Bootstrap JS/react-bootstrap, xem ghi chú exportMenuOpen phía trên).
                       Menu mở LÊN TRÊN (dropup, bottom:100%) vì nút nằm ở footer cuối modal. */}
@@ -1471,6 +1643,17 @@ const ThamDinhPage = () => {
                             title={!hasTranscript ? 'Cần quét bảng điểm trước' : ''}
                             onClick={() => { setExportMenuOpen(false); handleExportTemplate(row, targetNganh, scanEntry); }}>
                             {exportMutation.isPending ? '⏳ Đang tạo Excel...' : 'Bảng kết quả và đối sánh (Excel)'}
+                          </button>
+                        </li>
+                        {/* ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3, bổ sung theo phản hồi): mục
+                            xuất GBTT cho đúng 1 hồ sơ đang mở trong modal chi tiết — chỉ bật
+                            khi hồ sơ đã ở trạng thái "Đã duyệt" (đúng điều kiện chung với nút
+                            hàng loạt), tránh nhầm khi chưa duyệt trúng tuyển. */}
+                        <li>
+                          <button type="button" className="dropdown-item" disabled={state !== "Đã duyệt"}
+                            title={state !== "Đã duyệt" ? 'Chỉ xuất được khi hồ sơ đã duyệt trúng tuyển' : ''}
+                            onClick={() => { setExportMenuOpen(false); openGbttPreviewSingle(row); }}>
+                            📄 Giấy báo trúng tuyển (gửi ký)
                           </button>
                         </li>
                       </ul>
@@ -1521,10 +1704,32 @@ const ThamDinhPage = () => {
                 {batchPreview.type === 'luucsdl' && (
                   <div className="alert alert-danger small mt-3 mb-0 fw-bold">🔎 Vui lòng kiểm tra kỹ lưỡng danh sách trên trước khi lưu vào CSDL — thao tác này sẽ ghi dữ liệu chính thức.</div>
                 )}
+                {/* ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3, bật thật ở Bước 4): bảng thứ 2
+                    "chọn người ký" — KHÔNG dùng wizard nhiều bước, chỉ nhúng thêm 1 bảng
+                    ngay dưới bảng sinh viên trong CÙNG modal xác nhận này. */}
+                {batchPreview.type === 'gbtt' && (
+                  <>
+                    <ChonNguoiKyModal loaiTaiLieu="GBTT" giaTri={nguoiKyGBTT} onChange={setNguoiKyGBTT} />
+                    <div className="alert alert-info small mt-3 mb-0">
+                      ℹ️ Chưa gửi email thông báo cho người ký (sẽ bổ sung ở bước sau) — người
+                      ký cần tự vào menu tài khoản → "Hồ sơ chờ ký" để thấy và ký văn bản.
+                    </div>
+                  </>
+                )}
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setBatchPreview(null)}>Hủy bỏ</button>
-                <button className="btn btn-primary" onClick={executeBatchAction} disabled={approveMutation.isPending || missingMutation.isPending || saveMutation.isPending}>Xác nhận</button>
+                <button className="btn btn-secondary" onClick={() => setBatchPreview(null)} disabled={gbttMutation.isPending}>Hủy bỏ</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={executeBatchAction}
+                  disabled={
+                    approveMutation.isPending || missingMutation.isPending || saveMutation.isPending || gbttMutation.isPending ||
+                    (batchPreview.type === 'gbtt' && nguoiKyGBTT.filter(nk => nk.chon && nk.email).length === 0)
+                  }
+                  title={batchPreview.type === 'gbtt' && nguoiKyGBTT.filter(nk => nk.chon && nk.email).length === 0 ? 'Cần chọn ít nhất 1 người ký' : undefined}
+                >
+                  {gbttMutation.isPending ? '⏳ Đang tạo yêu cầu ký...' : 'Xác nhận'}
+                </button>
               </div>
             </div>
           </div>

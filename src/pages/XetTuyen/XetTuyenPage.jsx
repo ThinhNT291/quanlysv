@@ -8,6 +8,22 @@ import { fetchConfig, fetchXetTuyenHeaders } from '../../api/studentApi';
 import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
 import { chuanHoaNgaySinhImport } from '../../utils/ngaySinh';
 import { taiFileMauExcel } from '../../utils/excelTemplate';
+// ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT vẫn có thể sửa tự do mọi trường khi mở lại để
+// "tìm hồ sơ cũ", dẫn tới thay đổi ngoài ý muốn sau khi đã duyệt): dùng lại ĐÚNG 1 hàm
+// getMissingDocs() đang là nguồn xác định "còn thiếu hồ sơ gì" cho trang Thẩm định, để
+// quyết định ô tick nào được phép mở khoá khi khoá form lại (xem isOldRecordApproved bên
+// dưới) — tránh viết lại 1 bản riêng dễ lệch với danh sách hồ sơ tiên quyết thật.
+import { getMissingDocs } from '../ThamDinh/thamDinhHelpers';
+// ĐÃ THÊM: getMissingDocs() trả về TÊN giấy tờ theo DICT_HO_SO "chuẩn" (thamDinhConfig.js,
+// dùng cho trang Thẩm định) — trong khi file NÀY có 1 bản DICT_HO_SO RIÊNG (khai báo ngay
+// dưới đây) với vài tên hiển thị khác đôi chút (nổi bật nhất: doc_cccd = "Bản sao ID" ở
+// đây nhưng "Bản sao CCCD" ở bản chuẩn). Nếu so khớp thẳng theo TÊN, ô "Bản sao CCCD" sẽ
+// không bao giờ mở khoá được dù đúng là đang thiếu. Vì vậy import thêm DICT_HO_SO CHUẨN ở
+// đây (đổi tên DICT_HO_SO_CHUAN để không đụng DICT_HO_SO cục bộ), quy đổi danh sách TÊN
+// giấy tờ còn thiếu (do getMissingDocs trả về) sang danh sách ID — vì ID giữa 2 bản luôn
+// khớp nhau (chỉ có tên hiển thị lệch, xem canonNamesToIds() bên dưới) — rồi so khớp theo
+// ID (ổn định hơn, không phụ thuộc câu chữ hiển thị).
+import { DICT_HO_SO as DICT_HO_SO_CHUAN } from '../ThamDinh/thamDinhConfig';
 
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
@@ -101,6 +117,17 @@ const DICT_HO_SO = {
 
 const ALL_HO_SO_DOCS = [...DICT_HO_SO.chung, ...Object.values(DICT_HO_SO.tien_quyet).flat()]
     .filter((doc, i, arr) => arr.findIndex(d => d.id === doc.id) === i);
+
+// ĐÃ THÊM (theo phản hồi — khoá form khi hồ sơ đã duyệt, chỉ mở khoá đúng ô hồ sơ còn
+// thiếu): danh sách gộp mọi giấy tờ theo DICT_HO_SO CHUẨN (thamDinhConfig.js) + hàm quy
+// đổi TÊN (do getMissingDocs trả về) sang ID — xem chú thích đầy đủ tại chỗ import
+// DICT_HO_SO_CHUAN phía trên.
+const ALL_CANON_DOCS = [...DICT_HO_SO_CHUAN.chung, ...Object.values(DICT_HO_SO_CHUAN.tien_quyet).flat()]
+    .filter((doc, i, arr) => arr.findIndex(d => d.id === doc.id) === i);
+function canonNamesToIds(names) {
+    const nameSet = new Set(names);
+    return ALL_CANON_DOCS.filter(d => nameSet.has(d.name)).map(d => d.id);
+}
 
 // ĐÃ THÊM: cổng ẩn/hiện + không bắt buộc theo giới tính cho các giấy tờ có cờ "genderOnly"
 // (hiện chỉ có "Giấy chuyển NVQS (với nam)") — dựng SẴN cho ngày thêm cột "Giới tính" vào
@@ -428,6 +455,18 @@ const XetTuyenPage = () => {
   // handleEditRowLocal cho tình huống 2, và luôn ép "UPDATE" ở loadOldCandidate cho tình
   // huống 1) — handleAddRow() giờ dùng editingAction thay vì suy luận từ isEditMode.
   const [editingAction, setEditingAction] = useState(() => loadSession('xt_editAction', null));
+
+  // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT bị mở sửa tự do mọi trường, dẫn tới trạng thái
+  // "tụt" về Mới bổ sung khi lưu lại rồi bấm Duyệt được lần nữa): 2 cờ dưới đây chỉ có tác
+  // dụng ở TẦNG GIAO DIỆN (khoá bớt input) — không cần lưu sessionStorage vì luôn được tính
+  // lại ngay khi tải 1 hồ sơ lên Form (loadOldCandidate/handleEditRowLocal), không cần giữ
+  // qua lần load lại trang. Việc CHẶN THẬT (không cho hạ trạng thái) đã nằm ở backend
+  // (Quanlysv.gs, importStudents) — 2 cờ này chỉ giúp người nhập liệu KHÔNG lỡ tay sửa nhầm
+  // các trường không liên quan sau khi hồ sơ đã duyệt.
+  const [isOldRecordApproved, setIsOldRecordApproved] = useState(false);
+  // ĐÃ SỬA: lưu ID (không lưu TÊN) — xem canonNamesToIds()/DICT_HO_SO_CHUAN phía trên đầu
+  // file, lý do tránh lệch tên hiển thị giữa 2 bản DICT_HO_SO (bản chuẩn vs bản cục bộ).
+  const [missingDocIdsOld, setMissingDocIdsOld] = useState([]);
 
   useEffect(() => { sessionStorage.setItem('xt_form', JSON.stringify(formData)); }, [formData]);
   useEffect(() => { sessionStorage.setItem('xt_list', JSON.stringify(dataList)); }, [dataList]);
@@ -869,6 +908,10 @@ const XetTuyenPage = () => {
     setFormData(initialFormState);
     setIsEditMode(false);
     setEditingAction(null); // ĐÃ THÊM: reset lại sau khi đã dùng xong ở "_Action" phía trên.
+    // ĐÃ THÊM: reset 2 cờ khoá form theo hồ sơ ĐÃ DUYỆT — Form vừa quay về trạng thái nhập
+    // hồ sơ MỚI (initialFormState) nên không còn lý do gì để khoá nữa.
+    setIsOldRecordApproved(false);
+    setMissingDocIdsOld([]);
   };
 
   const handleCancelEdit = () => {
@@ -876,6 +919,8 @@ const XetTuyenPage = () => {
           setFormData(initialFormState);
           setIsEditMode(false);
           setEditingAction(null); // ĐÃ THÊM: hủy sửa thì cũng phải xóa luôn _Action GỐC đang giữ.
+          setIsOldRecordApproved(false); // ĐÃ THÊM: xem chú thích tương tự ở cuối handleAddRow().
+          setMissingDocIdsOld([]);
       }
   };
 
@@ -891,6 +936,17 @@ const XetTuyenPage = () => {
     if (isEditMode) {
         if (!window.confirm("⚠️ Bạn đang sửa dở 1 hồ sơ KHÁC chưa lưu/hủy!\n\nNếu tiếp tục, mọi thay đổi đang sửa dở trên Form sẽ MẤT HẲN, không thể khôi phục.\n\nBấm OK để tiếp tục (chấp nhận mất) — Bấm Hủy để quay lại, tự bấm \"Cập nhật\" hoặc \"Hủy chỉnh sửa\" cho hồ sơ đang sửa trước.")) return;
     }
+
+    // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT phải khoá hết các trường, chỉ được tick bổ
+    // sung hồ sơ còn thiếu + sửa Link hồ sơ): nhận diện ngay khi tải hồ sơ lên Form. Lưu ý
+    // (đã ghi nhận, chấp nhận vì ưu tiên cách "gọn" theo yêu cầu): dòng trong "Danh sách chờ
+    // đồng bộ" (dataList) có thể đã bị chính handleAddRow() ghi đè "TRẠNG THÁI THẨM ĐỊNH"
+    // thành "Mới bổ sung" ở 1 lượt sửa-lưu-cục-bộ trước đó (chưa đẩy lên) — trường hợp hiếm
+    // này sẽ không khoá lại được nữa, chấp nhận được vì hồ sơ vẫn CHƯA đẩy lên hệ thống thật.
+    const trangThaiCu = String(row["TRẠNG THÁI THẨM ĐỊNH"] || row["TRẠNG THÁI"] || "");
+    const daDuyet = trangThaiCu.indexOf("Đã duyệt") !== -1;
+    setIsOldRecordApproved(daDuyet);
+    setMissingDocIdsOld(daDuyet ? canonNamesToIds(getMissingDocs(row)) : []);
 
     let phuongThuc = "";
     if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Điểm thi THPT') phuongThuc = "THI_THPT";
@@ -1128,6 +1184,15 @@ const XetTuyenPage = () => {
           const cleanKey = String(key).trim().toUpperCase().replace(/\s+/g, ' ');
           normData[cleanKey] = rawData[key];
       }
+
+      // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT phải khoá hết các trường, chỉ được tick bổ
+      // sung hồ sơ còn thiếu + sửa Link hồ sơ): "Tìm hồ sơ cũ" luôn lấy dữ liệu THẬT từ
+      // Trung Gian/Goc01 (record.fullData) — không như handleEditRowLocal (dữ liệu cục bộ,
+      // có thể đã bị ghi đè tạm) — nên nhận diện ở đây LUÔN chính xác 100%.
+      const trangThaiCu = String(normData["TRẠNG THÁI THẨM ĐỊNH"] || normData["TRẠNG THÁI"] || "");
+      const daDuyet = trangThaiCu.indexOf("Đã duyệt") !== -1;
+      setIsOldRecordApproved(daDuyet);
+      setMissingDocIdsOld(daDuyet ? canonNamesToIds(getMissingDocs(normData)) : []);
 
       let phuongThuc = "";
       const rawPhuongThuc = normData["PHƯƠNG THỨC XÉT TUYỂN"] || normData["LOẠI ĐIỂM"] || "";
@@ -1617,12 +1682,19 @@ const XetTuyenPage = () => {
 
   const renderDocs = (docsList) => (
     <div className="checkbox-grid">
-      {docsList.map(doc => (
-        <label className="checkbox-item" key={doc.id}>
-          <input type="checkbox" name={doc.id} checked={!!formData[doc.id]} onChange={handleChange} />
-          <span className={doc.id === 'doc_phieu_dk' ? 'text-danger fw-bold' : ''}>{doc.short} {doc.optional && <small className="text-muted fw-normal">(Không bắt buộc)</small>}</span>
-        </label>
-      ))}
+      {docsList.map(doc => {
+        // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT chỉ cho tick hồ sơ CÒN THIẾU): khi form bị
+        // khoá vì đã duyệt (isOldRecordApproved), CHỈ ô tương ứng giấy tờ đang thiếu
+        // (missingDocIdsOld, quy đổi ID từ getMissingDocs() — xem canonNamesToIds() đầu
+        // file) mới được phép tick; các ô còn lại (đã có sẵn) vẫn khoá như phần I/III.
+        const khoaOTickNay = isOldRecordApproved && !missingDocIdsOld.includes(doc.id);
+        return (
+          <label className="checkbox-item" key={doc.id}>
+            <input type="checkbox" name={doc.id} checked={!!formData[doc.id]} onChange={handleChange} disabled={khoaOTickNay} />
+            <span className={doc.id === 'doc_phieu_dk' ? 'text-danger fw-bold' : ''}>{doc.short} {doc.optional && <small className="text-muted fw-normal">(Không bắt buộc)</small>}</span>
+          </label>
+        );
+      })}
     </div>
   );
 
@@ -1874,7 +1946,17 @@ const XetTuyenPage = () => {
 
         <form>
           <h5 className="fw-bold text-teal mb-3" style={{ color: '#006666', borderLeft: '4px solid #008080', paddingLeft: '10px' }}>I. THÔNG TIN CHUNG</h5>
-          <div className="row g-3 mb-4">
+          {/* ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT thì khi sửa phải khoá hết các trường,
+              chỉ cho tick hồ sơ còn thiếu + sửa Link hồ sơ): dùng <fieldset disabled> bọc cả
+              khối "I. THÔNG TIN CHUNG" thay vì tự thêm disabled={isOldRecordApproved} vào từng
+              input/select riêng lẻ (hàng chục ô) — "gọn" hơn nhiều, hành vi HTML chuẩn: mọi
+              input/select/button con bên trong tự động bị khoá, không cần sửa gì thêm nếu sau
+              này có thêm trường mới vào đúng khối này. border-0 p-0 m-0 để fieldset không vẽ
+              khung viền/khoảng đệm mặc định của trình duyệt, giữ nguyên bố cục "row g-3 mb-4"
+              y hệt trước đây (fieldset vẫn nhận class Bootstrap bình thường).
+              Ô "Link Folder hồ sơ" ĐÃ CHUYỂN ra khỏi khối này (xem hàng riêng ngay sau khi
+              đóng fieldset) — theo đúng yêu cầu, vẫn phải sửa được kể cả khi hồ sơ đã duyệt. */}
+          <fieldset disabled={isOldRecordApproved} className="row g-3 mb-4 border-0 p-0 m-0">
             <div className="col-md-3"><label className="form-label fw-bold small mb-1">Họ và tên <span className="text-danger">*</span></label><input type="text" className="form-control" name="hoten" value={formData.hoten} onChange={handleChange} required /></div>
             <div className="col-md-3">
                 <div className="d-flex justify-content-between align-items-end">
@@ -1960,15 +2042,36 @@ const XetTuyenPage = () => {
                 </select>
             </div>
             )}
+          </fieldset>
+
+          {/* ĐÃ TÁCH RIÊNG khỏi fieldset "I. THÔNG TIN CHUNG" ở trên (theo phản hồi — hồ sơ
+              ĐÃ DUYỆT vẫn phải sửa được "ô link hồ sơ") — luôn KHÔNG bị disabled, bất kể
+              isOldRecordApproved. */}
+          <div className="row g-3 mb-4">
             <div className="col-md-3"><label className="form-label fw-bold small mb-1 text-primary">🔗 Link Folder hồ sơ:</label><input type="text" className="form-control border-primary" name="link_folder" value={formData.link_folder} onChange={handleChange} placeholder="Link Google Drive..." /></div>
           </div>
+
+          {/* ĐÃ THÊM (theo phản hồi): banner cảnh báo hiển thị ngay khi hồ sơ ĐÃ DUYỆT được
+              tải lên Form để sửa — giải thích lý do các trường bị khoá, tránh người nhập liệu
+              thắc mắc/tưởng lỗi form. */}
+          {isOldRecordApproved && (
+              <div className="alert alert-warning py-2 px-3 mb-4 fw-bold" role="alert">
+                  🔒 Hồ sơ này ĐÃ ĐƯỢC DUYỆT — chỉ có thể tick bổ sung hồ sơ còn thiếu và sửa "Link Folder hồ sơ".
+                  Các trường thông tin khác đã khoá để tránh thay đổi ngoài ý muốn sau khi duyệt.
+              </div>
+          )}
 
           <div className="row mt-5 g-4">
               <div className="col-md-6">
                   <div className="p-3 border rounded shadow-sm bg-light h-100">
                       <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
                           <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ CHUNG</h6>
-                          <button type="button" className="btn btn-sm btn-warning fw-bold py-0" onClick={handleSelectAllCommon}>⚡ Chọn/Bỏ Chọn</button>
+                          {/* ĐÃ THÊM disabled={isOldRecordApproved}: nút này tick/bỏ tick HÀNG LOẠT
+                              qua setFormData trực tiếp — không đi qua onChange của từng input nên
+                              KHÔNG bị chặn bởi thuộc tính disabled của từng checkbox riêng lẻ ở
+                              renderDocs(); nếu không khoá riêng nút này, hồ sơ đã duyệt vẫn có thể
+                              bị bỏ tick nhầm 1 giấy tờ ĐÃ CÓ SẴN (lách qua khoá per-checkbox). */}
+                          <button type="button" className="btn btn-sm btn-warning fw-bold py-0" onClick={handleSelectAllCommon} disabled={isOldRecordApproved}>⚡ Chọn/Bỏ Chọn</button>
                       </div>
                       {renderDocs(DICT_HO_SO.chung.filter(doc => isDocApplicable(doc, formData)))}
                       
@@ -1997,6 +2100,12 @@ const XetTuyenPage = () => {
           </div>
 
           <h5 className="fw-bold text-teal mb-3 mt-5" style={{ color: '#006666', borderLeft: '4px solid #008080', paddingLeft: '10px' }}>III. THÔNG TIN ĐIỂM SỐ</h5>
+          {/* ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT phải khoá hết trường, kể cả điểm số):
+              bọc NGOÀI div.score-container bằng <fieldset disabled>, KHÔNG đổi gì bên trong
+              div.score-container (giữ nguyên className "score-container" cho các chỗ khác
+              đang dùng e.currentTarget.closest('.score-container') — closest() vẫn tìm thấy
+              bình thường vì fieldset chỉ là 1 ancestor thêm vào, không thay thế div này). */}
+          <fieldset disabled={isOldRecordApproved} className="border-0 p-0 m-0">
           <div className="score-container">
               {formData.doituongdauvao === 'Tốt nghiệp THPT' ? (
                   <div className="score-group border-primary pb-2">
@@ -2111,6 +2220,7 @@ const XetTuyenPage = () => {
                   </div>
               ) : null}
           </div>
+          </fieldset>
 
           <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mt-4 mb-4">
               <div className="flex-grow-1 order-2 order-md-1">
