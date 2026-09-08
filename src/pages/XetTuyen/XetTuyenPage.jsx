@@ -90,13 +90,13 @@ const DICT_HO_SO = {
         { id: "doc_syll", name: "Sơ yếu lý lịch", short: "SƠ YẾU LÝ LỊCH", optional: false },
         { id: "doc_cccd", name: "Bản sao ID", short: "BẢN SAO CCCD", optional: false },
         { id: "doc_anhthe", name: "Ảnh thẻ", short: "ẢNH THẺ", optional: false },
-        // ĐÃ THÊM "genderOnly" — cờ dùng để sau này TỰ ẨN/HIỆN giấy tờ này theo giới tính
-        // 1 khi cột "Giới tính" được bổ sung vào form/Goc01 (hiện CHƯA có cột này ở đâu
-        // cả, nên isDocApplicable() bên dưới coi cờ này là VÔ HIỆU/bỏ qua khi chưa có dữ
-        // liệu giới tính — hành vi y hệt như trước giờ, luôn hiện + luôn tính vào phần
-        // "không bắt buộc" cho MỌI hồ sơ). Khi thêm cột giới tính thật, chỉ cần gán giá
-        // trị vào formData.gioitinh (đúng 2 giá trị "Nam"/"Nữ", khớp genderOnly bên
-        // dưới) là cơ chế ẩn/hiện sẽ tự chạy đúng, không cần sửa gì thêm ở đây.
+        // "genderOnly" — cờ TỰ ẨN/HIỆN giấy tờ này theo giới tính, dựng sẵn từ trước (xem
+        // isDocApplicable() bên dưới) và ĐÃ CHÍNH THỨC HOẠT ĐỘNG kể từ khi cột "GIỚI TÍNH"
+        // được thêm vào Goc01 + form (ô "Giới tính" ở khối "I. THÔNG TIN CHUNG", ghi xuống
+        // formData.gioitinh, giá trị đúng 2 lựa chọn cấu hình ở trang Cấu hình — mặc định
+        // "Nam"/"Nữ" nếu Admin chưa tự thêm danh mục riêng). Hồ sơ cũ nhập TRƯỚC khi có
+        // cột này sẽ có gioitinh rỗng -> isDocApplicable() vẫn trả về true (hiện như cũ),
+        // không có gì bị phá vỡ ngược.
         { id: "doc_nvqs", name: "Giấy chuyển NVQS (với nam)", short: "GIẤY NVQS", optional: true, genderOnly: "Nam" }
     ],
     tien_quyet: {
@@ -167,7 +167,11 @@ const NTN_THPT_TU = `Từ ${MOC_NAM_TN_THPT} về sau`;
 const biChanKhuVucUTTheoNamTN = (namTotNghiep) => String(namTotNghiep || '').trim() === NTN_THPT_TRUOC;
 
 const initialFormState = {
-  hoten: '', cccd: '', ngaysinh: '', khoa: '', nganh: '', namtotnghiepthpt: '', khuvucuutien: '', doituonguutien: '',
+  // ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh): "gioitinh" dùng ĐÚNG tên field đã
+  // dựng sẵn từ trước ở isDocApplicable()/DICT_HO_SO.chung (doc_nvqs.genderOnly) — xem chú
+  // thích tại đó, cơ chế ẩn/hiện "Giấy chuyển NVQS (với nam)" theo giới tính giờ tự chạy
+  // đúng ngay khi field này có dữ liệu thật, không cần sửa gì thêm ở DICT_HO_SO.
+  hoten: '', cccd: '', ngaysinh: '', gioitinh: '', noisinh: '', khoa: '', nganh: '', namtotnghiepthpt: '', khuvucuutien: '', doituonguutien: '',
   doituongdauvao: '', namtt: '', hedaotao: '', htdaotao: '', link_folder: '', 
   has_giay_uutien: false, giay_uutien: '', 
   loai_diem: '', time_goc: '', 
@@ -311,6 +315,60 @@ const khoiPhucDiemTungMon = (rawObj, getFlatVal) => SUBJECTS_UI.reduce((acc, sub
     acc[`diem_${subj.id}_lop12`] = rawObj[`${subj.id}_lop12`] || duPhong;
     return acc;
 }, {});
+
+// ĐÃ THÊM (theo yêu cầu — bấm qua lại tab phương thức trước khi lưu thấy đủ dữ liệu (vì
+// formData giữ chung tất cả field của cả 3 tab, mỗi tab đặt tên field khác nhau, không đè
+// nhau), nhưng "Đẩy dữ liệu lên hệ thống" trước đây chỉ đóng gói RAW_DIEM_HK cho ĐÚNG 1
+// phương thức đang chọn -> mất điểm 2 tab còn lại nếu sau này cần xem/sửa lại): thêm 2 cột
+// mới RAW_DIEM_KHAC_1/2 (ông đã tự thêm tay trên sheet Goc01/Trung Gian — action
+// 'importStudents' bên GAS ghi cột theo TÊN khớp header, tự nhận cột mới, không cần sửa gì
+// bên backend) để lưu raw của 2 phương thức KHÔNG đang chọn. Muốn thêm phương thức thứ 4/5
+// sau này: thêm vào TAT_CA_PHUONG_THUC_DIEM + thêm cột RAW_DIEM_KHAC_3/4 tương ứng — khi đó
+// 2 cột hiện tại chỉ còn là cache "2 phương thức KHÔNG active gần nhất", không phải TOÀN BỘ.
+const TAT_CA_PHUONG_THUC_DIEM = ['THI_THPT', 'HOC_BA', 'HOC_BA_2025'];
+
+// Đóng gói raw điểm của 1 PHƯƠNG THỨC BẤT KỲ (không nhất thiết đang active) từ formData hiện
+// tại. Dùng lại được cho cả RAW_DIEM_HK (phương thức đang active — GIỮ NGUYÊN định dạng cũ,
+// object trần không gắn nhãn, để không phá hồ sơ cũ đã lưu trước khi có tính năng này) lẫn
+// RAW_DIEM_KHAC_1/2 (2 phương thức còn lại — nơi gọi hàm này sẽ tự bọc thêm nhãn
+// {loaiDiem, raw} bên ngoài, để đọc lại không phụ thuộc thứ tự cột nào chứa phương thức nào).
+const dongGoiRawTheoPhuongThuc_ = (loaiDiem, src) => {
+    const rawObj = {};
+    if (loaiDiem === 'HOC_BA_2025') {
+        SUBJECTS_UI.forEach(subj => {
+            rawObj[`${subj.id}_hk2_11`] = src[`diem_${subj.id}_hk2_11`] || "";
+            rawObj[`${subj.id}_hk1_12`] = src[`diem_${subj.id}_hk1_12`] || "";
+            rawObj[`${subj.id}_hk2_12`] = src[`diem_${subj.id}_hk2_12`] || "";
+        });
+    } else if (loaiDiem === 'HOC_BA') {
+        SUBJECTS_UI.forEach(subj => {
+            rawObj[`${subj.id}_lop10`] = src[`diem_${subj.id}_lop10`] || "";
+            rawObj[`${subj.id}_lop11`] = src[`diem_${subj.id}_lop11`] || "";
+            rawObj[`${subj.id}_lop12`] = src[`diem_${subj.id}_lop12`] || "";
+        });
+    } else if (loaiDiem === 'THI_THPT') {
+        SUBJECTS_UI.forEach(subj => { rawObj[subj.id] = src[`diem_${subj.id}`] || ""; });
+    }
+    return rawObj;
+};
+
+// Đọc ngược 2 cột RAW_DIEM_KHAC_1/2 (mỗi cột 1 JSON gắn nhãn {loaiDiem, raw}) thành map
+// { [loaiDiem]: rawObj } — dùng chung cho cả 2 nơi tải hồ sơ cũ lên Form (handleEditRowLocal
+// và "Tìm hồ sơ cũ") để khôi phục lại đủ dữ liệu của CẢ 2 phương thức KHÔNG active, y hệt như
+// khi mới nhập (chưa đẩy lên) vẫn bấm qua lại tab thấy đủ dữ liệu. getVal(tenCot) đọc từ
+// nguồn dữ liệu tương ứng ở từng nơi gọi (row hoặc normData — mỗi nơi chuẩn hoá tên cột khác
+// nhau chút, xem 2 chỗ gọi hàm này).
+const docRawDiemKhac_ = (getVal) => {
+    const ketQua = {};
+    [getVal("RAW_DIEM_KHAC_1"), getVal("RAW_DIEM_KHAC_2")].forEach(cell => {
+        if (!cell) return;
+        try {
+            const parsed = JSON.parse(cell);
+            if (parsed && parsed.loaiDiem && parsed.raw) ketQua[parsed.loaiDiem] = parsed.raw;
+        } catch (e) { /* JSON hỏng/rỗng -> bỏ qua, không chặn cả hồ sơ */ }
+    });
+    return ketQua;
+};
 
 const compareIsoDates = (a, b) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(b)) return NaN;
@@ -478,7 +536,7 @@ const XetTuyenPage = () => {
 
   const [sysConfig, setSysConfig] = useState({
       Nganh: [], KhoaNhapHoc: [], DoiTuongUT: [], KhuVucUT: [],
-      NamXetTuyen: [], DoiTuongDauVao: [], HeDaoTao: [], HinhThucDaoTao: []
+      NamXetTuyen: [], DoiTuongDauVao: [], HeDaoTao: [], HinhThucDaoTao: [], GioiTinh: []
   });
 
   const fileInputRef = useRef(null);
@@ -557,7 +615,12 @@ const XetTuyenPage = () => {
                     NamXetTuyen: data.NamXetTuyen?.length ? data.NamXetTuyen : ["2026", "2027"],
                     DoiTuongDauVao: data.DoiTuongDauVao?.length ? data.DoiTuongDauVao : Object.keys(DICT_HO_SO.tien_quyet),
                     HeDaoTao: data.HeDaoTao?.length ? data.HeDaoTao : ["Đại học chính quy", "Cao đẳng"],
-                    HinhThucDaoTao: data.HinhThucDaoTao?.length ? data.HinhThucDaoTao : ["Chính quy đại trà"]
+                    HinhThucDaoTao: data.HinhThucDaoTao?.length ? data.HinhThucDaoTao : ["Chính quy đại trà"],
+                    // ĐÃ THÊM: mặc định "Nam"/"Nữ" khi trang Cấu hình CHƯA từng lưu danh mục
+                    // Giới tính — PHẢI đúng chính xác giá trị "Nam" (viết hoa chữ N) để khớp
+                    // với doc_nvqs.genderOnly ở DICT_HO_SO.chung phía trên (so khớp CHÍNH XÁC
+                    // từng ký tự, không chuẩn hoá hoa/thường).
+                    GioiTinh: data.GioiTinh?.length ? data.GioiTinh : ["Nam", "Nữ"]
                 });
             }
         } catch (e) { console.error("Lỗi tải cấu hình:", e); }
@@ -798,26 +861,25 @@ const XetTuyenPage = () => {
 
     const currentTimestamp = new Date().toLocaleString('vi-VN');
 
+    // ĐÃ SỬA (theo yêu cầu — thêm RAW_DIEM_KHAC_1/2 để không mất điểm 2 phương thức KHÔNG
+    // đang chọn khi "Đẩy dữ liệu lên hệ thống"): RAW_DIEM_HK vẫn đóng gói ĐÚNG như cũ (object
+    // trần, không gắn nhãn) cho phương thức ĐANG CHỌN — dùng chung dongGoiRawTheoPhuongThuc_
+    // thay vì lặp lại code, hành vi/định dạng JSON bên trong giữ NGUYÊN 100% so với trước, chỉ
+    // đổi chỗ viết code, không ảnh hưởng hồ sơ cũ đã lưu. 2 phương thức còn lại đóng gói kèm
+    // nhãn {loaiDiem, raw} vào RAW_DIEM_KHAC_1/2 (xem khai báo TAT_CA_PHUONG_THUC_DIEM/
+    // dongGoiRawTheoPhuongThuc_ ở trên, ngay sau khoiPhucDiemTungMon).
     let packedDiemHK = "";
-    if (formData.loai_diem === 'HOC_BA_2025') {
-        const rawObj = {};
-        SUBJECTS_UI.forEach(subj => {
-            rawObj[`${subj.id}_hk2_11`] = formData[`diem_${subj.id}_hk2_11`] || "";
-            rawObj[`${subj.id}_hk1_12`] = formData[`diem_${subj.id}_hk1_12`] || "";
-            rawObj[`${subj.id}_hk2_12`] = formData[`diem_${subj.id}_hk2_12`] || "";
-        });
-        packedDiemHK = JSON.stringify(rawObj);
-    } else if (formData.loai_diem === 'HOC_BA') {
-        // ĐÃ THÊM: y hệt nhánh trên, nhưng đóng gói điểm Lớp 10/11/12 của phương thức
-        // "Điểm học bạ" (thường) — vẫn dùng chung cột RAW_DIEM_HK trên Goc01 (đã có sẵn,
-        // chỉ khác nội dung JSON bên trong) để không phải xin thêm cột mới.
-        const rawObj = {};
-        SUBJECTS_UI.forEach(subj => {
-            rawObj[`${subj.id}_lop10`] = formData[`diem_${subj.id}_lop10`] || "";
-            rawObj[`${subj.id}_lop11`] = formData[`diem_${subj.id}_lop11`] || "";
-            rawObj[`${subj.id}_lop12`] = formData[`diem_${subj.id}_lop12`] || "";
-        });
-        packedDiemHK = JSON.stringify(rawObj);
+    let packedDiemKhac1 = "";
+    let packedDiemKhac2 = "";
+    if (formData.loai_diem) {
+        packedDiemHK = JSON.stringify(dongGoiRawTheoPhuongThuc_(formData.loai_diem, formData));
+        const cacPhuongThucKhac = TAT_CA_PHUONG_THUC_DIEM.filter(lt => lt !== formData.loai_diem);
+        if (cacPhuongThucKhac[0]) {
+            packedDiemKhac1 = JSON.stringify({ loaiDiem: cacPhuongThucKhac[0], raw: dongGoiRawTheoPhuongThuc_(cacPhuongThucKhac[0], formData) });
+        }
+        if (cacPhuongThucKhac[1]) {
+            packedDiemKhac2 = JSON.stringify({ loaiDiem: cacPhuongThucKhac[1], raw: dongGoiRawTheoPhuongThuc_(cacPhuongThucKhac[1], formData) });
+        }
     }
 
     const newRow = {
@@ -830,6 +892,8 @@ const XetTuyenPage = () => {
         "_Action": isEditMode ? (editingAction || "UPDATE") : "INSERT",
         "KẾT QUẢ SƠ TUYỂN": admissionResult ? admissionResult.title : "",
         "CĂN CƯỚC": formData.cccd.trim(), "TÊN SINH VIÊN": formData.hoten.trim(), "NGÀY SINH": formData.ngaysinh,
+        // ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh).
+        "GIỚI TÍNH": formData.gioitinh, "NƠI SINH": formData.noisinh.trim(),
         "NGÀNH": formData.nganh, "KHÓA": formData.khoa, "ĐỐI TƯỢNG ƯU TIÊN": formData.doituonguutien,
         // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): ghi rỗng
         // xuống Trung Gian (thay vì giá trị đang chọn) khi khớp mốc "Trước..." — lớp phòng
@@ -890,7 +954,10 @@ const XetTuyenPage = () => {
         "NGÀY CẬP NHẬT HỒ SƠ": isEditMode ? currentTimestamp : "",
         "TÀI KHOẢN NHẬP LIỆU": getUserEmail(),
         
-        "RAW_DIEM_HK": packedDiemHK
+        "RAW_DIEM_HK": packedDiemHK,
+        // ĐÃ THÊM: xem chú thích đầy đủ tại chỗ tính packedDiemKhac1/2 ở trên.
+        "RAW_DIEM_KHAC_1": packedDiemKhac1,
+        "RAW_DIEM_KHAC_2": packedDiemKhac2
     };
 
     ALL_HO_SO_DOCS.forEach(doc => { newRow[doc.name.toUpperCase()] = formData[doc.id] ? "TRUE" : "FALSE"; });
@@ -963,6 +1030,23 @@ const XetTuyenPage = () => {
     if (row["RAW_DIEM_HK"]) {
         try { rawObj = JSON.parse(row["RAW_DIEM_HK"]); } catch(e) {}
     }
+    // ĐÃ THÊM (theo yêu cầu — mở lại hồ sơ cũ để sửa, bấm qua tab phương thức KHÔNG active
+    // cũng phải thấy đủ dữ liệu đã lưu, giống hệt lúc mới nhập chưa đẩy lên): đọc thêm
+    // RAW_DIEM_KHAC_1/2 (2 phương thức còn lại). Gộp thẳng phần Lớp 10/11/12 (HOC_BA) và
+    // HK2-11/HK1-12/HK2-12 (HOC_BA_2025) vào 1 object DUY NHẤT để truyền chung 1 lần cho
+    // khoiPhucDiemTungMon — AN TOÀN vì 2 phương thức này dùng tên field khác nhau hoàn toàn
+    // (_lop10/11/12 khác hẳn _hk2_11/hk1_12/hk2_12), không phương thức nào ghi đè phương
+    // thức kia dù gộp chung. rawObj (phương thức ĐANG active, nếu đúng là HOC_BA/HOC_BA_2025)
+    // đặt SAU CÙNG để luôn là bản mới nhất nếu lỡ trùng nguồn.
+    const rawKhac = docRawDiemKhac_((key) => row[key]);
+    const rawObjGopLopKy = { ...(rawKhac["HOC_BA"] || {}), ...(rawKhac["HOC_BA_2025"] || {}), ...rawObj };
+    // Riêng THI_THPT không dùng kiểu Lớp/Kỳ (chỉ 1 giá trị/môn) nên không gộp được vào
+    // rawObjGopLopKy ở trên — chỉ áp dụng khi THI_THPT KHÔNG PHẢI phương thức đang active
+    // (nếu đang active, các cột phẳng TOÁN/VẬT LÍ/... bên dưới vốn đã đúng là điểm Thi THPT
+    // rồi, không cần ghi đè gì thêm).
+    const diemThiThptKhac = (phuongThuc !== "THI_THPT" && rawKhac["THI_THPT"])
+        ? SUBJECTS_UI.reduce((acc, subj) => { acc[`diem_${subj.id}`] = rawKhac["THI_THPT"][subj.id] || ""; return acc; }, {})
+        : {};
 
     setFormData(prev => ({
         ...prev,
@@ -970,6 +1054,9 @@ const XetTuyenPage = () => {
         cccd: String(row["CĂN CƯỚC"] || "").replace(/'/g, ''),
         nganh: row["NGÀNH"] || "",
         ngaysinh: row["NGÀY SINH"] || "",
+        // ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh).
+        gioitinh: row["GIỚI TÍNH"] || "",
+        noisinh: row["NƠI SINH"] || "",
         khoa: row["KHÓA"] || "",
         khuvucuutien: row["KHU VỰC ƯU TIÊN"] || "",
         // ĐÃ THÊM (theo phản hồi — "Năm tốt nghiệp THPT"): đọc ngược lại đúng lựa chọn đã
@@ -999,7 +1086,11 @@ const XetTuyenPage = () => {
         // tinhToHopCaoNhat()) thay vì chỉ đọc thẳng rawObj — có dự phòng bằng điểm trung
         // bình cuối cùng (row[label], VD row["TOÁN"]) khi rawObj hoàn toàn không có dữ liệu
         // tách Lớp/Kỳ cho 1 môn (đúng tình huống hồ sơ Excel-import).
-        ...khoiPhucDiemTungMon(rawObj, (subj) => row[subj.label]),
+        ...khoiPhucDiemTungMon(rawObjGopLopKy, (subj) => row[subj.label]),
+        // ĐÃ THÊM: ghi đè điểm Thi THPT nếu phương thức đang active KHÔNG phải THI_THPT
+        // nhưng có cache RAW_DIEM_KHAC cho THI_THPT (xem diemThiThptKhac ở trên) — nếu không
+        // có cache thì object rỗng, không ảnh hưởng gì tới diem_toan/... ở trên.
+        ...diemThiThptKhac,
 
         diem_tb_he4: row["ĐIỂM TB HỆ 4"] || row["ĐIỂM TB TOÀN KHÓA HỆ 4"] || "",
         diem_tb_he10: row["ĐIỂM TB HỆ 10"] || row["ĐIỂM TB TOÀN KHÓA HỆ 10"] || "",
@@ -1208,6 +1299,14 @@ const XetTuyenPage = () => {
       if (normData["RAW_DIEM_HK"]) {
           try { rawObj = JSON.parse(normData["RAW_DIEM_HK"]); } catch(e) {}
       }
+      // ĐÃ THÊM (theo yêu cầu — xem chú thích đầy đủ tại vị trí tương tự trong
+      // handleEditRowLocal): đọc thêm RAW_DIEM_KHAC_1/2 để "Tìm hồ sơ cũ" cũng bấm qua tab
+      // phương thức KHÔNG active vẫn thấy đủ dữ liệu.
+      const rawKhac = docRawDiemKhac_((key) => normData[key]);
+      const rawObjGopLopKy = { ...(rawKhac["HOC_BA"] || {}), ...(rawKhac["HOC_BA_2025"] || {}), ...rawObj };
+      const diemThiThptKhac = (phuongThuc !== "THI_THPT" && rawKhac["THI_THPT"])
+          ? SUBJECTS_UI.reduce((acc, subj) => { acc[`diem_${subj.id}`] = rawKhac["THI_THPT"][subj.id] || ""; return acc; }, {})
+          : {};
 
       // ĐÃ SỬA: bổ sung "1" và "X" vào danh sách giá trị được coi là ĐÃ CÓ giấy tờ — trước
       // đây thiếu 2 giá trị này, trong khi getMissingDocs (thamDinhHelpers.js, bên trang
@@ -1236,7 +1335,10 @@ const XetTuyenPage = () => {
           // được cả hồ sơ CŨ còn lưu ngày sinh dạng text khác kiểu (hàm này đã có sẵn nhiều
           // nhánh nhận dạng, không đổi hành vi với các hồ sơ vốn đã hiển thị đúng từ trước).
           ngaysinh: chuanHoaNgaySinhImport(normData["NGÀY SINH"]) || "",
-          khoa: normData["KHÓA"] || "", 
+          // ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh).
+          gioitinh: normData["GIỚI TÍNH"] || "",
+          noisinh: normData["NƠI SINH"] || "",
+          khoa: normData["KHÓA"] || "",
           khuvucuutien: normData["KHU VỰC ƯU TIÊN"] || normData["KHU VỰC"] || "",
           // ĐÃ THÊM (theo phản hồi — "Năm tốt nghiệp THPT"): đọc ngược lại đúng lựa chọn đã
           // lưu, để "Tìm hồ sơ cũ" mở lại vẫn hiện/ẩn đúng ô "Khu vực ưu tiên" như lúc lưu.
@@ -1270,7 +1372,9 @@ const XetTuyenPage = () => {
           // bình cuối cùng (normData[label], VD normData["TOÁN"]) khi rawObj hoàn toàn
           // không có dữ liệu tách Lớp/Kỳ cho 1 môn (đúng tình huống hồ sơ Excel-import,
           // executeImport() luôn ghi "RAW_DIEM_HK": "" vì file mẫu chỉ có 1 cột điểm/môn).
-          ...khoiPhucDiemTungMon(rawObj, (subj) => normData[subj.label]),
+          ...khoiPhucDiemTungMon(rawObjGopLopKy, (subj) => normData[subj.label]),
+          // ĐÃ THÊM: xem chú thích đầy đủ tại vị trí tương tự trong handleEditRowLocal.
+          ...diemThiThptKhac,
 
           // ĐÃ SỬA: thêm fallback đọc đúng tên cột thật "ĐIỂM TB TOÀN KHÓA HỆ 4/10" (xem
           // chú thích bug tại chỗ ghi "ĐIỂM TB TOÀN KHÓA HỆ 4/10" phía trên) — thiếu dòng
@@ -1342,6 +1446,11 @@ const XetTuyenPage = () => {
             'NĂM XÉT TUYỂN': config.NamXetTuyen,
             'HỆ ĐÀO TẠO': config.HeDaoTao,
             'HÌNH THỨC ĐÀO TẠO': config.HinhThucDaoTao,
+            // ĐÃ THÊM (theo yêu cầu — khoá dropdown thật cho cột "GIỚI TÍNH" trên file mẫu,
+            // giống hệt các cột danh mục cố định khác): lấy từ CauHinh (config.GioiTinh), mặc
+            // định ["Nam", "Nữ"] nếu Admin chưa tự cấu hình — khớp đúng fallback phía form
+            // nhập tay (xem sysConfig.GioiTinh ở loadConfig phía trên).
+            'GIỚI TÍNH': (config.GioiTinh && config.GioiTinh.length) ? config.GioiTinh : ['Nam', 'Nữ'],
           };
 
           // Dòng mô tả (dòng 2) — đúng nội dung đã chốt cho từng cột/nhóm cột.
@@ -1549,6 +1658,10 @@ const XetTuyenPage = () => {
                           // chuanHoaNgaySinhImport, utils/ngaySinh.js) — để "NGÀY SINH" hiện
                           // trong danh sách xem trước giống hệt như khi nhập tay qua form.
                           "NGÀY SINH": chuanHoaNgaySinhImport(getField(rowArr, ["NGÀY SINH"])), "NGÀNH": nganhVal,
+                          // ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh, cũng đã thêm vào
+                          // XETTUYEN_TEMPLATE_HEADERS bên Quanlysv.gs nên file mẫu Excel có sẵn 2
+                          // cột này để điền).
+                          "GIỚI TÍNH": getField(rowArr, ["GIỚI TÍNH"]), "NƠI SINH": getField(rowArr, ["NƠI SINH"]),
                           "KHÓA": getField(rowArr, ["KHÓA"]), "ĐỐI TƯỢNG ƯU TIÊN": getField(rowArr, ["ĐỐI TƯỢNG ƯU TIÊN"]),
                           // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT):
                           // đọc thêm cột "NĂM TỐT NGHIỆP THPT" từ file Excel — nếu khớp mốc
@@ -1591,7 +1704,12 @@ const XetTuyenPage = () => {
                           "TIME": currentTimestamp,
                           "NGÀY CẬP NHẬT HỒ SƠ": "",
                           "TÀI KHOẢN NHẬP LIỆU": getUserEmail(),
-                          "RAW_DIEM_HK": ""
+                          "RAW_DIEM_HK": "",
+                          // ĐÃ THÊM: cùng lý do như RAW_DIEM_HK ở trên — file mẫu Excel chỉ có 1
+                          // phương thức/cột điểm, không có gì để đóng gói cho 2 phương thức "còn
+                          // lại" cả (khái niệm "phương thức khác" không tồn tại ở luồng import).
+                          "RAW_DIEM_KHAC_1": "",
+                          "RAW_DIEM_KHAC_2": ""
                       };
                       
                       ALL_HO_SO_DOCS.forEach(doc => {
@@ -1946,87 +2064,114 @@ const XetTuyenPage = () => {
 
         <form>
           <h5 className="fw-bold text-teal mb-3" style={{ color: '#006666', borderLeft: '4px solid #008080', paddingLeft: '10px' }}>I. THÔNG TIN CHUNG</h5>
-          {/* ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT thì khi sửa phải khoá hết các trường,
-              chỉ cho tick hồ sơ còn thiếu + sửa Link hồ sơ): dùng <fieldset disabled> bọc cả
-              khối "I. THÔNG TIN CHUNG" thay vì tự thêm disabled={isOldRecordApproved} vào từng
-              input/select riêng lẻ (hàng chục ô) — "gọn" hơn nhiều, hành vi HTML chuẩn: mọi
-              input/select/button con bên trong tự động bị khoá, không cần sửa gì thêm nếu sau
-              này có thêm trường mới vào đúng khối này. border-0 p-0 m-0 để fieldset không vẽ
-              khung viền/khoảng đệm mặc định của trình duyệt, giữ nguyên bố cục "row g-3 mb-4"
-              y hệt trước đây (fieldset vẫn nhận class Bootstrap bình thường).
-              Ô "Link Folder hồ sơ" ĐÃ CHUYỂN ra khỏi khối này (xem hàng riêng ngay sau khi
-              đóng fieldset) — theo đúng yêu cầu, vẫn phải sửa được kể cả khi hồ sơ đã duyệt. */}
-          <fieldset disabled={isOldRecordApproved} className="row g-3 mb-4 border-0 p-0 m-0">
-            <div className="col-md-3"><label className="form-label fw-bold small mb-1">Họ và tên <span className="text-danger">*</span></label><input type="text" className="form-control" name="hoten" value={formData.hoten} onChange={handleChange} required /></div>
-            <div className="col-md-3">
+          {/* ĐÃ SỬA LẠI (theo phản hồi — bản trước dùng <fieldset> bọc riêng từng cụm làm
+              LƯỚI BỊ VỠ THÀNH NHIỀU HÀNG RIÊNG, không chảy liên tục đủ 5 ô/hàng như ý muốn):
+              giờ dùng ĐÚNG 1 <div className="row row-cols-md-5"> DUY NHẤT bọc TOÀN BỘ 15 ô
+              theo ĐÚNG thứ tự trái→phải đã chốt: Họ tên, CCCD, Giới tính, Ngày sinh, Nơi
+              sinh, Đối tượng đầu vào, Ngành xét tuyển, Hệ đào tạo, Hình thức ĐT, Khóa, Năm
+              xét tuyển, Năm tốt nghiệp THPT, Đối tượng ƯT, Khu vực ưu tiên (ẩn có điều
+              kiện), Link hồ sơ — Bootstrap row-cols-md-5 tự ngắt hàng sau đúng 5 ô, không
+              cần biết trước cột nào ẩn/hiện.
+              KHÔNG dùng <fieldset disabled> bọc chung nữa (như 2 khối cũ) — vì Link hồ sơ
+              PHẢI nằm CHUNG 1 hàng/1 khối liền mạch với các ô khác theo đúng thứ tự yêu cầu,
+              mà <fieldset disabled> disable MỌI control con bên trong nó KỂ CẢ những control
+              tự đặt disabled={false} (không có cách "miễn trừ" 1 con cụ thể trừ <legend> đầu
+              tiên) — nếu Link nằm trong cùng fieldset đó sẽ bị khoá theo khi hồ sơ đã duyệt,
+              phá đúng yêu cầu "Link luôn sửa được". Giải pháp: bỏ hẳn fieldset, gắn thẳng
+              disabled={isOldRecordApproved} vào TỪNG input/select (trừ Link) — dài dòng hơn
+              nhưng là cách DUY NHẤT vừa giữ đúng 1 lưới liền mạch vừa giữ đúng luật khoá cũ.
+              2 ô vốn đã có disabled={isEditMode} riêng (CCCD/Ngành xét tuyển) gộp thêm điều
+              kiện isOldRecordApproved bằng "||" để không mất tác dụng khoá cũ khi đang sửa.
+              LƯU Ý DROPDOWN DÀI TRONG Ô HẸP: <select> gốc trình duyệt (Chrome/Firefox/Edge)
+              tự mở popup danh sách RỘNG THEO NỘI DUNG DÀI NHẤT, không bị giới hạn theo bề
+              rộng thật của ô — không cần thêm CSS gì để đảm bảo hiện đủ chữ khi bấm mở
+              dropdown, chỉ cần không tự ý gán width/overflow ép nhỏ lại cho .form-select
+              (đang không có). */}
+          <div className="row row-cols-1 row-cols-md-5 g-3 mb-4">
+            <div><label className="form-label fw-bold small mb-1">Họ và tên <span className="text-danger">*</span></label><input type="text" className="form-control" name="hoten" value={formData.hoten} onChange={handleChange} required disabled={isOldRecordApproved} /></div>
+            <div>
                 <div className="d-flex justify-content-between align-items-end">
                     <label className="form-label fw-bold small mb-1">Số CCCD/Hộ chiếu <span className="text-danger">*</span></label>
                     <span className="small fst-italic fw-bold" style={{color: scanStatus.includes('❌') ? '#d32f2f' : '#0288d1'}}>{scanStatus}</span>
                 </div>
-                <input type="text" className="form-control" name="cccd" value={formData.cccd} onChange={handleChange} required disabled={isEditMode} />
+                <input type="text" className="form-control" name="cccd" value={formData.cccd} onChange={handleChange} required disabled={isOldRecordApproved || isEditMode} />
             </div>
-            <div className="col-md-3"><label className="form-label fw-bold small mb-1">Ngày sinh <span className="text-danger">*</span></label><input type="date" className="form-control" name="ngaysinh" value={formData.ngaysinh} onChange={handleChange} required /></div>
-            <div className="col-md-3">
-                <label className="form-label fw-bold small mb-1">Ngành xét tuyển <span className="text-danger">*</span></label>
-                <select className="form-select" name="nganh" value={formData.nganh} onChange={handleChange} required disabled={isEditMode}>
-                    <option value="">-- Chọn ngành --</option>
-                    {sysConfig.Nganh.map(ng => <option key={ng} value={ng}>{ng}</option>)}
+            {/* ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh): Giới tính lấy danh mục từ
+                trang Cấu hình (sysConfig.GioiTinh, giống hệt cách Đối tượng ƯT/Hệ đào tạo...
+                đang lấy) thay vì viết cứng "Nam"/"Nữ" ở đây — Nơi sinh là ô nhập tự do, không
+                cần danh mục hợp lệ (không đưa vào COT_CAUHINH_MAP_ bên Quanlysv.gs). Cả 2 đều
+                KHÔNG bắt buộc (*) vì đây là bổ sung thêm, không phải trường gốc của form. */}
+            <div>
+                <label className="form-label fw-bold small mb-1">Giới tính</label>
+                <select className="form-select" name="gioitinh" value={formData.gioitinh} onChange={handleChange} disabled={isOldRecordApproved}>
+                    <option value="">-- Chọn --</option>
+                    {sysConfig.GioiTinh.map(gt => <option key={gt} value={gt}>{gt}</option>)}
                 </select>
             </div>
-            
-            <div className="col-md-3">
+            <div><label className="form-label fw-bold small mb-1">Ngày sinh <span className="text-danger">*</span></label><input type="date" className="form-control" name="ngaysinh" value={formData.ngaysinh} onChange={handleChange} required disabled={isOldRecordApproved} /></div>
+            <div>
+                <label className="form-label fw-bold small mb-1">Nơi sinh</label>
+                <input type="text" className="form-control" name="noisinh" value={formData.noisinh} onChange={handleChange} disabled={isOldRecordApproved} />
+            </div>
+            <div>
                 <label className="form-label fw-bold small mb-1">Đối tượng đầu vào <span className="text-danger">*</span></label>
-                <select className="form-select" name="doituongdauvao" value={formData.doituongdauvao} onChange={handleChange} required>
+                <select className="form-select" name="doituongdauvao" value={formData.doituongdauvao} onChange={handleChange} required disabled={isOldRecordApproved}>
                     <option value="">-- Chọn --</option>
                     {sysConfig.DoiTuongDauVao.map(dt => <option key={dt} value={dt}>{dt}</option>)}
                 </select>
             </div>
-            <div className="col-md-3">
+            <div>
+                <label className="form-label fw-bold small mb-1">Ngành xét tuyển <span className="text-danger">*</span></label>
+                <select className="form-select" name="nganh" value={formData.nganh} onChange={handleChange} required disabled={isOldRecordApproved || isEditMode}>
+                    <option value="">-- Chọn ngành --</option>
+                    {sysConfig.Nganh.map(ng => <option key={ng} value={ng}>{ng}</option>)}
+                </select>
+            </div>
+            <div>
                 <label className="form-label fw-bold small mb-1">Hệ đào tạo <span className="text-danger">*</span></label>
-                <select className="form-select" name="hedaotao" value={formData.hedaotao} onChange={handleChange} required>
+                <select className="form-select" name="hedaotao" value={formData.hedaotao} onChange={handleChange} required disabled={isOldRecordApproved}>
                     <option value="">-- Chọn hệ --</option>
                     {sysConfig.HeDaoTao.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
             </div>
-            <div className="col-md-3">
+            <div>
                 <label className="form-label fw-bold small mb-1">Hình thức ĐT <span className="text-danger">*</span></label>
-                <select className="form-select" name="htdaotao" value={formData.htdaotao} onChange={handleChange} required>
+                <select className="form-select" name="htdaotao" value={formData.htdaotao} onChange={handleChange} required disabled={isOldRecordApproved}>
                     <option value="">-- Chọn HT --</option>
                     {sysConfig.HinhThucDaoTao.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
             </div>
-            <div className="col-md-3">
+            <div>
                 <label className="form-label fw-bold small mb-1">Khóa <span className="text-danger">*</span></label>
-                <select className="form-select" name="khoa" value={formData.khoa} onChange={handleChange} required>
+                <select className="form-select" name="khoa" value={formData.khoa} onChange={handleChange} required disabled={isOldRecordApproved}>
                     <option value="">-- Chọn --</option>
                     {sysConfig.KhoaNhapHoc.map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
             </div>
-
-            <div className="col-md-3">
+            <div>
                 <label className="form-label fw-bold small mb-1">Năm xét tuyển <span className="text-danger">*</span></label>
-                <select className="form-select" name="namtt" value={formData.namtt} onChange={handleChange} required>
+                <select className="form-select" name="namtt" value={formData.namtt} onChange={handleChange} required disabled={isOldRecordApproved}>
                     <option value="">-- Chọn --</option>
                     {sysConfig.NamXetTuyen.map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-            </div>
-            <div className="col-md-3">
-                <label className="form-label fw-bold small mb-1">Đối tượng ƯT <span className="text-danger">*</span></label>
-                <select className="form-select" name="doituonguutien" value={formData.doituonguutien} onChange={handleChange} required>
-                    <option value="">-- Chọn --</option>
-                    {sysConfig.DoiTuongUT.map(dt => <option key={dt} value={dt}>{dt}</option>)}
                 </select>
             </div>
             {/* ĐÃ THÊM (theo phản hồi — Thông tư tuyển sinh đại học mới áp dụng từ 15/2/2026):
                 trường "Năm tốt nghiệp THPT" — 2 mốc tự tính theo năm dương lịch thực tế (xem
                 NTN_THPT_TRUOC/NTN_THPT_TU phía trên component). Chọn mốc "Trước..." sẽ ẩn hẳn
-                ô "Khu vực ưu tiên" ngay bên dưới (xem điều kiện render + biChanKhuVucUTTheoNamTN). */}
-            <div className="col-md-3">
+                ô "Khu vực ưu tiên" ngay sau đây (xem điều kiện render + biChanKhuVucUTTheoNamTN). */}
+            <div>
                 <label className="form-label fw-bold small mb-1">Năm tốt nghiệp THPT <span className="text-danger">*</span></label>
-                <select className="form-select" name="namtotnghiepthpt" value={formData.namtotnghiepthpt} onChange={handleChange} required>
+                <select className="form-select" name="namtotnghiepthpt" value={formData.namtotnghiepthpt} onChange={handleChange} required disabled={isOldRecordApproved}>
                     <option value="">-- Chọn --</option>
                     <option value={NTN_THPT_TRUOC}>{NTN_THPT_TRUOC}</option>
                     <option value={NTN_THPT_TU}>{NTN_THPT_TU}</option>
+                </select>
+            </div>
+            <div>
+                <label className="form-label fw-bold small mb-1">Đối tượng ƯT <span className="text-danger">*</span></label>
+                <select className="form-select" name="doituonguutien" value={formData.doituonguutien} onChange={handleChange} required disabled={isOldRecordApproved}>
+                    <option value="">-- Chọn --</option>
+                    {sysConfig.DoiTuongUT.map(dt => <option key={dt} value={dt}>{dt}</option>)}
                 </select>
             </div>
             {/* ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): ẨN HẲN
@@ -2034,21 +2179,18 @@ const XetTuyenPage = () => {
                 ô không còn hiện trên form, việc bắt buộc chọn "Năm tốt nghiệp THPT" tự đủ để
                 validate (xem requiredFields ở handleAddRow). */}
             {!biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) && (
-            <div className="col-md-3">
+            <div>
                 <label className="form-label fw-bold small mb-1">Khu vực ưu tiên <span className="text-danger">*</span></label>
-                <select className="form-select" name="khuvucuutien" value={formData.khuvucuutien} onChange={handleChange} required>
+                <select className="form-select" name="khuvucuutien" value={formData.khuvucuutien} onChange={handleChange} required disabled={isOldRecordApproved}>
                     <option value="">-- Chọn --</option>
                     {sysConfig.KhuVucUT.map(kv => <option key={kv} value={kv}>{kv}</option>)}
                 </select>
             </div>
             )}
-          </fieldset>
-
-          {/* ĐÃ TÁCH RIÊNG khỏi fieldset "I. THÔNG TIN CHUNG" ở trên (theo phản hồi — hồ sơ
-              ĐÃ DUYỆT vẫn phải sửa được "ô link hồ sơ") — luôn KHÔNG bị disabled, bất kể
-              isOldRecordApproved. */}
-          <div className="row g-3 mb-4">
-            <div className="col-md-3"><label className="form-label fw-bold small mb-1 text-primary">🔗 Link Folder hồ sơ:</label><input type="text" className="form-control border-primary" name="link_folder" value={formData.link_folder} onChange={handleChange} placeholder="Link Google Drive..." /></div>
+            {/* Link Folder hồ sơ — theo yêu cầu, PHẢI luôn sửa được kể cả khi hồ sơ đã duyệt
+                (xem chú thích lớn đầu khối) nên KHÔNG có disabled={isOldRecordApproved} ở
+                đây, dù nằm chung 1 lưới với các ô đã khoá phía trên. */}
+            <div><label className="form-label fw-bold small mb-1 text-primary">🔗 Link Folder hồ sơ:</label><input type="text" className="form-control border-primary" name="link_folder" value={formData.link_folder} onChange={handleChange} placeholder="Link Google Drive..." /></div>
           </div>
 
           {/* ĐÃ THÊM (theo phản hồi): banner cảnh báo hiển thị ngay khi hồ sơ ĐÃ DUYỆT được

@@ -23,8 +23,10 @@ const STATUS_VALUE = 'Đã trúng tuyển';
 // ĐÃ THÊM: danh sách khoản thu — để ngỏ cửa sau này bổ sung thêm loại khác không cần sửa code nhiều chỗ.
 const LOAI_PHI = ['Đồng phục GDTC', 'Bảo hiểm y tế', 'Khám sức khỏe đầu khóa', 'Đoàn phí', 'Học phí', 'Khác'];
 
+// ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh): 2 field mới theo ĐÚNG tên cột thật
+// trên Trung Gian, cùng quy ước với mọi field khác trong EMPTY_FORM.
 const EMPTY_FORM = {
-  'TÊN SINH VIÊN': '', 'NGÀY SINH': '', 'CĂN CƯỚC': '', 'NGÀNH': '', 'KHÓA': '',
+  'TÊN SINH VIÊN': '', 'NGÀY SINH': '', 'GIỚI TÍNH': '', 'NƠI SINH': '', 'CĂN CƯỚC': '', 'NGÀNH': '', 'KHÓA': '',
   'HỆ ĐÀO TẠO': '', 'HÌNH THỨC ĐÀO TẠO': '', 'ĐỐI TƯỢNG ƯU TIÊN': '', 'LINK HỒ SƠ': '',
 };
 
@@ -180,6 +182,20 @@ const AddStudentModal = ({ onClose, onSave, isPending, initialData }) => {
                 <div className="col-md-6">
                   <label className="form-label small">Số CCCD</label>
                   <input type="text" className="form-control" name="CĂN CƯỚC" value={formData['CĂN CƯỚC']} onChange={handleChange} />
+                </div>
+                {/* ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh): Giới tính lấy danh mục
+                    từ trang Cấu hình (configData.GioiTinh), giống hệt cách "Khóa" lấy
+                    configData.KhoaNhapHoc ở khối bên dưới — Nơi sinh là ô nhập tự do. */}
+                <div className="col-md-6">
+                  <label className="form-label small">Giới tính</label>
+                  <select className="form-select" name="GIỚI TÍNH" value={formData['GIỚI TÍNH']} onChange={handleChange}>
+                    <option value="">-- Chọn --</option>
+                    {configData?.GioiTinh?.map(gt => <option key={gt} value={gt}>{gt}</option>)}
+                  </select>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label small">Nơi sinh</label>
+                  <input type="text" className="form-control" name="NƠI SINH" value={formData['NƠI SINH']} onChange={handleChange} />
                 </div>
 
                 <h6 className="text-muted border-bottom pb-2 mt-4">II. Thông tin Tuyển sinh & Đào tạo</h6>

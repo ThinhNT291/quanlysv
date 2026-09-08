@@ -10,9 +10,9 @@ const SettingsPage = () => {
   const queryClient = useQueryClient();
   const [localConfig, setLocalConfig] = useState(null);
   
-  const [newItems, setNewItems] = useState({ 
+  const [newItems, setNewItems] = useState({
       Nganh: '', KhoaNhapHoc: '', DoiTuongUT: '', KhuVucUT: '', NamXetTuyen: '',
-      DoiTuongDauVao: '', HeDaoTao: '', HinhThucDaoTao: ''
+      DoiTuongDauVao: '', HeDaoTao: '', HinhThucDaoTao: '', GioiTinh: ''
   });
 
   // STATE ĐỂ XỬ LÝ DOUBLE-CLICK SỬA TRỰC TIẾP
@@ -53,7 +53,8 @@ const SettingsPage = () => {
           Nganh: configData.Nganh || [], KhoaNhapHoc: configData.KhoaNhapHoc || [],
           DoiTuongUT: configData.DoiTuongUT || [], KhuVucUT: configData.KhuVucUT || [],
           NamXetTuyen: configData.NamXetTuyen || [], DoiTuongDauVao: configData.DoiTuongDauVao || [],
-          HeDaoTao: configData.HeDaoTao || [], HinhThucDaoTao: configData.HinhThucDaoTao || []
+          HeDaoTao: configData.HeDaoTao || [], HinhThucDaoTao: configData.HinhThucDaoTao || [],
+          GioiTinh: configData.GioiTinh || []
       };
       setLocalConfig(JSON.parse(JSON.stringify(safeConfig))); 
     }
@@ -163,11 +164,17 @@ const SettingsPage = () => {
     }
   };
 
+  // ĐÃ THÊM 'GioiTinh' (theo yêu cầu — bổ sung Giới tính/Nơi sinh): danh mục Giới tính cho
+  // dropdown ở trang Xét tuyển/Thu hồ sơ trực tiếp — LƯU Ý khi thêm/sửa giá trị ở đây: cột
+  // "Giấy chuyển NVQS (với nam)" (isDocApplicable, XetTuyenPage.jsx) so khớp CHÍNH XÁC với
+  // chuỗi "Nam" (viết hoa chữ N) để tự ẩn/hiện đúng giới tính — nếu đổi tên giá trị này
+  // khác đi, phải sửa lại genderOnly ở DICT_HO_SO.chung cho khớp.
   const CONFIG_MAPPINGS = [
     { key: 'Nganh', title: 'Danh mục Ngành học' }, { key: 'NamXetTuyen', title: 'Năm xét tuyển' },
     { key: 'KhoaNhapHoc', title: 'Khóa nhập học' }, { key: 'DoiTuongDauVao', title: 'Đối tượng đầu vào' },
     { key: 'HeDaoTao', title: 'Hệ đào tạo' }, { key: 'HinhThucDaoTao', title: 'Hình thức đào tạo' },
-    { key: 'DoiTuongUT', title: 'Đối tượng ưu tiên' }, { key: 'KhuVucUT', title: 'Khu vực ưu tiên' }
+    { key: 'DoiTuongUT', title: 'Đối tượng ưu tiên' }, { key: 'KhuVucUT', title: 'Khu vực ưu tiên' },
+    { key: 'GioiTinh', title: 'Giới tính' }
   ];
 
   if (isLoading || !localConfig) {

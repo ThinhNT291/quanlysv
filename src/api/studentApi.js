@@ -652,7 +652,20 @@ export const layCauHinhChucDanhKy = async (loaiTaiLieu = 'GBTT') => {
 
 // ĐÃ THÊM — Bước 4: tạo yêu cầu ký GBTT cho 1 lô sinh viên đã duyệt.
 // { sinhVien: [...], nguoiKy: [{maChucDanh, email, ten?}, ...] } -> { results: [...] }.
-export const taoYeuCauKyGBTT = ({ sinhVien, nguoiKy }) => postKySoAction('taoYeuCauKyGBTT', { sinhVien, nguoiKy });
+// ĐÃ THÊM (theo yêu cầu bổ sung — placeholder "Ngày xuất giấy báo"/"Tháng nhập học"):
+// ngayXuatGiayBao ('YYYY-MM-DD') và thangNhapHoc ('YYYY-MM') áp dụng CHUNG cho cả đợt xuất
+// này (không phải riêng từng sinh viên) — xem noiDung/NGAY_XUAT_GIAY_BAO/THANG_NHAP_HOC ở
+// action taoYeuCauKyGBTT (Quanlysv.gs).
+// ĐÃ SỬA (theo phản hồi — bug "Số quyết định không chèn vào được"): hàm này CHỦ ĐỘNG liệt
+// kê từng field cần gửi (destructuring) rồi mới forward — field nào không được liệt kê ở
+// đây sẽ bị ÂM THẦM RỚT MẤT dù ThamDinhPage.jsx đã gửi kèm trong object truyền vào, KHÔNG
+// báo lỗi gì cả. Trước đây thêm "soQuyetDinh" vào state + payload phía ThamDinhPage.jsx và
+// vào noiDung/SO_QUYET_DINH phía Quanlysv.gs nhưng QUÊN thêm vào đúng 1 nơi TRUNG GIAN này
+// — nguyên nhân thật của bug, không phải do phía Doc mẫu/placeholder ông đặt sai. Nhớ: mỗi
+// khi thêm field mới cho action này, phải sửa ĐỦ CẢ 3 nơi (JSX gửi lên, hàm forward ở đây,
+// noiDung phía Quanlysv.gs), thiếu 1 trong 3 đều coi như field đó không đi tới đâu cả.
+export const taoYeuCauKyGBTT = ({ sinhVien, nguoiKy, ngayXuatGiayBao, thangNhapHoc, soQuyetDinh }) =>
+  postKySoAction('taoYeuCauKyGBTT', { sinhVien, nguoiKy, ngayXuatGiayBao, thangNhapHoc, soQuyetDinh });
 
 // Danh sách yêu cầu ký đang chờ người đang đăng nhập ký — cho trang "Hồ sơ chờ ký".
 export const fetchDanhSachChoToiKy = async () => {
@@ -686,6 +699,14 @@ export const xemTruocYeuCauKy = async (maYeuCau) => {
 
 // Thực hiện 1 lượt ký cho yêu cầu maYeuCau (dùng đúng chữ ký cá nhân đã lưu ở Hồ sơ cá nhân).
 export const kyYeuCau = ({ maYeuCau, ghiChu }) => postKySoAction('kyYeuCau', { maYeuCau, ghiChu });
+
+// ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): người ĐANG TỚI LƯỢT từ chối ký kèm lý do bắt
+// buộc — dừng cả chuỗi, báo email người tạo yêu cầu.
+export const tuChoiKy = ({ maYeuCau, lyDo }) => postKySoAction('tuChoiKy', { maYeuCau, lyDo });
+
+// ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): người TẠO yêu cầu (hoặc Admin) thu hồi 1 yêu
+// cầu đang chạy dở, chỉ khi chưa hoàn tất.
+export const huyYeuCauKy = ({ maYeuCau }) => postKySoAction('huyYeuCauKy', { maYeuCau });
 
 // ĐÃ THÊM — Bước 7: lịch sử MỌI yêu cầu ký người đang đăng nhập có liên quan (đã ký/
 // đang chờ/là người tạo), không chỉ riêng bước đang tới lượt — cho tab "Đã ký" trên

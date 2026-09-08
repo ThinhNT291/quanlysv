@@ -81,6 +81,11 @@ const ImportModal = ({ onClose, onImport, isPending }) => {
         'HỆ ĐÀO TẠO': config.HeDaoTao,
         'HÌNH THỨC ĐÀO TẠO': config.HinhThucDaoTao,
         'ĐỐI TƯỢNG ƯU TIÊN': config.DoiTuongUT,
+        // ĐÃ THÊM (theo yêu cầu — khoá dropdown thật cho cột "GIỚI TÍNH" trên file mẫu,
+        // giống hệt các cột danh mục cố định khác): lấy từ CauHinh (config.GioiTinh), mặc
+        // định ["Nam", "Nữ"] nếu Admin chưa tự cấu hình — khớp đúng fallback phía form nhập
+        // tay (xem sysConfig.GioiTinh ở XetTuyenPage.jsx/SettingsPage.jsx).
+        'GIỚI TÍNH': (config.GioiTinh && config.GioiTinh.length) ? config.GioiTinh : ['Nam', 'Nữ'],
       };
 
       const descRow = { 'CĂN CƯỚC': 'Số CCCD', 'NGÀY SINH': 'dd/mm/yyyy' };

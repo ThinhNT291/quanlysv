@@ -48,6 +48,19 @@ const tenMonToHop = (maToHop) => {
 // thamdinh_-_app.js (vanilla JS cũ), giữ nguyên toàn bộ luật nghiệp vụ.
 // ===================================================================
 
+// ĐÃ THÊM (theo phản hồi — rút gọn tên hồ sơ CHỈ ở badge "Thiếu: ..." của cột "Trạng thái
+// hồ sơ" trong bảng chính): KHÔNG đổi doc.name gốc trong DICT_HO_SO (thamDinhConfig.js) —
+// tên đầy đủ vẫn dùng nguyên cho logic đối chiếu (getMissingDocs/getMissingTienQuyet), cho
+// Swal báo thiếu, cho modal chi tiết, và cho cột "DANH SÁCH HỒ SƠ THIẾU" khi xuất Excel —
+// chỉ RÚT GỌN CHỮ HIỂN THỊ ở đúng 1 chỗ theo yêu cầu, để badge trong bảng gọn hơn.
+const TEN_HO_SO_RUT_GON = {
+  "Sơ yếu lý lịch": "SYLL",
+  "Bản sao CCCD": "CCCD",
+  "Bản sao Bằng THPT/Giấy báo điểm": "Bằng THPT/Giấy báo điểm",
+  "Bản sao Học bạ THPT": "Học bạ THPT",
+};
+const rutGonTenHoSo = (ten) => TEN_HO_SO_RUT_GON[ten] || ten;
+
 const PAGE_SIZE_DEFAULT = 10;
 const SCAN_CACHE_KEY = 'td_scan_cache_v1'; // giữ đúng tên key sessionStorage của bản cũ
 
@@ -78,6 +91,10 @@ const loadScanCache = () => {
     return {};
   }
 };
+
+// ĐÃ THÊM (theo yêu cầu — "Số quyết định" dạng "xx/năm", VD "01/2026", "012/2025"): phần
+// số thứ tự có thể 1-4 chữ số (không cố định độ dài như "01"), phần năm luôn đúng 4 chữ số.
+const SO_QUYET_DINH_REGEX = /^\d{1,4}\/\d{4}$/;
 
 const ThamDinhPage = () => {
   const queryClient = useQueryClient();
@@ -126,6 +143,34 @@ const ThamDinhPage = () => {
   // về [] mỗi khi mở lại batchPreview loại 'gbtt' (xem openBatchPreview bên dưới) để
   // không giữ lựa chọn của lần xuất trước.
   const [nguoiKyGBTT, setNguoiKyGBTT] = useState([]);
+  // ĐÃ THÊM (theo yêu cầu — placeholder "Ngày xuất giấy báo"/"Tháng nhập học" trong mẫu
+  // GBTT): 2 giá trị CHUNG cho CẢ ĐỢT xuất (không phải riêng từng sinh viên), chọn ngay
+  // trên modal "Xuất GBTT + chọn người ký" cạnh ChonNguoiKyModal. Mặc định "Ngày xuất giấy
+  // báo" = hôm nay (thường đúng đa số trường hợp, vẫn sửa được); "Tháng nhập học" để trống,
+  // bắt phải tự chọn vì không có mặc định nào hợp lý (khác trường/đợt tuyển sẽ khác tháng).
+  const [ngayXuatGiayBao, setNgayXuatGiayBao] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  // ĐÃ SỬA (theo phản hồi — bug "tháng NaN năm 9/2026" do <input type="month"> không được
+  // Firefox/Safari cũ hỗ trợ, tự rớt về Ô NHẬP CHỮ TỰ DO không kiểm tra định dạng gì cả):
+  // tách hẳn thành 2 state ĐỘC LẬP thangNH/namNH (bind trực tiếp vào 2 <select> riêng) thay
+  // vì 1 state "YYYY-MM" gộp chung rồi tách/ghép qua lại — làm vậy để chọn NĂM trước khi
+  // chọn THÁNG (hoặc ngược lại) vẫn GIỮ ĐƯỢC lựa chọn đó ngay trên UI, không bị "biến mất"
+  // (nếu gộp chung 1 state và chỉ ghi khi ĐỦ CẢ HAI, chọn 1 ô trước sẽ không lưu được gì,
+  // ô vừa chọn lại hiện về "-- Chọn --" ở lần render kế tiếp). "thangNhapHoc" (chuỗi
+  // "YYYY-MM" gửi lên backend, giữ NGUYÊN như thiết kế cũ) giờ là giá trị TÍNH RA từ 2
+  // state này, không phải state riêng nữa.
+  const [thangNH, setThangNH] = useState('');
+  const [namNH, setNamNH] = useState('');
+  const thangNhapHoc = (thangNH && namNH) ? `${namNH}-${thangNH}` : '';
+  const namHienTaiNH = new Date().getFullYear();
+  // ĐÃ THÊM (theo yêu cầu — placeholder "Số quyết định" trong mẫu GBTT): 1 giá trị CHUNG
+  // cho CẢ ĐỢT xuất (giống hệt ngayXuatGiayBao/thangNhapHoc), gõ tự do đúng dạng "xx/năm"
+  // (VD "01/2026", "012/2025" — số thứ tự quyết định không cố định 2 chữ số nên KHÔNG dùng
+  // <select>/đệm số như Tháng nhập học, chỉ validate bằng regex khi hiện dòng xem trước +
+  // khoá nút "Xác nhận" nếu sai định dạng, xem SO_QUYET_DINH_REGEX bên dưới).
+  const [soQuyetDinh, setSoQuyetDinh] = useState('');
   // ĐÃ THÊM: cờ đóng/mở menu xổ xuống của nút "Xuất file" trong modal thẩm định chi
   // tiết — modal được render bằng IIFE gọi có điều kiện (viewingIndex !== null && ...)
   // nên KHÔNG được khai báo useState bên trong đó (vi phạm Rules of Hooks), phải khai
@@ -283,12 +328,16 @@ const ThamDinhPage = () => {
   //     hề cộng Điểm phỏng vấn, xem getBestScore() ở thamDinhHelpers.js).
   //  2) Thêm cột "TỔ HỢP" (mã tổ hợp + tên 3 môn, VD "D01 (Toán, Ngữ Văn, Tiếng Anh)") ngay
   //     sau cột "ĐIỂM TRÚNG TUYỂN" — dùng chung tenMonToHop() đã có ở modal chi tiết.
-  //  3) Bỏ 3 cột không cần thiết khi xuất báo cáo: "SV_KEY" (định danh nội bộ), "TT" (cột lạ
+  //  3) Bỏ các cột không cần thiết khi xuất báo cáo: "SV_KEY" (định danh nội bộ), "TT" (cột lạ
   //     trùng nghĩa với STT, có sẵn thẳng trên Goc01), "RAW_DIEM_HK" (JSON nội bộ dùng khôi
   //     phục điểm Lớp/Kỳ bên trang Xét tuyển, không phải dữ liệu để đọc/báo cáo) — so khớp
   //     tên cột không phân biệt hoa/thường/khoảng trắng thừa (giữ tên cột GỐC khi xuất,
   //     chỉ dùng bản chuẩn hoá để SO SÁNH loại trừ).
-  const CAC_COT_LOAI_BO_KHI_XUAT = new Set(["SV_KEY", "TT", "RAW_DIEM_HK"]);
+  //  4) ĐÃ THÊM: "RAW_DIEM_KHAC_1"/"RAW_DIEM_KHAC_2" — 2 cột JSON nội bộ mới (cùng vai trò
+  //     như RAW_DIEM_HK ở trên, nhưng lưu raw của 2 phương thức xét tuyển KHÔNG đang chọn,
+  //     xem chú thích tại chỗ đóng gói trong XetTuyenPage.jsx) — cũng không phải dữ liệu để
+  //     đọc/báo cáo, loại khỏi export giống hệt RAW_DIEM_HK.
+  const CAC_COT_LOAI_BO_KHI_XUAT = new Set(["SV_KEY", "TT", "RAW_DIEM_HK", "RAW_DIEM_KHAC_1", "RAW_DIEM_KHAC_2"]);
   const handleExportExcel = () => {
     if (filteredData.length === 0) {
       Swal.fire({ icon: 'warning', title: 'Không có dữ liệu', text: 'Không có hồ sơ nào đang hiển thị (đang bị bộ lọc loại hết) để xuất.' });
@@ -336,6 +385,137 @@ const ThamDinhPage = () => {
     window.addEventListener('thamdinh:export-excel', handleExportExcel);
     return () => window.removeEventListener('thamdinh:export-excel', handleExportExcel);
   }, [filteredData]);
+
+  // ĐÃ THÊM (theo phản hồi — "Xuất DS tuỳ chọn"): giống hệt handleExportExcel ở trên (dùng
+  // chung filteredData, cùng bộ cột loại bỏ CAC_COT_LOAI_BO_KHI_XUAT) nhưng cho phép NGƯỜI
+  // DÙNG TỰ CHỌN cột nào sẽ xuất, thay vì 1 bộ cột cố định — trong đó có "DANH SÁCH HỒ SƠ
+  // THIẾU" (dùng lại đúng getMissingDocs() đã có sẵn, hiển thị trên bảng/modal chi tiết,
+  // không viết lại logic xác định thiếu gì).
+  // ĐÃ SỬA (theo phản hồi): thêm các cột "sau tính toán" còn thiếu (điểm ưu tiên khu
+  // vực/đối tượng, tên+điểm từng môn tổ hợp) — TRƯỚC ĐÓ những mục này không có trong danh
+  // sách nên người dùng chỉ chọn được đúng cột GỐC trên Goc01 (thường thô/trống), không lấy
+  // được giá trị thật đã qua calculateScores().
+  const COT_TINH_TOAN = [
+    "MÃ SINH VIÊN", "ĐIỂM TRÚNG TUYỂN", "TỔ HỢP",
+    "TÊN MÔN 1", "ĐIỂM MÔN 1", "TÊN MÔN 2", "ĐIỂM MÔN 2", "TÊN MÔN 3", "ĐIỂM MÔN 3",
+    "ĐIỂM ƯU TIÊN KHU VỰC", "ĐIỂM ƯU TIÊN ĐỐI TƯỢNG",
+    "TRẠNG THÁI THẨM ĐỊNH", "DANH SÁCH HỒ SƠ THIẾU", "SỐ HỒ SƠ THIẾU",
+  ];
+  const [customExportOpen, setCustomExportOpen] = useState(false);
+  const [cotDaChon, setCotDaChon] = useState(new Set());
+
+  // Danh sách cột khả dụng = hợp các cột GỐC xuất hiện trong filteredData (giữ thứ tự xuất
+  // hiện đầu tiên, loại các cột đã ẩn) + các cột TÍNH TOÁN cố định ở cuối.
+  // ĐÃ SỬA (theo phản hồi — bị hiện 2 ô tick trùng tên, VD "MÃ SINH VIÊN"/"TRẠNG THÁI THẨM
+  // ĐỊNH"): Goc01 vốn ĐÃ CÓ SẴN cột trùng tên với cột tính toán tương ứng (giá trị RAW/thô,
+  // khác giá trị đã tính) — trước đây cả 2 cùng lọt vào danh sách vì chỉ dedupe bên trong
+  // nhóm "goc", không so với nhóm COT_TINH_TOAN. Giờ loại bỏ khỏi "goc" bất kỳ cột nào tên
+  // (đã chuẩn hoá) trùng với 1 cột tính toán — CHỈ giữ lại đúng 1 bản, luôn là bản đã tính,
+  // để không còn ô tick trùng VÀ để chọn cột đó luôn ra đúng giá trị đã xử lý, không phải
+  // giá trị thô.
+  const danhSachCotKhaDung = useMemo(() => {
+    const tenTinhToanChuan = new Set(COT_TINH_TOAN.map(t => t.trim().toUpperCase()));
+    const goc = [];
+    const daThay = new Set();
+    filteredData.forEach(row => {
+      Object.keys(row).forEach(k => {
+        const kChuan = String(k).trim().toUpperCase();
+        if (CAC_COT_LOAI_BO_KHI_XUAT.has(kChuan) || tenTinhToanChuan.has(kChuan) || daThay.has(k)) return;
+        daThay.add(k);
+        goc.push(k);
+      });
+    });
+    return [...goc, ...COT_TINH_TOAN];
+  }, [filteredData]);
+
+  useEffect(() => {
+    const moDialog = () => {
+      setCotDaChon(new Set(danhSachCotKhaDung)); // mặc định chọn tất cả, người dùng tự bỏ bớt
+      setCustomExportOpen(true);
+    };
+    window.addEventListener('thamdinh:export-custom', moDialog);
+    return () => window.removeEventListener('thamdinh:export-custom', moDialog);
+  }, [danhSachCotKhaDung]);
+
+  const toggleCot = (k) => {
+    setCotDaChon(prev => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  };
+
+  const handleExportCustom = () => {
+    if (filteredData.length === 0) {
+      Swal.fire({ icon: 'warning', title: 'Không có dữ liệu', text: 'Không có hồ sơ nào đang hiển thị (đang bị bộ lọc loại hết) để xuất.' });
+      return;
+    }
+    if (cotDaChon.size === 0) {
+      Swal.fire({ icon: 'warning', title: 'Chưa chọn cột nào', text: 'Chọn ít nhất 1 cột để xuất.' });
+      return;
+    }
+    const exportRows = filteredData.map((row, idx) => {
+      const nganhRow = getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]);
+      const scoreInfo = calculateScores(row, nganhRow);
+      const diemTrungTuyenFinal = scoreInfo.type === 'thpt'
+        ? (scoreInfo.hasScore ? parseFloat(scoreInfo.finalTotalScore) : 0)
+        : getRawScoreNumber(row);
+      const toHopText = (scoreInfo.type === 'thpt' && scoreInfo.hasScore && scoreInfo.bestCombo)
+        ? `${scoreInfo.bestCombo} (${tenMonToHop(scoreInfo.bestCombo)})`
+        : '';
+
+      // ĐÃ THÊM (theo phản hồi — cần dữ liệu SAU TÍNH TOÁN, không phải cột thô trên Goc01):
+      // đúng logic đang dùng ở buildGbttPayload (tách riêng thay vì gọi lại hàm đó, để
+      // không phụ thuộc hình dạng dữ liệu của tính năng Ký điện tử — 2 nơi tính trùng công
+      // thức nhưng độc lập, sửa 1 bên không ảnh hưởng bên kia).
+      let mon1Ten = "", mon1Diem = "", mon2Ten = "", mon2Diem = "", mon3Ten = "", mon3Diem = "";
+      let diemUuTienKhuVuc = "", diemUuTienDoiTuong = "";
+      if (scoreInfo.type === 'thpt' && scoreInfo.hasScore) {
+        const monHoc = DICT_TO_HOP[scoreInfo.bestCombo] || [];
+        const ketQuaCombo = (scoreInfo.comboResults || []).find(c => c.combo === scoreInfo.bestCombo) || {};
+        mon1Ten = monHoc[0] ? SUBJ_MAP[monHoc[0]] : ""; mon1Diem = ketQuaCombo.s1 ?? "";
+        mon2Ten = monHoc[1] ? SUBJ_MAP[monHoc[1]] : ""; mon2Diem = ketQuaCombo.s2 ?? "";
+        mon3Ten = monHoc[2] ? SUBJ_MAP[monHoc[2]] : ""; mon3Diem = ketQuaCombo.s3 ?? "";
+        diemUuTienKhuVuc = scoreInfo.diemUuTienKhuVuc ?? "";
+        diemUuTienDoiTuong = scoreInfo.diemUuTienDoiTuong ?? "";
+      }
+
+      const dsThieu = getMissingDocs(row);
+
+      const giaTriCot = {
+        ...row,
+        "MÃ SINH VIÊN": generateMaSV(row),
+        "ĐIỂM TRÚNG TUYỂN": diemTrungTuyenFinal,
+        "TỔ HỢP": toHopText,
+        "TÊN MÔN 1": mon1Ten, "ĐIỂM MÔN 1": mon1Diem,
+        "TÊN MÔN 2": mon2Ten, "ĐIỂM MÔN 2": mon2Diem,
+        "TÊN MÔN 3": mon3Ten, "ĐIỂM MÔN 3": mon3Diem,
+        "ĐIỂM ƯU TIÊN KHU VỰC": diemUuTienKhuVuc,
+        "ĐIỂM ƯU TIÊN ĐỐI TƯỢNG": diemUuTienDoiTuong,
+        "TRẠNG THÁI THẨM ĐỊNH": getEffectiveState(row),
+        // ĐÃ SỬA (theo phản hồi — mỗi loại hồ sơ thiếu xuống 1 hàng riêng TRONG CÙNG 1 Ô,
+        // không chỉ cách nhau dấu ";"): nối bằng ký tự xuống dòng "\n" — Excel lưu đúng
+        // nhiều dòng trong 1 ô, nhưng thư viện "xlsx" (SheetJS bản cộng đồng) đang dùng ở
+        // đây KHÔNG ghi được định dạng ô (không tự bật "Wrap Text") — dữ liệu vẫn đúng
+        // nhiều dòng, chỉ cần tự bật Wrap Text (hoặc kéo cao hàng) trong Excel để NHÌN THẤY
+        // xuống dòng, không phải lỗi thiếu dòng.
+        "DANH SÁCH HỒ SƠ THIẾU": dsThieu.join("\n"),
+        "SỐ HỒ SƠ THIẾU": dsThieu.length,
+      };
+
+      const hang = { "STT": idx + 1 };
+      danhSachCotKhaDung.forEach(k => { if (cotDaChon.has(k)) hang[k] = giaTriCot[k]; });
+      return hang;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "DSTuyChon");
+    const hienTai = new Date();
+    const tenFile = `ThamDinh_TuyChon_${String(hienTai.getDate()).padStart(2, '0')}-${String(hienTai.getMonth() + 1).padStart(2, '0')}-${hienTai.getFullYear()}.xlsx`;
+    XLSX.writeFile(wb, tenFile);
+    setCustomExportOpen(false);
+  };
 
   // ĐÃ SỬA: bỏ icon emoji đầu chữ trong cột THẨM ĐỊNH của bảng datalist theo yêu cầu
   // (chỉ còn chữ, cột không bị chật thêm bởi icon nữa).
@@ -525,6 +705,13 @@ const ThamDinhPage = () => {
     let diemTrungTuyen = "";
     let mon1Ten = "", mon1Diem = "", mon2Ten = "", mon2Diem = "", mon3Ten = "", mon3Diem = "";
     let diemUuTienKhuVuc = "", diemUuTienDoiTuong = "";
+    // ĐÃ THÊM (theo phản hồi — thiếu sót từ trước, quên đưa vào mẫu GBTT): điểm phỏng vấn
+    // ĐÃ NHẬP (diemPhongVanRaw — giá trị thô trên cột "ĐIỂM PHỎNG VẤN", KHÁC với
+    // diem.diemPhongVan là phần THỰC SỰ được cộng vào điểm, xem chú thích đầy đủ tại chỗ
+    // khai báo diemPhongVanRaw trong thamDinhHelpers.js) — in ra GBTT đúng điểm PV thí sinh
+    // đã có, không phụ thuộc có đủ điều kiện cộng thưởng hay không. Chỉ tồn tại ở nhánh
+    // "Tốt nghiệp THPT" (PV chỉ áp dụng phương thức Học bạ) — rỗng ở nhánh 'other'.
+    let diemPhongVan = "";
 
     if (diem.type === 'thpt' && diem.hasScore) {
       diemTrungTuyen = diem.finalTotalScore;
@@ -538,6 +725,7 @@ const ThamDinhPage = () => {
       mon3Diem = ketQuaCombo.s3 ?? "";
       diemUuTienKhuVuc = diem.diemUuTienKhuVuc ?? "";
       diemUuTienDoiTuong = diem.diemUuTienDoiTuong ?? "";
+      diemPhongVan = diem.diemPhongVanRaw > 0 ? diem.diemPhongVanRaw : "";
     } else if (diem.type === 'other') {
       diemTrungTuyen = diem.dtbVal || "";
     }
@@ -545,6 +733,10 @@ const ThamDinhPage = () => {
     return {
       hoTen: getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]),
       ngaySinh: getVal(row, ["NGÀY SINH", "NGÀNH SINH"]),
+      // ĐÃ THÊM (theo yêu cầu — bổ sung placeholder Nơi sinh/Giới tính trong mẫu GBTT):
+      // rỗng nếu hồ sơ chưa có dữ liệu (VD nhập trước khi có 2 cột này) — không chặn xuất.
+      gioiTinh: getVal(row, ["GIỚI TÍNH"]),
+      noiSinh: getVal(row, ["NƠI SINH"]),
       canCuoc: getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, ''),
       maSinhVien: generateMaSV(row),
       nganh,
@@ -554,6 +746,7 @@ const ThamDinhPage = () => {
       diemTrungTuyen,
       mon1Ten, mon1Diem, mon2Ten, mon2Diem, mon3Ten, mon3Diem,
       diemUuTienKhuVuc, diemUuTienDoiTuong,
+      diemPhongVan,
     };
   };
 
@@ -771,10 +964,31 @@ const ThamDinhPage = () => {
         Swal.fire({ icon: 'warning', title: 'Chưa chọn người ký', text: 'Cần chọn ít nhất 1 người ký trước khi xuất GBTT.' });
         return;
       }
+      // ĐÃ THÊM: 2 ô mới bắt buộc phải điền trước khi xuất — xem chú thích tại chỗ khai
+      // báo state ngayXuatGiayBao/thangNhapHoc (nút "Xác nhận" cũng đã bị khoá theo 2 điều
+      // kiện này, đây là lớp kiểm tra thứ 2 phòng khi gọi hàm từ chỗ khác).
+      if (!ngayXuatGiayBao) {
+        Swal.fire({ icon: 'warning', title: 'Thiếu Ngày xuất giấy báo', text: 'Cần chọn ngày xuất giấy báo trước khi xuất GBTT.' });
+        return;
+      }
+      if (!thangNhapHoc) {
+        Swal.fire({ icon: 'warning', title: 'Thiếu Tháng nhập học', text: 'Cần chọn tháng nhập học trước khi xuất GBTT.' });
+        return;
+      }
+      // ĐÃ THÊM (theo yêu cầu — "Số quyết định"): bắt buộc điền + đúng định dạng "xx/năm",
+      // cùng lớp kiểm tra thứ 2 giống 2 ô trên (nút "Xác nhận" cũng đã khoá theo điều kiện
+      // này, xem disabled ở nút bên dưới).
+      if (!SO_QUYET_DINH_REGEX.test(soQuyetDinh.trim())) {
+        Swal.fire({ icon: 'warning', title: 'Số quyết định không hợp lệ', text: 'Cần điền đúng định dạng "xx/năm" (VD: 01/2026, 012/2025) trước khi xuất GBTT.' });
+        return;
+      }
       try {
         const ket = await gbttMutation.mutateAsync({
           sinhVien: validRows.map(buildGbttPayload),
           nguoiKy: dsNguoiKyChon.map(nk => ({ maChucDanh: nk.maChucDanh, email: nk.email, ten: nk.ten })),
+          ngayXuatGiayBao,
+          thangNhapHoc,
+          soQuyetDinh: soQuyetDinh.trim(),
         });
         const results = Array.isArray(ket?.results) ? ket.results : [];
         const soLoi = results.filter(r => r.status === 'error').length;
@@ -1183,7 +1397,7 @@ const ThamDinhPage = () => {
                     </td>
                     <td>
                       {missing.length > 0 ? (
-                        <span className="badge bg-warning text-dark" style={{ whiteSpace: 'normal', textAlign: 'left' }}>Thiếu: {missing.join(', ')}</span>
+                        <span className="badge bg-warning text-dark" style={{ whiteSpace: 'normal', textAlign: 'left' }}>Thiếu: {missing.map(rutGonTenHoSo).join(', ')}</span>
                       ) : (
                         <span className="badge bg-success">Đủ hồ sơ</span>
                       )}
@@ -1709,6 +1923,84 @@ const ThamDinhPage = () => {
                     ngay dưới bảng sinh viên trong CÙNG modal xác nhận này. */}
                 {batchPreview.type === 'gbtt' && (
                   <>
+                    {/* ĐÃ THÊM (theo yêu cầu — placeholder "Ngày xuất giấy báo" (in nghiêng)
+                        và "Tháng nhập học" trong mẫu GBTT): 2 giá trị CHUNG cho CẢ ĐỢT xuất
+                        này (áp dụng như nhau cho mọi sinh viên trong danh sách ở trên), KHÔNG
+                        phải nhập riêng từng sinh viên — xem noiDung/NGAY_XUAT_GIAY_BAO/
+                        THANG_NHAP_HOC ở action taoYeuCauKyGBTT (Quanlysv.gs). Chữ in nghiêng
+                        của "Ngày xuất giấy báo" do định dạng có sẵn của placeholder trong mẫu
+                        Doc quyết định (xem chú thích ở Quanlysv.gs), không cần chỉnh gì ở đây. */}
+                    <div className="row g-2 mt-3">
+                      <div className="col-sm-4">
+                        <label className="form-label small fw-bold mb-1">Ngày xuất giấy báo *</label>
+                        <input
+                          type="date" className="form-control form-control-sm"
+                          value={ngayXuatGiayBao}
+                          onChange={(e) => setNgayXuatGiayBao(e.target.value)}
+                        />
+                        <div className="form-text small">
+                          In vào mẫu dạng: <i>ngày {String(new Date(ngayXuatGiayBao + 'T00:00:00').getDate()).padStart(2, '0')} tháng {String(new Date(ngayXuatGiayBao + 'T00:00:00').getMonth() + 1).padStart(2, '0')} năm {new Date(ngayXuatGiayBao + 'T00:00:00').getFullYear()}</i>
+                        </div>
+                      </div>
+                      {/* ĐÃ THÊM (theo yêu cầu — placeholder "Số quyết định" trong mẫu GBTT):
+                          gõ tự do đúng dạng "xx/năm" (VD "01/2026", "012/2025") — xem
+                          SO_QUYET_DINH_REGEX khai báo đầu file + noiDung/SO_QUYET_DINH ở
+                          action taoYeuCauKyGBTT (Quanlysv.gs). Viền đỏ + dòng cảnh báo nhỏ khi
+                          đã gõ nhưng sai định dạng, để người dùng biết ngay không cần đợi bấm
+                          "Xác nhận" mới báo lỗi. */}
+                      <div className="col-sm-4">
+                        <label className="form-label small fw-bold mb-1">Số quyết định *</label>
+                        <input
+                          type="text" className={`form-control form-control-sm ${soQuyetDinh && !SO_QUYET_DINH_REGEX.test(soQuyetDinh.trim()) ? 'is-invalid' : ''}`}
+                          value={soQuyetDinh}
+                          onChange={(e) => setSoQuyetDinh(e.target.value)}
+                          placeholder="VD: 01/2026"
+                        />
+                        {soQuyetDinh && !SO_QUYET_DINH_REGEX.test(soQuyetDinh.trim()) ? (
+                          <div className="invalid-feedback">Sai định dạng — cần đúng dạng "xx/năm" (VD: 01/2026, 012/2025).</div>
+                        ) : (
+                          <div className="form-text small">In vào mẫu dạng: {soQuyetDinh.trim() || '(chưa điền)'}</div>
+                        )}
+                      </div>
+                      <div className="col-sm-4">
+                        <label className="form-label small fw-bold mb-1">Tháng nhập học *</label>
+                        {/* ĐÃ SỬA (theo phản hồi — bug hiện "tháng NaN năm 9/2026"): trước đây
+                            dùng <input type="month">, nhưng Firefox/Safari cũ KHÔNG hỗ trợ input
+                            này — trình duyệt tự rớt về Ô NHẬP CHỮ TỰ DO, cho gõ bất kỳ gì (VD
+                            "9/2026") thay vì bắt buộc đúng định dạng "YYYY-MM". Đổi hẳn sang 2
+                            <select> Tháng/Năm (xem thangNH/namNH ở chỗ khai báo state) để KHÔNG
+                            PHỤ THUỘC trình duyệt nào cả. */}
+                        <div className="d-flex gap-2">
+                          <select
+                            className="form-select form-select-sm"
+                            value={thangNH}
+                            onChange={(e) => setThangNH(e.target.value)}
+                          >
+                            <option value="">-- Tháng --</option>
+                            {/* value ĐỆM SỐ 0 (VD "09") để ghép ra đúng "YYYY-MM" — xem
+                                thangNhapHoc = `${namNH}-${thangNH}` ở chỗ khai báo state. */}
+                            {Array.from({ length: 12 }, (_, i) => i + 1).map(t => (
+                              <option key={t} value={String(t).padStart(2, '0')}>Tháng {t}</option>
+                            ))}
+                          </select>
+                          <select
+                            className="form-select form-select-sm"
+                            value={namNH}
+                            onChange={(e) => setNamNH(e.target.value)}
+                          >
+                            <option value="">-- Năm --</option>
+                            {[namHienTaiNH - 1, namHienTaiNH, namHienTaiNH + 1, namHienTaiNH + 2].map(y => (
+                              <option key={y} value={y}>{y}</option>
+                            ))}
+                          </select>
+                        </div>
+                        {thangNhapHoc && (
+                          <div className="form-text small">
+                            In vào mẫu dạng: tháng {parseInt(thangNH, 10)} năm {namNH}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <ChonNguoiKyModal loaiTaiLieu="GBTT" giaTri={nguoiKyGBTT} onChange={setNguoiKyGBTT} />
                     <div className="alert alert-info small mt-3 mb-0">
                       ℹ️ Chưa gửi email thông báo cho người ký (sẽ bổ sung ở bước sau) — người
@@ -1719,16 +2011,86 @@ const ThamDinhPage = () => {
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setBatchPreview(null)} disabled={gbttMutation.isPending}>Hủy bỏ</button>
+                {/* ĐÃ SỬA: khoá thêm nút "Xác nhận" khi thiếu/sai Ngày xuất giấy báo/Tháng
+                    nhập học/Số quyết định (3 ô) — cùng cách làm như điều kiện "chưa chọn
+                    người ký" sẵn có. */}
                 <button
                   className="btn btn-primary"
                   onClick={executeBatchAction}
                   disabled={
                     approveMutation.isPending || missingMutation.isPending || saveMutation.isPending || gbttMutation.isPending ||
-                    (batchPreview.type === 'gbtt' && nguoiKyGBTT.filter(nk => nk.chon && nk.email).length === 0)
+                    (batchPreview.type === 'gbtt' && (
+                      nguoiKyGBTT.filter(nk => nk.chon && nk.email).length === 0 ||
+                      !ngayXuatGiayBao || !thangNhapHoc || !SO_QUYET_DINH_REGEX.test(soQuyetDinh.trim())
+                    ))
                   }
-                  title={batchPreview.type === 'gbtt' && nguoiKyGBTT.filter(nk => nk.chon && nk.email).length === 0 ? 'Cần chọn ít nhất 1 người ký' : undefined}
+                  title={
+                    batchPreview.type === 'gbtt' && nguoiKyGBTT.filter(nk => nk.chon && nk.email).length === 0
+                      ? 'Cần chọn ít nhất 1 người ký'
+                      : batchPreview.type === 'gbtt' && (!ngayXuatGiayBao || !thangNhapHoc || !SO_QUYET_DINH_REGEX.test(soQuyetDinh.trim()))
+                      ? 'Cần điền Ngày xuất giấy báo, Tháng nhập học và Số quyết định đúng định dạng "xx/năm"'
+                      : undefined
+                  }
                 >
                   {gbttMutation.isPending ? '⏳ Đang tạo yêu cầu ký...' : 'Xác nhận'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ĐÃ THÊM — MODAL "Xuất DS tuỳ chọn": mở từ sự kiện "thamdinh:export-custom" (bắn từ
+          menu tài khoản, App.jsx). Danh sách cột = danhSachCotKhaDung (cột gốc trong dữ liệu
+          + các cột tính toán, trong đó có DANH SÁCH HỒ SƠ THIẾU). */}
+      {customExportOpen && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setCustomExportOpen(false); }}>
+          <div className="modal-dialog modal-lg modal-dialog-scrollable">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title fw-bold">📊 Xuất danh sách tuỳ chọn</h5>
+                <button type="button" className="btn-close" onClick={() => setCustomExportOpen(false)}></button>
+              </div>
+              <div className="modal-body">
+                <p className="text-muted small">
+                  Chọn các cột muốn xuất — áp dụng cho <b>{filteredData.length}</b> hồ sơ đang
+                  hiển thị theo bộ lọc hiện tại (giống "Xuất Excel"). Mục <b>"DANH SÁCH HỒ SƠ
+                  THIẾU"</b> liệt kê đúng các giấy tờ hệ thống đang xác định là thiếu của từng
+                  sinh viên, cách nhau bởi dấu ";".
+                </p>
+                <div className="d-flex gap-2 mb-3">
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setCotDaChon(new Set(danhSachCotKhaDung))}>
+                    Chọn tất cả
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setCotDaChon(new Set())}>
+                    Bỏ chọn tất cả
+                  </button>
+                </div>
+                <div className="row">
+                  {danhSachCotKhaDung.map((k) => (
+                    <div className="col-md-6 mb-2" key={k}>
+                      <div className="form-check">
+                        <input
+                          type="checkbox" className="form-check-input" id={`cotxuat-${k}`}
+                          checked={cotDaChon.has(k)}
+                          onChange={() => toggleCot(k)}
+                        />
+                        <label className="form-check-label" htmlFor={`cotxuat-${k}`}>
+                          {k}
+                          {COT_TINH_TOAN.includes(k) && (
+                            <span className="badge bg-info-subtle text-info ms-1" style={{ fontSize: 10 }}>tính toán</span>
+                          )}
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-outline-secondary" onClick={() => setCustomExportOpen(false)}>Huỷ</button>
+                <button className="btn btn-success fw-bold" onClick={handleExportCustom}>
+                  <i className="bi bi-file-earmark-excel me-1"></i>Xuất Excel ({cotDaChon.size} cột)
                 </button>
               </div>
             </div>

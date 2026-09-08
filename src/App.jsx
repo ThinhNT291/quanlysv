@@ -456,6 +456,20 @@ const App = () => {
                         <i className="bi bi-file-earmark-excel me-2 text-success"></i> Xuất Excel (Thẩm định)
                       </button>
                     </li>
+                    {/* ĐÃ THÊM (theo phản hồi — "Xuất DS tuỳ chọn"): giống hệt cơ chế bắn sự
+                        kiện DOM của "Xuất Excel" ở trên — mở dialog chọn cột bên ThamDinhPage.jsx
+                        thay vì xuất cứng 1 bộ cột cố định. */}
+                    <li>
+                      <button
+                        className="dropdown-item py-2"
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('thamdinh:export-custom'));
+                          setIsUserDropdownOpen(false);
+                        }}
+                      >
+                        <i className="bi bi-ui-checks-grid me-2 text-primary"></i> Xuất DS tuỳ chọn (Thẩm định)
+                      </button>
+                    </li>
                   </>
                 )}
                 <li><hr className="dropdown-divider" /></li>

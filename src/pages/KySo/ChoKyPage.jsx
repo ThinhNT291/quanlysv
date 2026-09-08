@@ -13,15 +13,34 @@
 // gặp) nó cũng đang tới lượt mình, để tránh phải tự so khớp email ở phía frontend (danh
 // sách lịch sử không có cột email từng bước, chỉ có tên hiển thị — so tên không đáng tin).
 // Nếu đúng là đang tới lượt, dòng đó luôn có mặt song song bên tab "Đang chờ ký".
+//
+// ĐÃ THÊM (Ký điện tử Pha 2 — Bước 2): "Từ chối ký" (nút cạnh "Ký văn bản này" trong modal,
+// bắt buộc nhập lý do, dừng cả chuỗi) và "Thu hồi yêu cầu" (nút "Thu hồi" ở tab Lịch sử,
+// chỉ người TẠO thấy, chỉ khi yêu cầu còn DANG_KY) — xem action tuChoiKy/huyYeuCauKy
+// (Quanlysv.gs). YeuCauKy.TRANG_THAI có thêm BI_TU_CHOI/DA_HUY, xem TRANG_THAI_YEU_CAU.
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
-import { fetchDanhSachChoToiKy, fetchLichSuKyCuaToi, xemTruocYeuCauKy, kyYeuCau } from '../../api/studentApi';
+import { fetchDanhSachChoToiKy, fetchLichSuKyCuaToi, xemTruocYeuCauKy, kyYeuCau, tuChoiKy, huyYeuCauKy, layChuKyCuaToi } from '../../api/studentApi';
 
 const BADGE_BUOC = {
   DA_KY: 'bg-success',
   DEN_LUOT: 'bg-warning text-dark',
   CHO_TRUOC: 'bg-secondary',
+  // ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): trạng thái mới của 1 BƯỚC (BuocKy.TRANG_THAI)
+  // khi người đang tới lượt bấm "Từ chối" — không đụng gì tới TRANG_THAI của các trạng
+  // thái cũ, chỉ thêm màu badge để hiện đúng trong renderBadgeBuoc/modal xem trước.
+  TU_CHOI: 'bg-danger',
+};
+
+// ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): nhãn/màu cho YeuCauKy.TRANG_THAI ở cột "Trạng
+// thái" tab Lịch sử — trước đây chỉ có 2 giá trị (HOAN_THANH / còn lại coi là "Đang ký"),
+// giờ thêm BI_TU_CHOI/DA_HUY nên không thể suy luận nhị phân như cũ nữa.
+const TRANG_THAI_YEU_CAU = {
+  HOAN_THANH: { label: 'Hoàn tất', badge: 'bg-success' },
+  BI_TU_CHOI: { label: 'Bị từ chối ký', badge: 'bg-danger' },
+  DA_HUY: { label: 'Đã thu hồi', badge: 'bg-secondary' },
+  DANG_KY: { label: 'Đang ký', badge: 'bg-warning text-dark' },
 };
 
 const ChoKyPage = () => {
@@ -52,6 +71,18 @@ const ChoKyPage = () => {
     enabled: !!dangXem,
   });
 
+  // ĐÃ THÊM (theo yêu cầu — xem trước hình ảnh chữ ký cá nhân ngay tại modal Xem
+  // trước/Ký, để người ký biết chắc ảnh nào sẽ được đóng vào văn bản trước khi bấm Ký):
+  // dùng lại đúng layChuKyCuaToi() đã có sẵn (HoSoCaNhanPage.jsx) — cùng queryKey
+  // ['chuKyCuaToi'] để dùng chung cache nếu người dùng đã từng mở trang Hồ sơ cá nhân
+  // trong phiên này, không gọi lại API thừa. Chỉ tải khi dòng đang mở THẬT SỰ cho ký
+  // (coTheKy) — mở từ tab Lịch sử (chỉ xem) thì không cần thiết.
+  const { data: chuKyCuaToi, isLoading: dangTaiChuKyPreview } = useQuery({
+    queryKey: ['chuKyCuaToi'],
+    queryFn: layChuKyCuaToi,
+    enabled: !!dangXem?.coTheKy,
+  });
+
   const kyMutation = useMutation({
     mutationFn: kyYeuCau,
     onSuccess: (ket) => {
@@ -67,18 +98,83 @@ const ChoKyPage = () => {
     onError: (err) => Swal.fire({ icon: 'error', title: 'Lỗi khi ký', text: err.message }),
   });
 
+  // ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): từ chối ký — cùng khuôn với kyMutation, chỉ khác
+  // thông báo thành công vì đây là dừng chuỗi chứ không phải tiến tới bước kế tiếp.
+  const tuChoiMutation = useMutation({
+    mutationFn: tuChoiKy,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['choToiKy'] });
+      queryClient.invalidateQueries({ queryKey: ['lichSuKy'] });
+      setDangXem(null);
+      Swal.fire({ icon: 'success', title: 'Đã từ chối ký', text: 'Người tạo yêu cầu sẽ được thông báo qua email.' });
+    },
+    onError: (err) => Swal.fire({ icon: 'error', title: 'Lỗi khi từ chối ký', text: err.message }),
+  });
+
+  // ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): người TẠO thu hồi yêu cầu — dùng ở tab Lịch sử
+  // (xem renderBadgeTrangThai/nút Huỷ bên dưới), không liên quan tới modal xem trước/ký.
+  const huyMutation = useMutation({
+    mutationFn: huyYeuCauKy,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['choToiKy'] });
+      queryClient.invalidateQueries({ queryKey: ['lichSuKy'] });
+      Swal.fire({ icon: 'success', title: 'Đã thu hồi yêu cầu ký' });
+    },
+    onError: (err) => Swal.fire({ icon: 'error', title: 'Lỗi khi thu hồi', text: err.message }),
+  });
+
   const moModal = (row, coTheKy) => setDangXem({ ...row, coTheKy });
   const dongModal = () => setDangXem(null);
 
   const xacNhanKy = () => {
     if (!dangXem || !dangXem.coTheKy) return;
+    // ĐÃ SỬA (theo yêu cầu — xem trước ảnh chữ ký ngay trong hộp xác nhận cuối cùng, ngay
+    // trước lúc bấm Ký thật): đổi "text" thành "html", chèn thêm ảnh preview nếu đã tải
+    // được (chuKyCuaToi.coChuKy) — không có thì vẫn hiện chữ như cũ, không chặn luồng ký
+    // (nút Ký ngoài modal cũng đã tự khoá sẵn khi !coChuKy, xem disabled ở nút "Ký văn
+    // bản này" phía dưới).
     Swal.fire({
       icon: 'question',
       title: 'Xác nhận ký văn bản này?',
-      text: 'Ảnh chữ ký cá nhân của bạn sẽ được đóng vào đúng vị trí chức danh, kèm ngày giờ ký — không thể sửa/thu hồi sau khi đã ký.',
+      html: `Ảnh chữ ký cá nhân của bạn sẽ được đóng vào đúng vị trí chức danh, kèm ngày giờ ký — không thể sửa/thu hồi sau khi đã ký.` +
+        (chuKyCuaToi?.coChuKy
+          ? `<div class="mt-2 p-2 border rounded d-inline-block" style="background-image: repeating-conic-gradient(#e9ecef 0% 25%, #fff 0% 50%); background-size: 16px 16px;">
+               <img src="data:${chuKyCuaToi.mimeType || 'image/png'};base64,${chuKyCuaToi.anhBase64}" style="max-width:200px;max-height:100px;display:block;" />
+             </div>`
+          : ''),
       showCancelButton: true, confirmButtonText: 'Ký ngay', cancelButtonText: 'Huỷ', confirmButtonColor: '#198754',
     }).then((r) => {
       if (r.isConfirmed) kyMutation.mutate({ maYeuCau: dangXem.maYeuCau });
+    });
+  };
+
+  // ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): xin lý do bằng Swal input (bắt buộc gõ, không
+  // cho gửi rỗng — backend cũng chặn lại lần nữa nếu lỡ qua được, xem action tuChoiKy).
+  const xacNhanTuChoi = () => {
+    if (!dangXem || !dangXem.coTheKy) return;
+    Swal.fire({
+      icon: 'warning',
+      title: 'Từ chối ký văn bản này?',
+      html: 'Chuỗi ký sẽ dừng lại ngay, người tạo yêu cầu sẽ nhận email báo kèm lý do bạn nhập bên dưới.',
+      input: 'textarea',
+      inputPlaceholder: 'Nhập lý do từ chối ký...',
+      inputValidator: (value) => (!value || !value.trim() ? 'Vui lòng nhập lý do' : undefined),
+      showCancelButton: true, confirmButtonText: 'Từ chối ký', cancelButtonText: 'Huỷ thao tác', confirmButtonColor: '#dc3545',
+    }).then((r) => {
+      if (r.isConfirmed) tuChoiMutation.mutate({ maYeuCau: dangXem.maYeuCau, lyDo: r.value.trim() });
+    });
+  };
+
+  // ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): thu hồi yêu cầu do mình tạo — dùng ở tab Lịch sử
+  // (nút chỉ hiện khi row.laNguoiTao && row.trangThai === 'DANG_KY', xem JSX bên dưới).
+  const xacNhanHuy = (row) => {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Thu hồi yêu cầu ký này?',
+      text: `Văn bản "${row.tieuDe}" sẽ dừng lại ngay, người đang chờ ký (nếu có) sẽ được báo qua email.`,
+      showCancelButton: true, confirmButtonText: 'Thu hồi', cancelButtonText: 'Không', confirmButtonColor: '#dc3545',
+    }).then((r) => {
+      if (r.isConfirmed) huyMutation.mutate({ maYeuCau: row.maYeuCau });
     });
   };
 
@@ -221,9 +317,10 @@ const ChoKyPage = () => {
                       <td>{row.nguoiTaoTen}{row.laNguoiTao ? ' (bạn)' : ''}</td>
                       <td className="small text-muted">{row.thoiGianTao}</td>
                       <td>
-                        {row.trangThai === 'HOAN_THANH'
-                          ? <span className="badge bg-success">Hoàn tất</span>
-                          : <span className="badge bg-warning text-dark">Đang ký</span>}
+                        {(() => {
+                          const tt = TRANG_THAI_YEU_CAU[row.trangThai] || TRANG_THAI_YEU_CAU.DANG_KY;
+                          return <span className={`badge ${tt.badge}`}>{tt.label}</span>;
+                        })()}
                       </td>
                       <td>{renderBadgeBuoc(row.cacBuoc)}</td>
                       <td className="text-nowrap">
@@ -234,6 +331,18 @@ const ChoKyPage = () => {
                           <a className="btn btn-sm btn-success" href={row.pdfUrl} target="_blank" rel="noreferrer">
                             <i className="bi bi-download me-1"></i>Tải PDF
                           </a>
+                        )}
+                        {/* ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): chỉ người TẠO mới thấy nút Huỷ,
+                            và chỉ khi yêu cầu còn đang chạy (DANG_KY) — đã hoàn tất/từ chối/huỷ
+                            rồi thì ẩn, tránh gọi lại action vô ích (backend cũng đã tự chặn). */}
+                        {row.laNguoiTao && row.trangThai === 'DANG_KY' && (
+                          <button
+                            className="btn btn-sm btn-outline-danger ms-1"
+                            onClick={() => xacNhanHuy(row)}
+                            disabled={huyMutation.isPending}
+                          >
+                            <i className="bi bi-x-circle me-1"></i>Thu hồi
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -273,6 +382,37 @@ const ChoKyPage = () => {
                   </div>
                 )}
 
+                {/* ĐÃ THÊM (theo yêu cầu — hiển thị ảnh chữ ký cá nhân ngay tại đây, trước
+                    khi bấm Ký, để đối chiếu chắc chắn đúng ảnh sẽ đóng vào văn bản): chỉ hiện
+                    khi dòng này THẬT SỰ cho ký (coTheKy) — mở từ tab Lịch sử (chỉ xem) thì
+                    không cần vì không có nút Ký để mà xem trước cho việc đó. */}
+                {dangXem.coTheKy && !dangTaiChuKyPreview && (
+                  chuKyCuaToi?.coChuKy ? (
+                    <div className="alert alert-light border d-flex align-items-center gap-3 py-2 mb-3">
+                      <div
+                        className="p-1 border rounded bg-white flex-shrink-0"
+                        style={{
+                          backgroundImage: 'repeating-conic-gradient(#e9ecef 0% 25%, #fff 0% 50%)',
+                          backgroundSize: '16px 16px',
+                        }}
+                      >
+                        <img
+                          src={`data:${chuKyCuaToi.mimeType || 'image/png'};base64,${chuKyCuaToi.anhBase64}`}
+                          alt="Chữ ký cá nhân"
+                          style={{ maxWidth: 140, maxHeight: 70, display: 'block' }}
+                        />
+                      </div>
+                      <div className="small text-muted">
+                        <i className="bi bi-info-circle me-1"></i>Đây là ảnh chữ ký cá nhân sẽ được đóng vào văn bản này khi bạn bấm "Ký văn bản này".
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="alert alert-warning py-2 small mb-3">
+                      <i className="bi bi-exclamation-triangle me-1"></i>Bạn chưa có chữ ký cá nhân — cần tải lên ở trang "Hồ sơ cá nhân" trước khi ký được văn bản này.
+                    </div>
+                  )
+                )}
+
                 {dangTaiPreview && <div className="text-center text-muted py-5">Đang tạo bản xem trước...</div>}
                 {loiPreview && <div className="alert alert-danger">Lỗi tạo bản xem trước: {errPreview?.message}</div>}
                 {xemTruoc?.pdfBase64 && (
@@ -289,18 +429,29 @@ const ChoKyPage = () => {
                 )}
               </div>
               <div className="modal-footer">
-                <button className="btn btn-outline-secondary" onClick={dongModal} disabled={kyMutation.isPending}>
+                <button className="btn btn-outline-secondary" onClick={dongModal} disabled={kyMutation.isPending || tuChoiMutation.isPending}>
                   {dangXem.coTheKy ? 'Đóng (ký sau)' : 'Đóng'}
                 </button>
                 {dangXem.coTheKy && (
-                  <button
-                    className="btn btn-success fw-bold"
-                    onClick={xacNhanKy}
-                    disabled={!coChuKy || kyMutation.isPending || dangTaiPreview}
-                    title={!coChuKy ? 'Cần tải chữ ký cá nhân trước (Hồ sơ cá nhân)' : ''}
-                  >
-                    <i className="bi bi-pen me-1"></i>{kyMutation.isPending ? 'Đang ký...' : 'Ký văn bản này'}
-                  </button>
+                  <>
+                    {/* ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): cạnh nút Ký, không phụ thuộc coChuKy
+                        (từ chối không cần có sẵn ảnh chữ ký cá nhân, khác nút Ký). */}
+                    <button
+                      className="btn btn-outline-danger fw-bold"
+                      onClick={xacNhanTuChoi}
+                      disabled={kyMutation.isPending || tuChoiMutation.isPending || dangTaiPreview}
+                    >
+                      <i className="bi bi-x-circle me-1"></i>{tuChoiMutation.isPending ? 'Đang gửi...' : 'Từ chối ký'}
+                    </button>
+                    <button
+                      className="btn btn-success fw-bold"
+                      onClick={xacNhanKy}
+                      disabled={!coChuKy || kyMutation.isPending || tuChoiMutation.isPending || dangTaiPreview}
+                      title={!coChuKy ? 'Cần tải chữ ký cá nhân trước (Hồ sơ cá nhân)' : ''}
+                    >
+                      <i className="bi bi-pen me-1"></i>{kyMutation.isPending ? 'Đang ký...' : 'Ký văn bản này'}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
