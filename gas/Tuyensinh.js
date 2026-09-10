@@ -1410,16 +1410,13 @@ function hdPost_saveConfig(e, ss) {
         sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
       }
 
-      // GHI LOG LỊCH SỬ CẤU HÌNH VÀO SHEET
-      const logSheet = ss.getSheetByName("LichSuCauHinh");
-      if (logSheet) {
-          const now = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
-          // ĐÃ SỬA: dùng email đã xác thực server-side (g.userInfo.email) thay vì tin
-          // "userEmail" do client tự khai — trước đây client có thể tự xưng bất kỳ tên nào vào log.
-          const user = g.userInfo.email;
-          logSheet.appendRow([now, user, "Đã cập nhật cấu hình hệ thống"]);
-      }
-      
+      // GHI LOG LỊCH SỬ THAO TÁC (ĐÃ SỬA — trước đây ghi nhầm vào sheet "LichSuCauHinh",
+      // KHÁC với sheet "NhatKy" mà hdGet_getLogs/mục "Lịch sử" thực sự đọc, nên tính năng
+      // đó coi như chưa từng hiển thị được log thật nào; xem chú thích đầy đủ ở
+      // ghiLichSuThaoTac_ trong Auth.gs). Vẫn dùng email đã xác thực server-side
+      // (g.userInfo.email), không tin "userEmail" do client tự khai.
+      ghiLichSuThaoTac_(g.userInfo.email, "Đã cập nhật cấu hình hệ thống", "");
+
       return responseJSON(200, "Lưu cấu hình thành công", null);
     }
 
@@ -1467,11 +1464,9 @@ function hdPost_saveChiTieu(e, ss) {
       const allRows = rowsGiuNguyen.concat(rowsNamNay);
       if (allRows.length > 0) sheet.getRange(2, 1, allRows.length, headers.length).setValues(allRows);
 
-      const logSheet = ss.getSheetByName("LichSuCauHinh");
-      if (logSheet) {
-        const now = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
-        logSheet.appendRow([now, g.userInfo.email, "Đã cập nhật chỉ tiêu tuyển sinh năm " + nam]);
-      }
+      // GHI LOG LỊCH SỬ THAO TÁC (ĐÃ SỬA — cùng lý do như hdPost_saveConfig ở trên: trước
+      // đây ghi nhầm sheet "LichSuCauHinh" thay vì "NhatKy").
+      ghiLichSuThaoTac_(g.userInfo.email, "Đã cập nhật chỉ tiêu tuyển sinh năm " + nam, "");
 
       return responseJSON(200, "Lưu chỉ tiêu tuyển sinh thành công", null);
     }
@@ -2407,6 +2402,11 @@ function hdPost_trungTuyen(e, ss) {
           }
         } catch (e2) { /* Lỗi tổng khi ghi trạng thái không làm hỏng kết quả PDF đã tạo thành công */ }
 
+        // ĐÃ THÊM: ghi lịch sử "ai đã duyệt trúng tuyển, khi nào, bao nhiêu thí sinh" — trước
+        // đây hành động này KHÔNG hề được ghi log, dù đã xác thực được người gọi qua
+        // requireAuth() (xác thực identity ≠ lưu lại identity).
+        ghiLichSuThaoTac_(g.userInfo.email, "Duyệt trúng tuyển", rawData.length + " thí sinh (ngày " + ngayChuan + ") — PDF: " + pdfUrl);
+
         return responseJSON(200, "success", { pdfUrl: pdfUrl, results: results });
       } catch (error) {
         return responseJSON(500, error.toString(), null);
@@ -2663,6 +2663,10 @@ function hdPost_luuKetQua(e, ss) {
           }
         }
       }
+
+      // ĐÃ THÊM: ghi lịch sử "ai đã lưu kết quả thẩm định, khi nào, bao nhiêu dòng thêm/sửa/bỏ
+      // qua" — trước đây hành động này KHÔNG hề được ghi log dù đã xác thực được người gọi.
+      ghiLichSuThaoTac_(g.userInfo.email, "Lưu kết quả thẩm định (KETQUA)", "Thêm: " + newRows.length + ", cập nhật: " + updateCount + ", bỏ qua (không đổi): " + skipCount);
 
       return responseJSON(200, "success", { added: newRows.length, updated: updateCount, skipped: skipCount, results: results });
     }

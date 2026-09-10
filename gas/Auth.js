@@ -295,6 +295,31 @@ function hdGet_getLogs(e) {
         return responseJSON(200, "Thành công", logs);
       }
 
+// ĐÃ THÊM: helper dùng chung để ghi 1 dòng "lịch sử thao tác" (ai — làm gì — khi nào) vào
+// sheet "NhatKy" — sheet DUY NHẤT mà hdGet_getLogs ở trên thực sự đọc. Trước đây
+// hdPost_saveConfig/hdPost_saveChiTieu (TuyenSinh.gs) tự ghi thẳng vào 1 sheet TÊN KHÁC
+// ("LichSuCauHinh") — lệch tên với "NhatKy" nên mục "Lịch sử" trên trang Cấu hình coi như
+// chưa từng hiển thị được dòng log thật nào (ghi vào 1 nơi, đọc ở nơi khác). Từ giờ MỌI chỗ
+// cần ghi log (kể cả 2 chỗ cũ lẫn 2 chỗ mới thêm — duyệt trúng tuyển, lưu kết quả thẩm định)
+// đều gọi qua ĐÚNG 1 hàm này.
+// Cố tình LUÔN mở lại spreadsheet CHÍNH qua SPREADSHEET_ID (không dùng biến "ss" mà từng
+// handler đang có sẵn) — vì có handler (hdPost_luuKetQua) thao tác trên 1 SPREADSHEET KHÁC
+// (KETQUA_SHEET_ID); nếu ghi log theo "ss" của riêng handler đó, log sẽ nằm lạc trên
+// spreadsheet KETQUA thay vì spreadsheet chính mà hdGet_getLogs/trang Cấu hình đang đọc.
+// Cố tình "fail-open" (bọc try/catch, không throw): ghi log là việc PHỤ, tuyệt đối không
+// được làm hỏng hành động CHÍNH (duyệt trúng tuyển, lưu kết quả...) nếu sheet NhatKy chưa
+// được tạo hoặc có lỗi ghi bất kỳ.
+function ghiLichSuThaoTac_(email, hanhDong, chiTiet) {
+  try {
+    const sheetLog = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("NhatKy");
+    if (!sheetLog) return;
+    const now = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+    sheetLog.appendRow([now, email, hanhDong, chiTiet || ""]);
+  } catch (err) {
+    // Ghi log thất bại (VD lỗi khoá sheet tạm thời) không được phép ném lỗi ra ngoài.
+  }
+}
+
 function hdPost_login(e, ss) {
       const loginData = JSON.parse(e.parameter.data);
       const sheet = ss.getSheetByName("TaiKhoan");
