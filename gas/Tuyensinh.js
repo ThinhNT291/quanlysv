@@ -2452,6 +2452,78 @@ function hdPost_trungTuyen(e, ss) {
       }
     }
 
+// ĐÃ THÊM (theo phản hồi — "Xác nhận lại" 1 hồ sơ ĐÃ DUYỆT vừa được sửa/bổ sung, trạng thái
+// đang mang hậu tố "(Có cập nhật: ...)" do hdPost_importStudents gắn): trước đây modal chi
+// tiết (ThamDinhPage.jsx) gọi THẲNG action 'trungTuyen' (hdPost_trungTuyen ở trên) cho lượt
+// "Xác nhận lại" này — nghĩa là MỖI lần xác nhận lại đều xuất PDF biên nhận MỚI + bắn lại
+// thông báo Google Chat y hệt lần duyệt trúng tuyển ĐẦU TIÊN, dù chỉ là xác nhận cán bộ đã
+// xem lại phần vừa đổi, không phải 1 quyết định trúng tuyển mới. Action RIÊNG này KHÔNG tạo
+// Doc/PDF, KHÔNG gọi Webhook Google Chat — chỉ tìm đúng dòng theo CCCD+Ngành(+Kênh nộp, cùng
+// quy ước chống ghi nhầm với hdPost_trungTuyen) rồi ghi lại "Đã duyệt" sạch vào cột trạng
+// thái (xoá hậu tố "(Có cập nhật: ...)"). Có ghi log riêng (khác "Duyệt trúng tuyển") để phân
+// biệt rõ trong NhatKy — đây là 1 lượt XEM LẠI, không phải 1 lượt DUYỆT MỚI.
+function hdPost_xacNhanCapNhatDaDuyet(e, ss) {
+      const g = requireAuth(e.parameter, ['ThamDinh', 'Admin']);
+      if (!g.ok) return g.resp;
+      try {
+        const rawData = JSON.parse(e.parameter.data);
+        if (!Array.isArray(rawData) || rawData.length === 0) return responseJSON(400, "Không có dữ liệu", null);
+
+        const TRUNGGIAN_ID = PropertiesService.getScriptProperties().getProperty('TRUNGGIAN_SHEET_ID');
+        const ssTrungGian = SpreadsheetApp.openById(TRUNGGIAN_ID);
+        const sheet = ssTrungGian.getSheets()[0];
+        const values = sheet.getDataRange().getValues();
+        const headers = values[0];
+
+        let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1;
+        for (let h = 0; h < headers.length; h++) {
+          const hName = String(headers[h]).toUpperCase().trim().replace(/\s+/g, ' ');
+          if (hName === "CĂN CƯỚC" || hName === "SỐ CCCD" || hName === "CCCD") cccdCol = h;
+          if (hName === "NGÀNH ĐÀO TẠO" || hName === "NGÀNH") nganhCol = h;
+          if (hName.indexOf("TRẠNG THÁI") !== -1) statusCol = h;
+          if (hName === "KÊNH NỘP") kenhCol = h;
+        }
+        if (cccdCol === -1 || nganhCol === -1 || statusCol === -1) {
+          return responseJSON(500, "Sheet Trung Gian thiếu cột CĂN CƯỚC/NGÀNH/TRẠNG THÁI", null);
+        }
+
+        const results = [];
+        rawData.forEach(sv => {
+          const cccd = String(sv.soCCCD || "").replace(/\D/g, '');
+          const nganh = String(sv.nganh || "").trim().toLowerCase();
+          const kenh = String(sv.kenhNop || "").trim();
+          let found = false;
+          for (let i = 1; i < values.length; i++) {
+            const sheetCccd = String(values[i][cccdCol]).replace(/\D/g, '');
+            const sheetNganh = String(values[i][nganhCol]).trim().toLowerCase();
+            const sheetKenh = kenhCol !== -1 ? String(values[i][kenhCol] || "").trim() : "";
+            if (sheetCccd === cccd && sheetNganh === nganh && (kenhCol === -1 || sheetKenh === kenh)) {
+              found = true;
+              const rawStatus = String(values[i][statusCol] || "").trim();
+              // ĐÃ THÊM: chỉ xử lý đúng tình huống "Đã duyệt (...)" — nếu từ lúc mở modal tới
+              // giờ trạng thái đã bị đổi sang khác (VD ai đó vừa Y/C bổ sung ở tab khác) thì
+              // báo lỗi rõ ràng, KHÔNG âm thầm ép về "Đã duyệt".
+              if (rawStatus.indexOf("Đã duyệt") === -1) {
+                results.push({ cccd: cccd, nganh: nganh, status: "error", message: "Hồ sơ không còn ở trạng thái Đã duyệt (có thể vừa bị đổi ở nơi khác) — tải lại trang để xem trạng thái mới nhất." });
+              } else {
+                sheet.getRange(i + 1, statusCol + 1).setValue("Đã duyệt");
+                results.push({ cccd: cccd, nganh: nganh, status: "success", message: "Đã xác nhận lại — không xuất biên nhận mới." });
+              }
+              break;
+            }
+          }
+          if (!found) results.push({ cccd: cccd, nganh: nganh, status: "error", message: "Không tìm thấy hồ sơ tương ứng." });
+        });
+        SpreadsheetApp.flush();
+
+        ghiLichSuThaoTac_(g.userInfo.email, "Xác nhận lại hồ sơ đã duyệt (có cập nhật)", rawData.length + " thí sinh — không xuất biên nhận/thông báo mới");
+
+        return responseJSON(200, "success", { results: results });
+      } catch (err) {
+        return responseJSON(500, "Lỗi xác nhận lại: " + dienGiaiLoi_(err), null);
+      }
+    }
+
 function hdPost_baoThieu(e, ss) {
       const g = requireAuth(e.parameter, ['ThamDinh', 'Admin']);
       if (!g.ok) return g.resp;

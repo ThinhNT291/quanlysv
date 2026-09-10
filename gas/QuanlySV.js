@@ -380,6 +380,11 @@ function doPost(e) {
     // 16. DUYỆT TRÚNG TUYỂN -> XUẤT PDF BIÊN NHẬN (port từ Biennhantrungtuyen.gs)
     if (action === 'trungTuyen') return hdPost_trungTuyen(e, ss);
 
+    // ĐÃ THÊM: "Xác nhận lại" 1 hồ sơ ĐÃ DUYỆT vừa được sửa/bổ sung — KHÁC hẳn 'trungTuyen'
+    // ở trên (không tạo PDF/không gửi Google Chat), xem chú thích đầy đủ tại
+    // hdPost_xacNhanCapNhatDaDuyet (TuyenSinh.gs).
+    if (action === 'xacNhanCapNhatDaDuyet') return hdPost_xacNhanCapNhatDaDuyet(e, ss);
+
     // 17. BÁO THIẾU HỒ SƠ -> XUẤT PDF (port từ yeucaubosung.gs)
     if (action === 'baoThieu') return hdPost_baoThieu(e, ss);
 
