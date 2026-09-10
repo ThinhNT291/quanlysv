@@ -1436,9 +1436,12 @@ function hdPost_searchOldRecord(e, ss) {
       const kw = String(parsedData.keyword).trim().toLowerCase();
       if (!kw) return responseJSON(400, "Thiếu từ khóa", null);
 
-      const TRUNGGIAN_ID = "1DBYrAObOLR7jtj74B_jBHVDf2I07UXc8zpgppvbabbs";
-      const ssTrungGian = SpreadsheetApp.openById(TRUNGGIAN_ID);
-      const sheet = ssTrungGian.getSheets()[0]; 
+      // ĐÃ SỬA (2026-09-10): trước đây hardcode cứng ID Trung Gian ngay tại đây — không đổi
+      // được khi chuyển sang project GAS môi trường TEST (Script Property TRUNGGIAN_SHEET_ID
+      // bị đổi riêng nhưng chỗ này vẫn luôn mở đúng 1 ID cố định, khiến test trên project TEST
+      // âm thầm đọc nhầm vào sheet Trung Gian THẬT). Đổi sang dùng lại helper moTrunggianSheet()
+      // (đã có sẵn, đọc từ Script Property) cho đồng bộ với mọi action khác trong file.
+      const sheet = moTrunggianSheet();
       
       const values = sheet.getDataRange().getValues();
       const rawHeaders = values[0];
@@ -1795,9 +1798,10 @@ function hdPost_checkDuplicatesXetTuyen(e, ss) {
       if (!g.ok) return g.resp;
 
       const keysToCheck = JSON.parse(e.parameter.data); // mảng [{cccd, nganh}, ...]
-      const TRUNGGIAN_ID_DUP = "1DBYrAObOLR7jtj74B_jBHVDf2I07UXc8zpgppvbabbs";
-      const ssDup = SpreadsheetApp.openById(TRUNGGIAN_ID_DUP);
-      const sheetDup = ssDup.getSheets()[0];
+      // ĐÃ SỬA (2026-09-10): tương tự hdPost_searchOldRecord — bỏ ID hardcode, dùng lại
+      // helper moTrunggianSheet() đọc từ Script Property TRUNGGIAN_SHEET_ID, để project TEST
+      // (đã đổi riêng Script Property) không bị đọc nhầm vào sheet Trung Gian THẬT.
+      const sheetDup = moTrunggianSheet();
       const dataDup = sheetDup.getDataRange().getValues();
       const headersDup = dataDup[0].map(h => String(h).trim().toUpperCase().replace(/\s+/g, ' '));
 
@@ -1842,7 +1846,12 @@ function hdPost_importStudents(e, ss) {
       const g = requireAuth(e.parameter, ['TuyenSinh', 'ThamDinh', 'Admin']);
       if (!g.ok) return g.resp;
       const studentsArray = JSON.parse(e.parameter.data);
-      const TRUNGGIAN_ID = "1DBYrAObOLR7jtj74B_jBHVDf2I07UXc8zpgppvbabbs";
+      // ĐÃ SỬA (2026-09-10): bỏ ID hardcode cứng — trước đây luôn mở đúng 1 sheet Trung Gian
+      // cố định bất kể đang chạy trên project GAS nào, khiến project TEST (Script Property
+      // TRUNGGIAN_SHEET_ID đã đổi riêng) vẫn âm thầm đọc/ghi nhầm vào sheet THẬT. Giữ lại biến
+      // ssTrungGian (cả spreadsheet, không chỉ sheet) vì hàm này còn dùng lại nó bên dưới để
+      // mở/tạo sheet "Backup".
+      const TRUNGGIAN_ID = PropertiesService.getScriptProperties().getProperty('TRUNGGIAN_SHEET_ID');
       const ssTrungGian = SpreadsheetApp.openById(TRUNGGIAN_ID);
       const sheet = ssTrungGian.getSheets()[0];
       
