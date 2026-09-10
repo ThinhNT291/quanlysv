@@ -24,7 +24,7 @@ export const DICT_NGANH = {
     "Quản trị kinh doanh": ["A00", "A01", "D01", "D09", "D10", "D45", "D65", "X01", "X25", "X37"],
     "Ngôn ngữ Anh": ["A01", "C03", "C04", "D01", "D09", "D10", "D14", "D15", "X25", "X26"],
     "Ngôn ngữ Trung Quốc": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X01", "X37"],
-    "Quản trị dịch vụ du lịch & lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
+    "Quản trị dịch vụ du lịch và lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
 };
 
 export const DICT_HO_SO = {
@@ -71,3 +71,24 @@ export function isDocDaHuy(doc) {
     const nameLower = String(doc.name || "").toLowerCase().trim();
     return DOC_NAMES_DA_HUY.includes(nameLower);
 }
+
+// ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 3 "miễn theo chứng chỉ", 2026-09-10 —
+// KHÔNG liên quan Ký điện tử Pha 2): danh sách "Loại chứng chỉ" cho dropdown mỗi dòng upload ở
+// ThamDinhPage.jsx — cán bộ CHỌN LOẠI TRƯỚC rồi mới upload ảnh (theo yêu cầu người dùng, giúp
+// AI OCR đúng field ngay từ đầu thay vì tự đoán). "Tiếng Trung" tách 2 dòng HSK/HSKK riêng vì
+// quy định (Điều 8-11) bắt buộc đủ CẢ HAI mới kích hoạt miễn — xem NHOM_CAP_DOI/
+// NHAN_TRA_BANG_CHUNG_CHI/LOAI_CAN_HAN_24_THANG trong thamDinhHelpers.js. GIÁ TRỊ (value) ở
+// đây PHẢI khớp đúng các hằng số đó — đổi 1 bên mà quên đổi bên kia sẽ làm Nguồn 3 câm lặng
+// (không lỗi, chỉ đơn giản không tính được gì).
+export const DS_LOAI_CHUNG_CHI = [
+  { value: 'NN_ANH', label: 'Ngoại ngữ — Tiếng Anh (VStep/IELTS/TOEFL/TOEIC/CEFR/Cambridge)' },
+  { value: 'NN_TRUNG_HSK', label: 'Ngoại ngữ — Tiếng Trung (HSK — Nghe/Đọc/Viết)' },
+  { value: 'NN_TRUNG_HSKK', label: 'Ngoại ngữ — Tiếng Trung (HSKK — Nói)' },
+  { value: 'NN_NHAT', label: 'Ngoại ngữ — Tiếng Nhật (JLPT)' },
+  { value: 'NN_HAN', label: 'Ngoại ngữ — Tiếng Hàn (TOPIK)' },
+  { value: 'NN_PHAP', label: 'Ngoại ngữ — Tiếng Pháp (DALF/TCF/TEF)' },
+  { value: 'BANG_NGANH_NN', label: 'Bằng Trung cấp/Cao đẳng chuyên ngành Ngoại ngữ' },
+  { value: 'TIN_HOC', label: 'Tin học (MOS/IC3/ICDL/Chứng chỉ CNTT cơ bản)' },
+  { value: 'LLCT', label: 'Lý luận chính trị (Trung cấp/Cao cấp LLCT)' },
+  { value: 'GDQP', label: 'Giáo dục quốc phòng & An ninh (GDQP&AN)' },
+];

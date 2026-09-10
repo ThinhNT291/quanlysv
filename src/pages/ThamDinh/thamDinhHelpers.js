@@ -33,6 +33,288 @@ export function normalizeText(str) {
     .trim();
 }
 
+// ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2 "miễn theo văn bằng cũ",
+// 2026-09-09 — KHÔNG liên quan Ký điện tử Pha 2): chuẩn hoá tên học phần để so khớp giữa
+// bảng miễn cố định (Điều 6, tab Sheet "MienTheoVanBangCu") với khung CTĐT ngành (2 nguồn
+// dữ liệu độc lập — cách gõ dấu gạch ngang/khoảng trắng có thể lệch nhau dù cùng 1 tên môn)
+// — mạnh hơn normalizeText thường (bỏ thêm mọi ký tự không phải chữ/số).
+export function chuanHoaTenHocPhan(s) {
+  return normalizeText(s).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Lấy TOÀN BỘ khung CTĐT ngành (matched+unmatched luôn CỘNG LẠI = toàn bộ khung, xem action
+// 'compareCurriculum' ở Quanlysv.gs) từ compareResult AI — dùng chung cho DoiSanhModal.jsx
+// (tính pool "môn chuẩn chưa dùng") VÀ Nguồn 2 (so tên để áp mẫu miễn theo văn bằng cũ).
+export function layAllChuanTuCompareResult(compareResult) {
+  if (!compareResult) return [];
+  return [
+    ...(compareResult.matched || []).map((m) => ({ nhom_mon: m.nhom_mon, ten: m.mon_chuan, tin_chi: m.tin_chi_chuan })),
+    ...(compareResult.unmatched || []).map((u) => ({ nhom_mon: u.nhom_mon, ten: u.mon_chuan, tin_chi: u.tin_chi_chuan })),
+  ];
+}
+
+// Tập hợp tên "môn chuẩn" đã xuất hiện (tách theo dấu phẩy, chuẩn hoá mạnh) trong 1 danh sách
+// dòng "đã tương đương" — dùng để Nguồn 2 tự BỎ QUA học phần đã được Nguồn 1 (AI/gộp tay) xử
+// lý rồi, tránh cùng 1 học phần bị cộng tín chỉ 2 lần khi tick thêm mẫu miễn.
+export function layTenChuanDaDung(list) {
+  const set = new Set();
+  (list || []).forEach((m) => {
+    String(m.mon_chuan || '').split(',').forEach((s) => {
+      const t = chuanHoaTenHocPhan(s);
+      if (t) set.add(t);
+    });
+  });
+  return set;
+}
+
+// Nguồn 2 — áp mẫu miễn CỐ ĐỊNH theo văn bằng cũ (Điều 6, KHÔNG qua AI, đúng nguyên tắc đã
+// chốt "không giao AI quyết định môn nào được miễn theo chính sách"). Với loaiVanBang đã tick
+// ('Đại học'/'Cao đẳng'/'Trung cấp', rỗng = không tick), tra dsMienVanBangCu (action
+// layDanhSachMienVanBangCu) lấy đúng danh sách học phần + TC cố định của loại đó, so tên
+// (chuanHoaTenHocPhan) với allChuan (khung CTĐT NGÀNH đang xét, từ layAllChuanTuCompareResult)
+// để lấy đúng nhom_mon/tên thật của ngành đó — chỉ dùng string-match tĩnh, không AI.
+// tenDaDungTruoc (Set, từ layTenChuanDaDung): học phần nào đã nằm trong đó thì BỎ QUA, tránh
+// cộng trùng tín chỉ nếu Nguồn 1 đã xử lý học phần đó rồi.
+// Trả {rows, khongKhop}: rows theo đúng format dòng "đã tương đương" của DoiSanhModal.jsx
+// (thêm field nguon:'chinh_sach' để phân biệt nguồn gốc, hiện badge riêng); khongKhop = tên
+// học phần trong mẫu miễn KHÔNG tìm thấy trong khung CTĐT ngành (cán bộ tự bổ sung tay qua
+// Nguồn 1 nếu thật sự cần — không tự đoán/ép vào).
+export function tinhCacDongMienVanBangCu({ loaiVanBang, dsMienVanBangCu, allChuan, tenDaDungTruoc }) {
+  if (!loaiVanBang) return { rows: [], khongKhop: [] };
+  const daDung = tenDaDungTruoc || new Set();
+  const mucList = (dsMienVanBangCu || []).filter((x) => x.loaiVanBang === loaiVanBang);
+  const chuanMap = new Map();
+  (allChuan || []).forEach((c) => {
+    const key = chuanHoaTenHocPhan(c.ten);
+    if (key && !chuanMap.has(key)) chuanMap.set(key, c);
+  });
+  const rows = [];
+  const khongKhop = [];
+  mucList.forEach((muc) => {
+    const key = chuanHoaTenHocPhan(muc.tenHocPhan);
+    const c = chuanMap.get(key);
+    if (!c) { khongKhop.push(muc.tenHocPhan); return; }
+    if (daDung.has(key)) return; // đã được Nguồn 1 (AI/gộp tay) xử lý -> bỏ qua, tránh trùng
+    rows.push({
+      nhom_mon: c.nhom_mon,
+      mon_chuan: c.ten,
+      tin_chi_chuan: muc.soTinChi,
+      mon_da_hoc: `(Miễn theo văn bằng ${loaiVanBang} đã có)`,
+      tin_chi_da_hoc: muc.soTinChi,
+      ket_luan: 'Đạt',
+      nguon: 'chinh_sach',
+    });
+  });
+  return { rows, khongKhop };
+}
+
+// ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 3 "miễn theo chứng chỉ", 2026-09-10 —
+// KHÔNG liên quan Ký điện tử Pha 2): value dropdown "Loại chứng chỉ" (DS_LOAI_CHUNG_CHI,
+// thamDinhConfig.js) -> nhãn "LOẠI CHỨNG CHỈ" dùng để tra tab Sheet "MienTheoChungChi". HSK và
+// HSKK CÙNG trỏ về 1 nhãn "Ngoại ngữ - Tiếng Trung" — chỉ tra bảng khi đã đủ CẢ HAI (xem
+// tinhCacDongMienChungChi). GDQP cố ý KHÔNG có mặt ở đây — xử lý bằng quy tắc riêng
+// (tinhDongMienGDQP), không tra bảng tĩnh nào.
+export const NHAN_TRA_BANG_CHUNG_CHI = {
+  NN_ANH: 'Ngoại ngữ - Tiếng Anh',
+  NN_TRUNG_HSK: 'Ngoại ngữ - Tiếng Trung',
+  NN_TRUNG_HSKK: 'Ngoại ngữ - Tiếng Trung',
+  NN_NHAT: 'Ngoại ngữ - Tiếng Nhật',
+  NN_HAN: 'Ngoại ngữ - Tiếng Hàn',
+  NN_PHAP: 'Ngoại ngữ - Tiếng Pháp',
+  BANG_NGANH_NN: 'Bằng TC/CĐ chuyên ngành Ngoại ngữ',
+  TIN_HOC: 'Tin học',
+  LLCT: 'LLCT',
+};
+// Các loại phải CÒN HẠN trong vòng 24 tháng kể từ ngày cấp (Điều 8-11 — Ngoại ngữ TRỪ tiếng
+// Trung). Tiếng Trung/Bằng ngành NN/Tin học/LLCT không giới hạn hạn sử dụng.
+export const LOAI_CAN_HAN_24_THANG = new Set(['NN_ANH', 'NN_NHAT', 'NN_HAN', 'NN_PHAP']);
+
+// Số tháng ĐẦY ĐỦ giữa ngày cấp và hôm nay (âm nếu ngày cấp ở tương lai) — dùng so với 24
+// tháng. Trả về null nếu ngayCapStr không đọc được thành ngày hợp lệ (OCR đọc rỗng/sai định
+// dạng) — nơi gọi tự quyết định xử lý sao (không tự coi "không đọc được" là "còn hạn").
+function soThangGiuaNgay(ngayCapStr, denNgay) {
+  const ngayCap = new Date(ngayCapStr);
+  if (isNaN(ngayCap.getTime())) return null;
+  let thang = (denNgay.getFullYear() - ngayCap.getFullYear()) * 12 + (denNgay.getMonth() - ngayCap.getMonth());
+  if (denNgay.getDate() < ngayCap.getDate()) thang -= 1;
+  return thang;
+}
+
+// Nguồn 3 — áp dụng cho các chứng chỉ Ngoại ngữ/Tin học/LLCT/Bằng ngành NN (KHÔNG gồm GDQP,
+// xem tinhDongMienGDQP riêng bên dưới). dsChungChiDaQuet: mảng các dòng đã OCR ở
+// ThamDinhPage.jsx, mỗi dòng {loaiChungChiValue, ocrResult: {tenChungChi, mucDat, ngayCap,
+// hoTen, nhanDienDung}, loi}. Cũng theo đúng nguyên tắc đã chốt "không giao AI quyết định
+// chính sách" — AI (scanChungChi) chỉ trả dữ liệu đọc được, hàm NÀY (thuần JS) mới tự quyết
+// định điều kiện -> hệ quả bằng cách tra dsMienTheoChungChi (tab Sheet "MienTheoChungChi").
+export function tinhCacDongMienChungChi({ dsChungChiDaQuet, dsMienTheoChungChi, allChuan, tenDaDungTruoc }) {
+  const daDung = tenDaDungTruoc || new Set();
+  const rows = [];
+  const canhBao = [];
+  const hopLe = (dsChungChiDaQuet || []).filter((c) => c.ocrResult && !c.loi && c.loaiChungChiValue && c.loaiChungChiValue !== 'GDQP');
+  if (hopLe.length === 0) return { rows, canhBao };
+
+  const now = new Date();
+  const chuanMap = new Map();
+  (allChuan || []).forEach((c) => {
+    const key = chuanHoaTenHocPhan(c.ten);
+    if (key && !chuanMap.has(key)) chuanMap.set(key, c);
+  });
+
+  // Nhóm Tiếng Trung: cần ĐỦ CẢ HAI HSK + HSKK mới kích hoạt — chỉ có 1 trong 2 thì cảnh báo,
+  // KHÔNG tự thêm miễn (đúng nguyên văn yêu cầu người dùng, 2026-09-10).
+  const coHSK = hopLe.some((c) => c.loaiChungChiValue === 'NN_TRUNG_HSK');
+  const coHSKK = hopLe.some((c) => c.loaiChungChiValue === 'NN_TRUNG_HSKK');
+  if ((coHSK || coHSKK) && !(coHSK && coHSKK)) {
+    canhBao.push('Tiếng Trung: Chưa đủ điều kiện, cần bổ sung đủ HSK và HSKK.');
+  }
+
+  const nhanDaXuLy = new Set(); // mỗi nhãn (LOẠI CHỨNG CHỈ) chỉ xử lý ĐÚNG 1 LẦN
+  hopLe.forEach((c) => {
+    const nhan = NHAN_TRA_BANG_CHUNG_CHI[c.loaiChungChiValue];
+    if (!nhan || nhanDaXuLy.has(nhan)) return;
+
+    if (c.loaiChungChiValue === 'NN_TRUNG_HSK' || c.loaiChungChiValue === 'NN_TRUNG_HSKK') {
+      if (!(coHSK && coHSKK)) return; // chưa đủ bộ -> chưa kích hoạt, đã cảnh báo ở trên
+    } else if (LOAI_CAN_HAN_24_THANG.has(c.loaiChungChiValue)) {
+      const ngayCap = c.ocrResult?.ngayCap;
+      const soThang = ngayCap ? soThangGiuaNgay(ngayCap, now) : null;
+      if (soThang === null) {
+        canhBao.push(`${nhan}: không đọc được ngày cấp trên ảnh — cán bộ tự kiểm tra hạn 24 tháng trước khi công nhận (chưa tự thêm miễn).`);
+        return;
+      } else if (soThang > 24) {
+        canhBao.push(`${nhan}: chứng chỉ cấp ngày ${ngayCap} đã QUÁ HẠN 24 tháng — KHÔNG tự thêm miễn.`);
+        return;
+      }
+    }
+    nhanDaXuLy.add(nhan);
+
+    const mucList = (dsMienTheoChungChi || []).filter((x) => x.loaiChungChi === nhan);
+    if (mucList.length === 0) {
+      canhBao.push(`${nhan}: chưa có dòng cấu hình miễn nào trong tab "MienTheoChungChi" — báo Admin bổ sung.`);
+      return;
+    }
+    mucList.forEach((muc) => {
+      const key = chuanHoaTenHocPhan(muc.tenHocPhan);
+      const chuan = chuanMap.get(key);
+      if (!chuan) { canhBao.push(`${nhan}: không khớp được học phần "${muc.tenHocPhan}" với khung CTĐT ngành.`); return; }
+      if (daDung.has(key)) return; // đã được nguồn khác xử lý -> bỏ qua, tránh cộng trùng
+      rows.push({
+        nhom_mon: chuan.nhom_mon,
+        mon_chuan: chuan.ten,
+        tin_chi_chuan: muc.soTinChi,
+        mon_da_hoc: `(Miễn theo chứng chỉ: ${nhan}${muc.diemQuyDoi ? ' — quy đổi ' + muc.diemQuyDoi + ' điểm' : ''})`,
+        tin_chi_da_hoc: muc.soTinChi,
+        ket_luan: 'Đạt',
+        nguon: 'chung_chi',
+      });
+      daDung.add(key);
+    });
+  });
+
+  return { rows, canhBao };
+}
+
+// Nguồn 3 — GDQP&AN (Điều 8): KHÔNG tra bảng tab "MienTheoChungChi" như các loại chứng chỉ
+// khác — quy tắc do người dùng chốt trực tiếp (2026-09-10), gắn với BẬC văn bằng cũ đã tick ở
+// Nguồn 2 CHỨ KHÔNG PHẢI 1 bảng tra cứu tĩnh:
+// 1) Tick "Đại học" + bảng điểm CŨ (đã quét ở Nguồn 1) có môn GDQP -> tự thêm vào danh sách
+//    MIỄN (kết luận "Đạt").
+// 2) Tick "Cao đẳng"/"Trung cấp" + bảng điểm cũ có môn GDQP -> tự thêm vào danh sách CÔNG
+//    NHẬN nhưng kết luận "Học bổ sung" (không miễn hoàn toàn).
+// 3) Có upload chứng chỉ GDQP&AN riêng (Nguồn 3) mà 2 trường hợp trên KHÔNG áp dụng (chưa
+//    tick văn bằng, hoặc bảng điểm cũ không có môn GDQP) -> vẫn thêm 1 dòng nhưng ghi chú
+//    "Hỏi TTQP" (Trung tâm Giáo dục Quốc phòng) để cán bộ tự xác minh — hệ thống KHÔNG tự
+//    quyết định miễn/không trong trường hợp này.
+function timMonGDQPTrongDanhSach(list, tenKey) {
+  return (list || []).find((x) => {
+    const ten = normalizeText(x[tenKey]);
+    return ten.includes('quoc phong') || ten.includes('an ninh');
+  }) || null;
+}
+export function timMonGDQPTrongKhungCTDT(allChuan) { return timMonGDQPTrongDanhSach(allChuan, 'ten'); }
+export function timMonGDQPTrongBangDiem(transcriptJSON) { return timMonGDQPTrongDanhSach(transcriptJSON, 'monhoc'); }
+
+export function tinhDongMienGDQP({ mienVanBangCu, allChuan, transcriptJSON, coChungChiGDQPHopLe, tenDaDungTruoc }) {
+  const daDung = tenDaDungTruoc || new Set();
+  const chuan = timMonGDQPTrongKhungCTDT(allChuan);
+  const key = chuan ? chuanHoaTenHocPhan(chuan.ten) : null;
+  if (key && daDung.has(key)) return null; // đã được nguồn khác xử lý -> bỏ qua
+
+  const daHocGDQP = timMonGDQPTrongBangDiem(transcriptJSON);
+  if (mienVanBangCu && daHocGDQP) {
+    const ketLuan = mienVanBangCu === 'Đại học' ? 'Đạt' : 'Học bổ sung';
+    return {
+      nhom_mon: chuan ? chuan.nhom_mon : '',
+      mon_chuan: chuan ? chuan.ten : 'Giáo dục quốc phòng & An ninh',
+      tin_chi_chuan: chuan ? chuan.tin_chi : (daHocGDQP.tinchi || 0),
+      mon_da_hoc: `${daHocGDQP.monhoc} (theo bảng điểm cũ — văn bằng ${mienVanBangCu} đã có)`,
+      tin_chi_da_hoc: daHocGDQP.tinchi || 0,
+      ket_luan: ketLuan,
+      nguon: 'chinh_sach',
+    };
+  }
+  if (coChungChiGDQPHopLe) {
+    return {
+      nhom_mon: chuan ? chuan.nhom_mon : '',
+      mon_chuan: chuan ? chuan.ten : 'Giáo dục quốc phòng & An ninh',
+      tin_chi_chuan: chuan ? chuan.tin_chi : 0,
+      mon_da_hoc: '(Đã nộp chứng chỉ GDQP&AN — hệ thống KHÔNG tự xác nhận, cần cán bộ kiểm tra)',
+      tin_chi_da_hoc: 0,
+      ket_luan: 'Học bổ sung',
+      nguon: 'chung_chi',
+      ghiChu: 'Hỏi TTQP',
+    };
+  }
+  return null;
+}
+
+// Bỏ mọi dòng do Nguồn 2/3 tự thêm (chinh_sach/chung_chi), CHỈ giữ dòng Nguồn 1 (AI/gộp tay
+// thủ công) — dùng làm "baseline gốc" trước khi tính lại toàn bộ các dòng tự động.
+export function layNguon1ThuanTuy(list) {
+  return (list || []).filter((m) => m.nguon !== 'chinh_sach' && m.nguon !== 'chung_chi');
+}
+
+// Hàm TỔNG HỢP — tính lại TOÀN BỘ các dòng "tự động" (Nguồn 2 + GDQP Điều 8 + Nguồn 3 chứng
+// chỉ khác) trên CÙNG 1 baseline Nguồn 1, xử lý dedup XUYÊN SUỐT cả 3 nguồn (mỗi học phần chỉ
+// tính 1 lần dù nhiều nguồn cùng "muốn" miễn nó — nguồn xử lý TRƯỚC giữ quyền, nguồn sau tự bỏ
+// qua). Dùng CHUNG cho cả ThamDinhPage.jsx (khi tick/upload) và DoiSanhModal.jsx (khi Reset) —
+// tránh 2 nơi tự viết lại thứ tự merge rồi lệch nhau theo thời gian.
+export function tinhTatCaCacDongTuDong({ mienVanBangCu, dsMienVanBangCu, dsChungChiDaQuet, dsMienTheoChungChi, allChuan, transcriptJSON, baselineNguon1 }) {
+  const canhBao = [];
+  let daXuLy = baselineNguon1 || [];
+  const rows = [];
+
+  const { rows: rowsN2, khongKhop: khongKhopN2 } = tinhCacDongMienVanBangCu({
+    loaiVanBang: mienVanBangCu, dsMienVanBangCu, allChuan,
+    tenDaDungTruoc: layTenChuanDaDung(daXuLy),
+  });
+  rows.push(...rowsN2);
+  daXuLy = [...daXuLy, ...rowsN2];
+  if (mienVanBangCu && khongKhopN2.length > 0) {
+    canhBao.push(`Miễn theo văn bằng cũ (${mienVanBangCu}): không tìm thấy trong khung CTĐT ngành: ${khongKhopN2.join(', ')}.`);
+  }
+
+  const coChungChiGDQPHopLe = (dsChungChiDaQuet || []).some((c) => c.loaiChungChiValue === 'GDQP' && c.ocrResult && !c.loi);
+  const dongGDQP = tinhDongMienGDQP({
+    mienVanBangCu, allChuan, transcriptJSON, coChungChiGDQPHopLe,
+    tenDaDungTruoc: layTenChuanDaDung(daXuLy),
+  });
+  if (dongGDQP) {
+    rows.push(dongGDQP);
+    daXuLy = [...daXuLy, dongGDQP];
+    if (dongGDQP.ghiChu) canhBao.push(`GDQP&AN: ${dongGDQP.ghiChu} — đã nộp chứng chỉ nhưng hệ thống không tự xác nhận được, cán bộ tự kiểm tra với Trung tâm GDQP.`);
+  }
+
+  const { rows: rowsN3, canhBao: canhBaoN3 } = tinhCacDongMienChungChi({
+    dsChungChiDaQuet, dsMienTheoChungChi, allChuan,
+    tenDaDungTruoc: layTenChuanDaDung(daXuLy),
+  });
+  rows.push(...rowsN3);
+  canhBao.push(...canhBaoN3);
+
+  return { rows, canhBao };
+}
+
 // Khoá ghép đôi CCCD + Ngành — nhận diện 1 hồ sơ duy nhất, khớp cách các GAS backend chống trùng
 // ĐÃ SỬA (lỗi tick chọn 1 hồ sơ mà nhiều hồ sơ khác bị chọn/bỏ chọn theo): khi CCCD trống
 // (hồ sơ thiếu dữ liệu/test), nhiều hồ sơ khác nhau có thể cùng ra khoá rỗng + cùng ngành

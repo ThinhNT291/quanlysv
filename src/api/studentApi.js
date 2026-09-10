@@ -1,5 +1,15 @@
 import axios from 'axios';
 
+// ĐÃ THÊM (phát hiện khi test Ký điện tử Pha 2 — Bước 3, ký song song): trước đây KHÔNG
+// đặt timeout nào cả — 1 request treo (GAS xử lý chậm/xếp hàng) sẽ nằm chờ VÔ HẠN, chiếm
+// 1 kết nối trong pool của trình duyệt, cộng dồn theo thời gian nếu người dùng cứ F5/đổi
+// tab liên tục (mỗi lần lại bắn thêm request mới trong khi request cũ còn treo đó) — góp
+// phần vào hiện tượng nhiều request "Blocked"/"CORS Failed" dồn ứ thấy trên Network tab.
+// Đặt timeout hợp lý (45s — GAS vốn có thể chậm vài chục giây khi đang bận, không đặt
+// quá ngắn kẻo huỷ oan request đang xử lý bình thường) để request treo tự báo lỗi và giải
+// phóng, thay vì nằm im mãi.
+axios.defaults.timeout = 45000;
+
 // DÁN LINK GOOGLE APPS SCRIPT (WEB APP URL) CỦA ÔNG VÀO ĐÂY
 // ĐÃ SỬA (Pha 6 — rà soát cutover): thêm "export" để LoginPage.jsx dùng chung đúng
 // 1 hằng số này, thay vì tự khai báo WEB_APP_URL riêng — trước đây 2 file có 2 hằng
@@ -108,6 +118,39 @@ const postAiAction = async (action, dataObj) => {
 export const scanTranscriptImage = (imageBase64, mimeType) => postAiAction('scanTranscript', { imageBase64, mimeType });
 export const compareCurriculumAI = (nganh, transcript) => postAiAction('compareCurriculum', { nganh, transcript });
 export const exportThamDinhTemplate = (payload) => postAiAction('exportTemplate', payload);
+// ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ, 2026-09-09): lưu chính thức bảng đối
+// sánh SAU KHI người thẩm định gộp/gỡ tay trong DoiSanhModal.jsx — chỉ gọi khi bấm
+// nút "Lưu", KHÔNG tự lưu lúc đang chỉnh sửa.
+export const luuKetQuaDoiSanh = ({ cccd, ketQuaDoiSanh }) => postAiAction('luuKetQuaDoiSanh', { cccd, ketQuaDoiSanh });
+// ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2 "miễn theo văn bằng cũ",
+// 2026-09-09): đọc 3 bảng học phần miễn cố định (Điều 6) từ tab "MienTheoVanBangCu" — GET
+// đơn giản, không cần idToken/sessionToken gửi qua body như postAiAction (theo đúng cách
+// fetchConfig đang làm cho action GET khác).
+export const fetchDanhSachMienVanBangCu = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layDanhSachMienVanBangCu&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải danh sách miễn theo văn bằng cũ');
+};
+// ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 3 "miễn theo chứng chỉ", 2026-09-10):
+// đọc bảng tra Điều 8-11 (tab "MienTheoChungChi") — GET đơn giản, khớp đúng cách
+// fetchDanhSachMienVanBangCu ở trên đang làm cho Nguồn 2.
+export const fetchDanhSachMienTheoChungChi = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layDanhSachMienTheoChungChi&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải danh sách miễn theo chứng chỉ');
+};
+// ĐÃ THÊM (Nguồn 3): OCR 1 ảnh chứng chỉ — chỉ đọc thông tin (tenChungChi/mucDat/ngayCap/
+// hoTen/nhanDienDung), KHÔNG quyết định miễn học phần nào (việc đó ở tinhCacDongMienChungChi,
+// thamDinhHelpers.js). loaiChungChi là 1 trong các value của DS_LOAI_CHUNG_CHI
+// (thamDinhConfig.js) — cán bộ chọn loại TRƯỚC khi upload ảnh.
+export const scanChungChiImage = (loaiChungChi, imageBase64, mimeType) =>
+  postAiAction('scanChungChi', { loaiChungChi, imageBase64, mimeType });
 
 // Nhập dữ liệu hàng loạt từ file Excel
 // ĐÃ THÊM (rà soát đồng bộ file mẫu 2 trang): lấy danh sách cột file mẫu Excel bên
@@ -664,8 +707,48 @@ export const layCauHinhChucDanhKy = async (loaiTaiLieu = 'GBTT') => {
 // — nguyên nhân thật của bug, không phải do phía Doc mẫu/placeholder ông đặt sai. Nhớ: mỗi
 // khi thêm field mới cho action này, phải sửa ĐỦ CẢ 3 nơi (JSX gửi lên, hàm forward ở đây,
 // noiDung phía Quanlysv.gs), thiếu 1 trong 3 đều coi như field đó không đi tới đâu cả.
-export const taoYeuCauKyGBTT = ({ sinhVien, nguoiKy, ngayXuatGiayBao, thangNhapHoc, soQuyetDinh }) =>
-  postKySoAction('taoYeuCauKyGBTT', { sinhVien, nguoiKy, ngayXuatGiayBao, thangNhapHoc, soQuyetDinh });
+// ĐÃ THÊM (Ký điện tử Pha 2 — Bước 3): cheDoKy ('TUAN_TU' mặc định / 'SONG_SONG') — nhớ
+// quy tắc ở trên: field mới phải sửa ĐỦ CẢ 3 nơi, đây là nơi thứ 2 (JSX gửi lên ở
+// ThamDinhPage.jsx, forward ở đây, đọc data.cheDoKy ở action taoYeuCauKyGBTT Quanlysv.gs).
+export const taoYeuCauKyGBTT = ({ sinhVien, nguoiKy, ngayXuatGiayBao, thangNhapHoc, soQuyetDinh, cheDoKy }) =>
+  postKySoAction('taoYeuCauKyGBTT', { sinhVien, nguoiKy, ngayXuatGiayBao, thangNhapHoc, soQuyetDinh, cheDoKy });
+
+// ĐÃ THÊM (Ký điện tử Pha 2 — Bước 5 — tổng quát hoá thêm loại văn bản khác GBTT): action
+// dùng chung cho MỌI loại văn bản KHÁC GBTT (GBTT vẫn dùng taoYeuCauKyGBTT ở trên, xử lý
+// theo lô nhiều sinh viên) — chỉ tạo ĐÚNG 1 yêu cầu ký/1 lần gọi.
+//   loaiTaiLieu: mã loại văn bản (khớp cột APDUNGCHO trên sheet ChucDanhKy, vd "QDCN").
+//   tieuDe: tiêu đề hiển thị của yêu cầu ký.
+//   noiDung: object phẳng {TEN_PLACEHOLDER: giá trị} — thay {{TEN_PLACEHOLDER}} trong Doc
+//     mẫu của loại văn bản đó (không gồm {{HOTEN_<MA>}}/{{NGAYKY_<MA>}}/{{CHUKY_<MA>}} — 3
+//     placeholder này backend tự điền theo từng chức danh trong nguoiKy).
+//   thongTinLienQuan: {maSinhVien?, hoTen?, canCuoc?, nganh?} — để trống nếu văn bản không
+//     gắn với 1 sinh viên cụ thể.
+//   nguoiKy: [{maChucDanh, email, ten?}, ...] — khớp cấu hình ChucDanhKy của loaiTaiLieu đó.
+//   cheDoKy: 'TUAN_TU' (mặc định) | 'SONG_SONG'.
+// Chưa có trang nào gọi hàm này — export sẵn cho UI của loại văn bản mới sau này dùng, xem
+// action 'taoYeuCauKy' (Quanlysv.gs) + kế hoạch Bước 5.
+export const taoYeuCauKy = ({ loaiTaiLieu, tieuDe, noiDung, thongTinLienQuan, nguoiKy, cheDoKy }) =>
+  postKySoAction('taoYeuCauKy', { loaiTaiLieu, tieuDe, noiDung, thongTinLienQuan, nguoiKy, cheDoKy });
+
+// ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6 — "tải file lên ký ngay, không cần mẫu"): KHÁC hẳn
+// taoYeuCauKy ở trên (vẫn cần 1 Doc mẫu + {{placeholder}}) — action này nhận THẲNG 1 file
+// người tạo tự chọn, coi đó là tài liệu CUỐI CÙNG luôn, không có mẫu/placeholder gì cả.
+//   tieuDe: tiêu đề hiển thị của yêu cầu ký.
+//   fileBase64/mimeType/tenFile: nội dung file người dùng chọn (đọc qua FileReader ở
+//     frontend rồi encode base64) — HIỆN CHỈ chấp nhận mimeType 'application/pdf' (xem chú
+//     thích action 'taoYeuCauKyTuFile'/Quanlysv.gs — lý do KHÔNG nhận ảnh/Word ở bước này).
+//   nguoiKy: [{maChucDanh, tenChucDanh, email, ten?}, ...] — KHÁC taoYeuCauKy ở trên,
+//     maChucDanh/tenChucDanh ở đây do NGƯỜI TẠO TỰ ĐẶT ngay lúc này (không có cấu hình
+//     ChucDanhKy sẵn để chọn từ đó) — mỗi người 1 mã KHÔNG TRÙNG trong cùng yêu cầu.
+//   viTriKyJson: [{maChucDanh, trang, xTyLe, yTyLe, loaiO}, ...] — BẮT BUỘC đủ 1 phần tử
+//     cho MỖI người trong nguoiKy (xem tab "Xem trước & đặt chữ ký" trong kế hoạch — UI
+//     click-to-place, dùng PDF.js ở frontend, CHƯA xây) — thiếu là bị 400 ngay khi tạo.
+//   thongTinLienQuan/cheDoKy: giống hệt taoYeuCauKy ở trên.
+//   taiLieuThamKhao: [{tenFile, fileBase64, mimeType}, ...] — TUỲ CHỌN (mảng rỗng/bỏ qua
+//     nếu không có gì) — file ĐÍNH KÈM CHỈ ĐỂ XEM, KHÔNG ký lên (VD hồ sơ gốc/minh chứng) —
+//     không giới hạn định dạng như file để ký (không bắt buộc PDF).
+export const taoYeuCauKyTuFile = ({ tieuDe, fileBase64, mimeType, tenFile, nguoiKy, viTriKyJson, thongTinLienQuan, cheDoKy, taiLieuThamKhao }) =>
+  postKySoAction('taoYeuCauKyTuFile', { tieuDe, fileBase64, mimeType, tenFile, nguoiKy, viTriKyJson, thongTinLienQuan, cheDoKy, taiLieuThamKhao });
 
 // Danh sách yêu cầu ký đang chờ người đang đăng nhập ký — cho trang "Hồ sơ chờ ký".
 export const fetchDanhSachChoToiKy = async () => {
@@ -698,7 +781,30 @@ export const xemTruocYeuCauKy = async (maYeuCau) => {
 };
 
 // Thực hiện 1 lượt ký cho yêu cầu maYeuCau (dùng đúng chữ ký cá nhân đã lưu ở Hồ sơ cá nhân).
-export const kyYeuCau = ({ maYeuCau, ghiChu }) => postKySoAction('kyYeuCau', { maYeuCau, ghiChu });
+// LƯU Ý (Ký điện tử Pha 2 — Bước 6, luồng PDF/pdf-lib): với yêu cầu tạo qua luồng tải file
+// tự do (VI_TRI_KY_JSON có dữ liệu), response trả về NGAY với { dangXuLy: true, hoanTat:
+// false } — việc đóng dấu thật sự chạy NỀN qua trigger, chưa xong ngay lúc gọi xong hàm
+// này. Trang gọi hàm này cần TỰ POLL bằng kiemTraTrangThaiKy() bên dưới cho tới khi
+// trangThaiBuoc chuyển thành "DA_KY" (hoặc "DEN_LUOT" nếu xử lý nền lỗi, xem ghiChu) — GBTT
+// (luồng Docs cũ) KHÔNG bị ảnh hưởng, vẫn trả kết quả ngay như trước (dangXuLy sẽ là
+// undefined/falsy).
+// ĐÃ SỬA (Ký điện tử Pha 2 — Bước 7): thêm phuongThucKy ('ANH' mặc định / 'CA') — do
+// CHÍNH người ký chọn ngay lúc bấm "Ký" (xem ChoKyPage.jsx — chỉ hỏi khi coTheKyCA=true từ
+// fetchDanhSachChoToiKy), không phải cấu hình cố định theo chức danh. Không truyền field
+// này (mọi nơi gọi cũ) tương đương 'ANH' — hành vi giữ nguyên 100% cho tài khoản không CA.
+export const kyYeuCau = ({ maYeuCau, ghiChu, phuongThucKy }) => postKySoAction('kyYeuCau', { maYeuCau, ghiChu, phuongThucKy });
+
+// ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6): dùng để POLL trạng thái sau khi kyYeuCau trả về
+// dangXuLy=true (luồng PDF/pdf-lib nền, xem action 'kiemTraTrangThaiKy' + xuLyKyPdfNen
+// trong Quanlysv.gs). Gọi lặp lại (vd mỗi 3-5s) cho tới khi trangThaiBuoc !== "DANG_XU_LY".
+export const kiemTraTrangThaiKy = async (maYeuCau) => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=kiemTraTrangThaiKy&maYeuCau=${encodeURIComponent(maYeuCau)}&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi kiểm tra trạng thái ký');
+};
 
 // ĐÃ THÊM — Ký điện tử Pha 2 (Bước 2): người ĐANG TỚI LƯỢT từ chối ký kèm lý do bắt
 // buộc — dừng cả chuỗi, báo email người tạo yêu cầu.

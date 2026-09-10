@@ -171,7 +171,10 @@ const initialFormState = {
   // dựng sẵn từ trước ở isDocApplicable()/DICT_HO_SO.chung (doc_nvqs.genderOnly) — xem chú
   // thích tại đó, cơ chế ẩn/hiện "Giấy chuyển NVQS (với nam)" theo giới tính giờ tự chạy
   // đúng ngay khi field này có dữ liệu thật, không cần sửa gì thêm ở DICT_HO_SO.
-  hoten: '', cccd: '', ngaysinh: '', gioitinh: '', noisinh: '', khoa: '', nganh: '', namtotnghiepthpt: '', khuvucuutien: '', doituonguutien: '',
+  // ĐÃ THÊM "masv" (theo yêu cầu 2026-09-10 — thẩm định lại hồ sơ CŨ đã có MSV thật): chỉ
+  // dùng khi tick "Hồ sơ cũ (có MSV)" — xem laHoSoCu/handleAddRow. Hồ sơ MỚI để trống, hệ
+  // thống tự sinh mã như trước giờ.
+  hoten: '', cccd: '', ngaysinh: '', masv: '', gioitinh: '', noisinh: '', khoa: '', nganh: '', namtotnghiepthpt: '', khuvucuutien: '', doituonguutien: '',
   doituongdauvao: '', namtt: '', hedaotao: '', htdaotao: '', link_folder: '', 
   has_giay_uutien: false, giay_uutien: '', 
   loai_diem: '', time_goc: '', 
@@ -496,6 +499,11 @@ const XetTuyenPage = () => {
   const [formData, setFormData] = useState(() => loadSession('xt_form', initialFormState));
   const [dataList, setDataList] = useState(() => loadSession('xt_list', [])); 
   const [isEditMode, setIsEditMode] = useState(() => loadSession('xt_isEdit', false));
+  // ĐÃ THÊM (theo yêu cầu 2026-09-10 — thẩm định lại hồ sơ CŨ đã có MSV thật): tick bật ->
+  // hiện thêm ô "Mã sinh viên" (bắt buộc) trên Form, đồng thời handleAddRow gửi kèm giá trị
+  // đó xuống backend (importStudents) thay vì để trống cho hệ thống tự sinh mã. KHÔNG lưu
+  // qua sessionStorage (khác formData/isEditMode) — chỉ là 1 cờ UI tạm cho lượt nhập hiện tại.
+  const [laHoSoCu, setLaHoSoCu] = useState(false);
   // ĐÃ THÊM (sửa bug "Không khớp hồ sơ gốc" cho hồ sơ Excel-import CHƯA đẩy lên): trước đây
   // handleAddRow() gắn "_Action": isEditMode ? "UPDATE" : "INSERT" — nghĩa là HỄ đang ở chế
   // độ sửa trên Form (isEditMode=true) là ghi UPDATE, KHÔNG phân biệt được 2 tình huống:
@@ -835,6 +843,12 @@ const XetTuyenPage = () => {
     for (let field of requiredFields) {
         if (!formData[field]) { alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); return; }
     }
+    // ĐÃ THÊM (theo yêu cầu 2026-09-10 — hồ sơ CŨ đã có MSV thật): tick "Hồ sơ cũ (có MSV)"
+    // thì ô "Mã sinh viên" bắt buộc phải điền — không gộp vào requiredFields chung ở trên vì
+    // chỉ bắt buộc CÓ ĐIỀU KIỆN (tick mới bắt buộc).
+    if (laHoSoCu && !formData.masv.trim()) {
+        alert(`Vui lòng điền Mã sinh viên (bắt buộc với "Hồ sơ cũ")`); return;
+    }
     if (!biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) && !formData.khuvucuutien) {
         alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); return;
     }
@@ -892,6 +906,10 @@ const XetTuyenPage = () => {
         "_Action": isEditMode ? (editingAction || "UPDATE") : "INSERT",
         "KẾT QUẢ SƠ TUYỂN": admissionResult ? admissionResult.title : "",
         "CĂN CƯỚC": formData.cccd.trim(), "TÊN SINH VIÊN": formData.hoten.trim(), "NGÀY SINH": formData.ngaysinh,
+        // ĐÃ THÊM (theo yêu cầu 2026-09-10 — hồ sơ CŨ đã có MSV thật): chỉ gửi kèm khi tick
+        // "Hồ sơ cũ (có MSV)" — để trống thì backend (importStudents) tự sinh mã như trước
+        // giờ, không đổi hành vi hồ sơ MỚI.
+        "MÃ SINH VIÊN": laHoSoCu ? formData.masv.trim() : "",
         // ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh).
         "GIỚI TÍNH": formData.gioitinh, "NƠI SINH": formData.noisinh.trim(),
         "NGÀNH": formData.nganh, "KHÓA": formData.khoa, "ĐỐI TƯỢNG ƯU TIÊN": formData.doituonguutien,
@@ -979,6 +997,7 @@ const XetTuyenPage = () => {
     // hồ sơ MỚI (initialFormState) nên không còn lý do gì để khoá nữa.
     setIsOldRecordApproved(false);
     setMissingDocIdsOld([]);
+    setLaHoSoCu(false); // ĐÃ THÊM (2026-09-10): Form quay về trạng thái nhập hồ sơ MỚI, tắt luôn cờ "hồ sơ cũ".
   };
 
   const handleCancelEdit = () => {
@@ -988,6 +1007,7 @@ const XetTuyenPage = () => {
           setEditingAction(null); // ĐÃ THÊM: hủy sửa thì cũng phải xóa luôn _Action GỐC đang giữ.
           setIsOldRecordApproved(false); // ĐÃ THÊM: xem chú thích tương tự ở cuối handleAddRow().
           setMissingDocIdsOld([]);
+          setLaHoSoCu(false); // ĐÃ THÊM (2026-09-10): xem chú thích tương tự ở cuối handleAddRow().
       }
   };
 
@@ -1014,6 +1034,9 @@ const XetTuyenPage = () => {
     const daDuyet = trangThaiCu.indexOf("Đã duyệt") !== -1;
     setIsOldRecordApproved(daDuyet);
     setMissingDocIdsOld(daDuyet ? canonNamesToIds(getMissingDocs(row)) : []);
+    // ĐÃ THÊM (theo yêu cầu 2026-09-10): dòng này từng được lưu với MSV nhập tay (tick "Hồ
+    // sơ cũ") thì mở lại Form vẫn phải thấy đúng tick + giá trị đó, không mất khi sửa lại.
+    setLaHoSoCu(!!row["MÃ SINH VIÊN"]);
 
     let phuongThuc = "";
     if (row["PHƯƠNG THỨC XÉT TUYỂN"] === 'Điểm thi THPT') phuongThuc = "THI_THPT";
@@ -1052,6 +1075,9 @@ const XetTuyenPage = () => {
         ...prev,
         hoten: row["TÊN SINH VIÊN"] || "",
         cccd: String(row["CĂN CƯỚC"] || "").replace(/'/g, ''),
+        // ĐÃ THÊM (theo yêu cầu 2026-09-10 — hồ sơ CŨ đã có MSV thật): xem chú thích tại
+        // setLaHoSoCu ngay phía trên.
+        masv: String(row["MÃ SINH VIÊN"] || "").replace(/^'/, ''),
         nganh: row["NGÀNH"] || "",
         ngaysinh: row["NGÀY SINH"] || "",
         // ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh).
@@ -1454,7 +1480,9 @@ const XetTuyenPage = () => {
           };
 
           // Dòng mô tả (dòng 2) — đúng nội dung đã chốt cho từng cột/nhóm cột.
-          const descRow = { 'STT': '0', 'CĂN CƯỚC': 'Số CCCD', 'NGÀY SINH': 'dd/mm/yyyy' };
+          // ĐÃ THÊM (2026-09-10) mô tả cột "MÃ SINH VIÊN" — cột TUỲ CHỌN, để trống với hồ sơ
+          // MỚI (xem chú thích tại XETTUYEN_TEMPLATE_HEADERS, Quanlysv.gs).
+          const descRow = { 'STT': '0', 'CĂN CƯỚC': 'Số CCCD', 'NGÀY SINH': 'dd/mm/yyyy', 'MÃ SINH VIÊN': 'Để trống nếu hồ sơ MỚI — chỉ điền nếu là hồ sơ CŨ đã có MSV thật' };
           Object.keys(dropdownColumns).forEach((c) => { descRow[c] = 'chọn dropdown'; });
           ALL_HO_SO_DOCS.forEach((doc) => { descRow[doc.name.toUpperCase()] = 'ghi x hoặc "true"'; });
           descRow['ĐIỂM TB TOÀN KHÓA HỆ 4'] = 'Điền 1 trong 2 hệ';
@@ -1653,6 +1681,12 @@ const XetTuyenPage = () => {
                           "STT": sttBase + importedCount + 1, "TRẠNG THÁI ĐẨY": "Waiting", "_Action": "INSERT",
                           "KẾT QUẢ SƠ TUYỂN": getField(rowArr, ["KẾT QUẢ SƠ TUYỂN", "KẾT QUẢ"]),
                           "CĂN CƯỚC": cccdVal, "TÊN SINH VIÊN": getField(rowArr, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]),
+                          // ĐÃ THÊM (theo yêu cầu 2026-09-10 — hồ sơ CŨ đã có MSV thật): cột TUỲ
+                          // CHỌN trong file Excel — dòng nào có điền thì coi là hồ sơ cũ (backend
+                          // importStudents dùng thẳng giá trị này thay vì tự sinh mã), dòng nào để
+                          // trống thì vẫn là hồ sơ MỚI như trước giờ. Không cần tick riêng cho
+                          // Excel như Form nhập tay vì 1 file có thể trộn cả 2 loại hồ sơ.
+                          "MÃ SINH VIÊN": getField(rowArr, ["MÃ SINH VIÊN", "MÃ SỐ NGƯỜI HỌC", "MASV", "MÃ SV"]),
                           // ĐÃ SỬA: chuẩn hoá về ISO (yyyy-MM-dd) ngay khi đọc file — cùng quy
                           // ước dd/MM/yyyy với ImportModal.jsx và backend (xem
                           // chuanHoaNgaySinhImport, utils/ngaySinh.js) — để "NGÀY SINH" hiện
@@ -2020,6 +2054,15 @@ const XetTuyenPage = () => {
                       <i className="bi bi-file-earmark-excel me-1"></i> Import Excel
                   </button>
               )}
+              {/* ĐÃ THÊM (theo yêu cầu 2026-09-10 — thẩm định lại hồ sơ CŨ đã có MSV thật):
+                  toggle ẩn/hiện ô "Mã sinh viên" trên Form, cùng cụm nút thao tác nhanh với
+                  Import Excel/Tìm hồ sơ cũ theo đúng vị trí yêu cầu. Ẩn khi đang Sửa (isEditMode)
+                  cùng lý do với Import Excel — không áp dụng cho luồng sửa hồ sơ đã có sẵn. */}
+              {!isEditMode && (
+                  <button type="button" className={`btn btn-sm fw-bold ${laHoSoCu ? 'btn-dark text-white' : 'btn-outline-dark'}`} onClick={() => setLaHoSoCu(v => !v)} title="Hồ sơ đã có Mã sinh viên thật (thẩm định/nhập lại hồ sơ cũ)">
+                      <i className="bi bi-patch-check-fill me-1"></i> Hồ sơ cũ (có MSV)
+                  </button>
+              )}
               <button className="btn btn-sm btn-warning fw-bold text-dark" onClick={() => setIsSearchModalOpen(true)}>
                   <i className="bi bi-search me-1"></i> Tìm hồ sơ cũ
               </button>
@@ -2049,6 +2092,13 @@ const XetTuyenPage = () => {
             {!isEditMode && (
                 <button type="button" className="btn btn-sm btn-outline-purple fw-bold" style={{color: '#7b1fa2', borderColor: '#7b1fa2'}} onClick={() => setIsImportModalOpen(true)}>
                     <i className="bi bi-file-earmark-excel me-1"></i> Import Excel
+                </button>
+            )}
+            {/* ĐÃ THÊM (2026-09-10): bản sao nút "Hồ sơ cũ (có MSV)" cho di động — xem chú thích
+                đầy đủ tại vị trí tương tự trên header (bản desktop). */}
+            {!isEditMode && (
+                <button type="button" className={`btn btn-sm fw-bold ${laHoSoCu ? 'btn-dark text-white' : 'btn-outline-dark'}`} onClick={() => setLaHoSoCu(v => !v)}>
+                    <i className="bi bi-patch-check-fill me-1"></i> Hồ sơ cũ (có MSV)
                 </button>
             )}
             <button type="button" className="btn btn-sm btn-warning fw-bold text-dark" onClick={() => setIsSearchModalOpen(true)}>
@@ -2096,6 +2146,14 @@ const XetTuyenPage = () => {
                 </div>
                 <input type="text" className="form-control" name="cccd" value={formData.cccd} onChange={handleChange} required disabled={isOldRecordApproved || isEditMode} />
             </div>
+            {/* ĐÃ THÊM (theo yêu cầu 2026-09-10 — hồ sơ CŨ đã có MSV thật): chỉ hiện khi tick
+                "Hồ sơ cũ (có MSV)" ở cụm nút thao tác nhanh phía trên — xem laHoSoCu/handleAddRow. */}
+            {laHoSoCu && (
+                <div>
+                    <label className="form-label fw-bold small mb-1">Mã sinh viên <span className="text-danger">*</span></label>
+                    <input type="text" className="form-control" name="masv" value={formData.masv} onChange={handleChange} required disabled={isOldRecordApproved} />
+                </div>
+            )}
             {/* ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh): Giới tính lấy danh mục từ
                 trang Cấu hình (sysConfig.GioiTinh, giống hệt cách Đối tượng ƯT/Hệ đào tạo...
                 đang lấy) thay vì viết cứng "Nam"/"Nữ" ở đây — Nơi sinh là ô nhập tự do, không

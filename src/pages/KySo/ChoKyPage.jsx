@@ -21,7 +21,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
-import { fetchDanhSachChoToiKy, fetchLichSuKyCuaToi, xemTruocYeuCauKy, kyYeuCau, tuChoiKy, huyYeuCauKy, layChuKyCuaToi } from '../../api/studentApi';
+import { fetchDanhSachChoToiKy, fetchLichSuKyCuaToi, xemTruocYeuCauKy, kyYeuCau, kiemTraTrangThaiKy, tuChoiKy, huyYeuCauKy, layChuKyCuaToi } from '../../api/studentApi';
 
 const BADGE_BUOC = {
   DA_KY: 'bg-success',
@@ -54,6 +54,12 @@ const ChoKyPage = () => {
   });
   const danhSachChoKy = data?.danhSach || [];
   const coChuKy = data?.coChuKy ?? true; // mặc định true để không doạ nhầm trong lúc đang tải
+  // ĐÃ THÊM (Ký điện tử Pha 2 — Bước 7): cờ CẤP TÀI KHOẢN — true nếu người này có cấu hình
+  // chữ ký số (CA_NHA_CUNG_CAP/CA_MA_THUE_BAO trên TaiKhoan, xem layDanhSachChoToiKy). CHỈ
+  // khi true mới hỏi "ký bằng ảnh hay ký số" lúc bấm Ký (xacNhanKy bên dưới) — mặc định
+  // false lúc đang tải/không có để KHÔNG hỏi gì cả, giữ nguyên hành vi cũ cho tài khoản
+  // thường (tuyệt đại đa số).
+  const coTheKyCA = data?.coTheKyCA ?? false;
 
   const {
     data: dataLichSu, isLoading: dangTaiLichSu, isError: loiLichSu, error: errLichSu,
@@ -83,12 +89,58 @@ const ChoKyPage = () => {
     enabled: !!dangXem?.coTheKy,
   });
 
+  // ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6, luồng PDF/pdf-lib): kyYeuCau giờ có thể trả về
+  // { dangXuLy: true, hoanTat: false } thay vì kết quả ngay — việc đóng dấu PDF chạy NỀN
+  // qua trigger (xem action kyYeuCau/Quanlysv.gs), có thể mất tới ~1 phút mới xong, KHÁC
+  // hẳn luồng Docs/GBTT cũ (luôn xong ngay trong request). Hàm này TỰ LẶP gọi
+  // kiemTraTrangThaiKy() mỗi 3 giây cho tới khi bước của người dùng không còn "DANG_XU_LY"
+  // nữa (thành "DA_KY" = xong, hoặc quay lại "DEN_LUOT" = xử lý nền lỗi, xem ghiChu) — tối
+  // đa ~2 phút (40 lần) rồi báo "đang xử lý lâu hơn dự kiến" thay vì treo mãi hộp loading.
+  const doiTrangThaiKyPdfNen_ = async (maYeuCau, { toiDa = 40, cachQuang = 3000 } = {}) => {
+    for (let lan = 0; lan < toiDa; lan++) {
+      await new Promise((r) => setTimeout(r, cachQuang));
+      const kq = await kiemTraTrangThaiKy(maYeuCau);
+      if (kq.trangThaiBuoc !== 'DANG_XU_LY') return kq;
+    }
+    return null; // timeout — chưa rõ kết quả, để người dùng tự kiểm tra lại sau
+  };
+
   const kyMutation = useMutation({
     mutationFn: kyYeuCau,
-    onSuccess: (ket) => {
+    onSuccess: async (ket, bienDaGui) => {
+      setDangXem(null);
+      // ĐÃ SỬA (Bước 6): TRƯỚC ĐÂY luôn invalidate query + báo "Đã ký thành công" NGAY —
+      // đúng cho luồng Docs/GBTT (xong thật trong request) nhưng SAI cho luồng PDF/pdf-lib
+      // mới (chỉ mới BẮT ĐẦU xử lý nền, invalidate ngay sẽ nạp lại danh sách với dữ liệu
+      // CŨ — tab "Lịch sử" hiện lại "Đang ký"/nút "Thu hồi" dù thực ra đã ký xong phần
+      // mình, gây hiểu nhầm "vào lịch sử không xem được" — xem hội thoại 2026-09-09). Giờ
+      // tách 2 nhánh: dangXuLy=true thì hiện hộp "Đang xử lý...", TỰ CHỜ kết quả thật rồi
+      // mới invalidate + báo kết quả CUỐI CÙNG; ngược lại (GBTT) giữ nguyên hành vi cũ.
+      if (ket?.dangXuLy) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Đang xử lý chữ ký...',
+          text: ket.thongBao || 'Có thể mất tới khoảng 1 phút, vui lòng đợi...',
+          allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false,
+          didOpen: () => Swal.showLoading(),
+        });
+        const ketQua = await doiTrangThaiKyPdfNen_(bienDaGui.maYeuCau);
+        queryClient.invalidateQueries({ queryKey: ['choToiKy'] });
+        queryClient.invalidateQueries({ queryKey: ['lichSuKy'] });
+        if (!ketQua) {
+          Swal.fire({ icon: 'warning', title: 'Đang xử lý lâu hơn dự kiến', text: 'Vào tab "Đã ký / Lịch sử" kiểm tra lại sau ít phút.' });
+        } else if (ketQua.trangThaiBuoc === 'DA_KY') {
+          Swal.fire({
+            icon: 'success', title: 'Đã ký thành công',
+            text: ketQua.hoanTat ? 'Văn bản đã đủ chữ ký và hoàn tất.' : 'Đang chờ người tiếp theo ký.',
+          });
+        } else {
+          Swal.fire({ icon: 'error', title: 'Xử lý ký thất bại', text: ketQua.ghiChu || 'Đã tự đưa về trạng thái chờ ký lại — bấm "Ký" lại để thử lại.' });
+        }
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ['choToiKy'] });
       queryClient.invalidateQueries({ queryKey: ['lichSuKy'] });
-      setDangXem(null);
       Swal.fire({
         icon: 'success',
         title: 'Đã ký thành công',
@@ -126,8 +178,45 @@ const ChoKyPage = () => {
   const moModal = (row, coTheKy) => setDangXem({ ...row, coTheKy });
   const dongModal = () => setDangXem(null);
 
+  // ĐÃ SỬA (Ký điện tử Pha 2 — Bước 7): CHỈ khi tài khoản có cấu hình chữ ký số (coTheKyCA)
+  // mới hỏi thêm 1 bước "ký bằng ảnh hay ký số" — chính người ký (chủ thuê bao CA) tự chọn
+  // ngay lúc này, KHÔNG phải cấu hình cố định sẵn theo chức danh (xem lại thiết kế ban đầu ở
+  // Quanlysv.gs — đã sửa vì 1 người có thể muốn ký ảnh cho văn bản này, ký số cho văn bản
+  // khác). Tài khoản không có CA (đa số) thì hành vi giữ nguyên 100% — thẳng vào hộp xác
+  // nhận ký ảnh như trước, không có bước hỏi thêm nào.
   const xacNhanKy = () => {
     if (!dangXem || !dangXem.coTheKy) return;
+    if (coTheKyCA) {
+      Swal.fire({
+        icon: 'question',
+        title: 'Chọn cách ký',
+        input: 'radio',
+        inputOptions: {
+          ANH: 'Ký bằng ảnh chữ ký cá nhân (như thường)',
+          CA: 'Ký bằng chữ ký số (CA) — cần xác nhận trên ứng dụng chữ ký số của bạn',
+        },
+        inputValidator: (v) => (!v ? 'Vui lòng chọn 1 cách ký' : undefined),
+        showCancelButton: true, confirmButtonText: 'Tiếp tục', cancelButtonText: 'Huỷ',
+      }).then((r) => {
+        if (r.isConfirmed) xacNhanKyBuoc2_(r.value);
+      });
+      return;
+    }
+    xacNhanKyBuoc2_('ANH');
+  };
+
+  const xacNhanKyBuoc2_ = (phuongThucKy) => {
+    if (phuongThucKy === 'CA') {
+      Swal.fire({
+        icon: 'question',
+        title: 'Ký bằng chữ ký số?',
+        html: 'Hệ thống sẽ gửi yêu cầu ký số tới thuê bao chữ ký số của bạn — cần xác nhận trên ứng dụng chữ ký số (VD: SmartCA) trước khi hoàn tất. Không thể sửa/thu hồi sau khi đã ký. Lưu ý: chữ ký số chỉ dùng được cho bước ký CUỐI CÙNG của văn bản.',
+        showCancelButton: true, confirmButtonText: 'Gửi yêu cầu ký số', cancelButtonText: 'Huỷ', confirmButtonColor: '#198754',
+      }).then((r) => {
+        if (r.isConfirmed) kyMutation.mutate({ maYeuCau: dangXem.maYeuCau, phuongThucKy: 'CA' });
+      });
+      return;
+    }
     // ĐÃ SỬA (theo yêu cầu — xem trước ảnh chữ ký ngay trong hộp xác nhận cuối cùng, ngay
     // trước lúc bấm Ký thật): đổi "text" thành "html", chèn thêm ảnh preview nếu đã tải
     // được (chuKyCuaToi.coChuKy) — không có thì vẫn hiện chữ như cũ, không chặn luồng ký
@@ -144,7 +233,7 @@ const ChoKyPage = () => {
           : ''),
       showCancelButton: true, confirmButtonText: 'Ký ngay', cancelButtonText: 'Huỷ', confirmButtonColor: '#198754',
     }).then((r) => {
-      if (r.isConfirmed) kyMutation.mutate({ maYeuCau: dangXem.maYeuCau });
+      if (r.isConfirmed) kyMutation.mutate({ maYeuCau: dangXem.maYeuCau, phuongThucKy: 'ANH' });
     });
   };
 
@@ -177,6 +266,11 @@ const ChoKyPage = () => {
       if (r.isConfirmed) huyMutation.mutate({ maYeuCau: row.maYeuCau });
     });
   };
+
+  // ĐÃ THÊM — Ký điện tử Pha 2 (Bước 3): nhãn nhỏ cạnh tên văn bản cho biết chế độ ký —
+  // chỉ hiện khi SONG_SONG (TUAN_TU là mặc định/đa số, không cần nhắc lại mọi dòng).
+  const renderBadgeCheDoKy = (cheDoKy) =>
+    cheDoKy === 'SONG_SONG' ? <span className="badge bg-info text-dark ms-1">Song song</span> : null;
 
   const renderBadgeBuoc = (cacBuoc) => (cacBuoc || []).map((b) => (
     <span
@@ -263,7 +357,7 @@ const ChoKyPage = () => {
                 <tbody>
                   {danhSachChoKy.map((row) => (
                     <tr key={row.maYeuCau}>
-                      <td>{row.tieuDe}</td>
+                      <td>{row.tieuDe}{renderBadgeCheDoKy(row.cheDoKy)}</td>
                       <td className="fw-bold">{row.hoTenSV}</td>
                       <td>{row.nganh}</td>
                       <td>{row.nguoiTaoTen}</td>
@@ -311,7 +405,7 @@ const ChoKyPage = () => {
                 <tbody>
                   {danhSachLichSu.map((row) => (
                     <tr key={row.maYeuCau}>
-                      <td>{row.tieuDe}</td>
+                      <td>{row.tieuDe}{renderBadgeCheDoKy(row.cheDoKy)}</td>
                       <td className="fw-bold">{row.hoTenSV}</td>
                       <td>{row.nganh}</td>
                       <td>{row.nguoiTaoTen}{row.laNguoiTao ? ' (bạn)' : ''}</td>
@@ -425,6 +519,22 @@ const ChoKyPage = () => {
                 {xemTruoc?.pdfUrlCuoiCung && (
                   <div className="alert alert-success">
                     Văn bản đã hoàn tất. <a href={xemTruoc.pdfUrlCuoiCung} target="_blank" rel="noreferrer">Mở/tải PDF cuối cùng</a>.
+                  </div>
+                )}
+
+                {/* ĐÃ THÊM: tài liệu tham khảo/minh chứng đính kèm (nếu có) — KHÔNG phải file
+                    để ký, chỉ để người ký xem thêm trước khi quyết định — xem taiLieuThamKhao
+                    (taoYeuCauKyTuFile/xemTruocYeuCauKy, Quanlysv.gs). Không có gì thì không
+                    hiện khối này, không đổi giao diện cho các yêu cầu cũ/không có file đính
+                    kèm (mảng rỗng/undefined). */}
+                {xemTruoc?.taiLieuThamKhao?.length > 0 && (
+                  <div className="mt-3">
+                    <div className="fw-bold small mb-1"><i className="bi bi-paperclip me-1"></i>Tài liệu tham khảo/minh chứng đính kèm:</div>
+                    <ul className="small mb-0">
+                      {xemTruoc.taiLieuThamKhao.map((tl, idx) => (
+                        <li key={idx}><a href={tl.url} target="_blank" rel="noreferrer">{tl.tenFile}</a></li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>

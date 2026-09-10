@@ -8,21 +8,29 @@ import html2pdf from 'html2pdf.js';
 import * as XLSX from 'xlsx';
 import {
   fetchThamDinhData, duyetTrungTuyen, baoThieuHoSo, luuKetQuaThamDinh, banGiaoDaoTao,
-  scanTranscriptImage, compareCurriculumAI, exportThamDinhTemplate,
+  scanTranscriptImage, compareCurriculumAI, exportThamDinhTemplate, fetchConfig,
+  fetchDanhSachMienVanBangCu, // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2)
+  fetchDanhSachMienTheoChungChi, scanChungChiImage, // ĐÃ THÊM (Nguồn 3 "miễn theo chứng chỉ")
   taoYeuCauKyGBTT // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4)
 } from '../../api/studentApi';
 import {
   getVal, normalizeText, getRowKey, generateMaSV, getBestScore,
   getRawScoreNumber, getRawDateNumber, getMissingDocs, getMissingTienQuyet, getAppState,
-  calculateScores, isSafeDriveUrl, getCandidateScanKey
+  calculateScores, isSafeDriveUrl, getCandidateScanKey,
+  // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2 "miễn theo văn bằng cũ",
+  // 2026-09-09): xem chú thích đầy đủ tại nơi định nghĩa trong thamDinhHelpers.js.
+  layAllChuanTuCompareResult, layNguon1ThuanTuy, tinhTatCaCacDongTuDong
 } from './thamDinhHelpers';
-import { DICT_NGANH, DICT_TO_HOP, SUBJ_MAP } from './thamDinhConfig';
+import { DICT_NGANH, DICT_TO_HOP, SUBJ_MAP, DS_LOAI_CHUNG_CHI } from './thamDinhConfig';
 import DateRangePicker from './DateRangePicker';
 import './ThamDinh.css';
 // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3): bảng "chọn người ký" nhúng vào modal xác nhận
 // hàng loạt khi bấm "Xuất GBTT + gửi ký" — xem thêm chú thích tại nơi dùng bên dưới.
 import ChonNguoiKyModal from '../KySo/ChonNguoiKyModal';
 import CanXacNhanBadge from '../../components/DinhDanh/CanXacNhanBadge'; // ĐÃ THÊM (Pha 1·D1)
+// ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ, 2026-09-09): modal riêng near-fullscreen
+// để gộp/gỡ tay bảng đối sánh — xem chú thích đầu file DoiSanhModal.jsx.
+import DoiSanhModal from './DoiSanhModal';
 
 // ĐÃ THÊM: hồ sơ đến từ trang "Thu hồ sơ nhập học" (kênh "Thu hồ sơ trực tiếp") đã trúng
 // tuyển sẵn khi tạo, KHÔNG đi qua luồng thẩm định/duyệt của Xét tuyển — dùng để (1) ẩn/hiện
@@ -135,7 +143,24 @@ const ThamDinhPage = () => {
   const [selectedKeys, setSelectedKeys] = useState(new Set());
   const [viewingIndex, setViewingIndex] = useState(null); // ĐÃ SỬA (Pha 5): lưu vị trí trong filteredData thay vì row trực tiếp, để làm nút Trước/Sau
   const [crossCheckNganh, setCrossCheckNganh] = useState(''); // "khảo sát ngành khác" — rỗng = dùng đúng ngành đăng ký thật
-  const [scanCache, setScanCache] = useState(loadScanCache); // { [scanKey]: { transcriptJSON, compareResult, scanFileName } }
+  const [scanCache, setScanCache] = useState(loadScanCache); // { [scanKey]: { transcriptJSON, compareResult, scanFileName, ketQuaDoiSanhDaChinh, mienVanBangCu } }
+  // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ, 2026-09-09): cờ mở/đóng modal đối sánh
+  // chi tiết (DoiSanhModal.jsx) — tách khỏi viewingIndex vì modal này lồng BÊN TRONG modal
+  // chi tiết đã có, không thay thế nó.
+  const [doiSanhModalOpen, setDoiSanhModalOpen] = useState(false);
+  // ĐÃ THÊM: cấu hình chung (hiện chỉ dùng TranTinChiCongNhan — trần cảnh báo tín chỉ công
+  // nhận cho DoiSanhModal) — staleTime dài vì hầu như không đổi trong 1 phiên làm việc.
+  const { data: appConfig } = useQuery({ queryKey: ['appConfig'], queryFn: fetchConfig, staleTime: 5 * 60 * 1000 });
+  // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2 "miễn theo văn bằng cũ",
+  // 2026-09-09): 3 bảng miễn cố định (Điều 6), đọc từ tab "MienTheoVanBangCu" — dữ liệu quy
+  // định gần như không đổi trong 1 phiên làm việc, staleTime dài như appConfig.
+  const { data: dsMienVanBangCu } = useQuery({ queryKey: ['dsMienVanBangCu'], queryFn: fetchDanhSachMienVanBangCu, staleTime: 5 * 60 * 1000 });
+  // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 3 "miễn theo chứng chỉ", 2026-09-10):
+  // bảng tra Điều 8-11 (tab "MienTheoChungChi") — cùng lý do staleTime dài như dsMienVanBangCu.
+  const { data: dsMienTheoChungChi } = useQuery({ queryKey: ['dsMienTheoChungChi'], queryFn: fetchDanhSachMienTheoChungChi, staleTime: 5 * 60 * 1000 });
+  // ĐÃ THÊM (Nguồn 3): OCR 1 ảnh chứng chỉ — dùng chung 1 mutation cho MỌI dòng (mọi loại
+  // chứng chỉ), phân biệt bằng scanKey+dongId lúc gọi, không cần 1 mutation/dòng.
+  const scanChungChiMutation = useMutation({ mutationFn: ({ loaiChungChiValue, imageBase64, mimeType }) => scanChungChiImage(loaiChungChiValue, imageBase64, mimeType) });
   const fileInputRef = useRef(null);
   const [batchPreview, setBatchPreview] = useState(null);
   // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3): danh sách người ký đang chọn cho lần "Xuất
@@ -171,6 +196,11 @@ const ThamDinhPage = () => {
   // <select>/đệm số như Tháng nhập học, chỉ validate bằng regex khi hiện dòng xem trước +
   // khoá nút "Xác nhận" nếu sai định dạng, xem SO_QUYET_DINH_REGEX bên dưới).
   const [soQuyetDinh, setSoQuyetDinh] = useState('');
+  // ĐÃ THÊM (Ký điện tử Pha 2 — Bước 3): chế độ ký cho CẢ ĐỢT xuất này — 'TUAN_TU' (mặc
+  // định, giữ nguyên hành vi Pha 1: ký lần lượt đúng thứ tự chức danh) hoặc 'SONG_SONG'
+  // (mọi người ký cùng lúc, ký theo thứ tự bất kỳ, hoàn tất khi người CUỐI CÙNG bấm ký —
+  // bất kể vai trò). Xem action taoYeuCauKyGBTT/kyYeuCau (Quanlysv.gs).
+  const [cheDoKy, setCheDoKy] = useState('TUAN_TU');
   // ĐÃ THÊM: cờ đóng/mở menu xổ xuống của nút "Xuất file" trong modal thẩm định chi
   // tiết — modal được render bằng IIFE gọi có điều kiện (viewingIndex !== null && ...)
   // nên KHÔNG được khai báo useState bên trong đó (vi phạm Rules of Hooks), phải khai
@@ -562,25 +592,14 @@ const ThamDinhPage = () => {
     });
   };
 
-  // Đọc file ảnh/PDF -> base64, ảnh thì resize trước (giống hệt bản cũ: max chiều
-  // rộng 1200px, nén JPEG 80%) để giảm dung lượng gửi lên AI.
-  const handleScanFile = (row, file) => {
-    if (!file) return;
-    const scanKey = getCandidateScanKey(row);
-    updateScanCache(scanKey, { compareResult: null }); // quét bảng điểm mới -> kết quả đối sánh cũ không còn đúng nữa
-
-    const send = async (base64String, mimeType) => {
-      try {
-        const result = await scanMutation.mutateAsync({ imageBase64: base64String, mimeType });
-        updateScanCache(scanKey, { transcriptJSON: result, scanFileName: file.name, compareResult: null });
-      } catch (err) {
-        Swal.fire({ icon: 'error', title: 'Lỗi quét bảng điểm', text: err.message });
-      }
-    };
-
+  // Đọc file ảnh/PDF -> base64, ảnh thì resize trước (max chiều rộng 1200px, nén JPEG 80%) để
+  // giảm dung lượng gửi lên AI. ĐÃ TÁCH RIÊNG (Nguồn 3, 2026-09-10) khỏi handleScanFile để
+  // dùng chung được cho cả quét bảng điểm (Nguồn 1) VÀ quét chứng chỉ (handleUploadChungChi)
+  // — hành vi giữ NGUYÊN 100% so với bản cũ trong handleScanFile.
+  const docFileThanhBase64 = (file, callback) => {
     if (file.type === 'application/pdf') {
       const reader = new FileReader();
-      reader.onloadend = () => send(reader.result.split(',')[1], 'application/pdf');
+      reader.onloadend = () => callback(reader.result.split(',')[1], 'application/pdf');
       reader.readAsDataURL(file);
     } else {
       const img = new Image();
@@ -592,9 +611,23 @@ const ThamDinhPage = () => {
         if (w > MAX_WIDTH) { h = Math.round((h * MAX_WIDTH) / w); w = MAX_WIDTH; }
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        send(canvas.toDataURL('image/jpeg', 0.8).split(',')[1], 'image/jpeg');
+        callback(canvas.toDataURL('image/jpeg', 0.8).split(',')[1], 'image/jpeg');
       };
     }
+  };
+
+  const handleScanFile = (row, file) => {
+    if (!file) return;
+    const scanKey = getCandidateScanKey(row);
+    updateScanCache(scanKey, { compareResult: null }); // quét bảng điểm mới -> kết quả đối sánh cũ không còn đúng nữa
+    docFileThanhBase64(file, async (base64String, mimeType) => {
+      try {
+        const result = await scanMutation.mutateAsync({ imageBase64: base64String, mimeType });
+        updateScanCache(scanKey, { transcriptJSON: result, scanFileName: file.name, compareResult: null });
+      } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Lỗi quét bảng điểm', text: err.message });
+      }
+    });
   };
 
   const handleCompare = async (row, targetNganh, transcriptJSON) => {
@@ -603,9 +636,148 @@ const ThamDinhPage = () => {
     try {
       const result = await compareMutation.mutateAsync({ nganh: targetNganh, transcript: transcriptJSON });
       updateScanCache(scanKey, { compareResult: result });
+      // ĐÃ THÊM (theo yêu cầu người dùng, 2026-09-10): nhắc cán bộ nhớ chọn "Miễn theo văn
+      // bằng cũ" (Nguồn 2, và sau này cả Nguồn 3) NGAY sau khi đối sánh xong — TRƯỚC khi mở
+      // "⚙️ Mở đối sánh chi tiết" xem/lưu kết quả — vì nếu mở chi tiết rồi lưu luôn mà quên
+      // tick thì bảng đã lưu sẽ thiếu các dòng miễn theo chính sách. Chỉ là lời nhắc, không
+      // chặn thao tác gì cả.
+      Swal.fire({
+        icon: 'info',
+        title: 'Đối sánh xong — nhớ chọn miễn theo văn bằng cũ',
+        html: 'Trước khi bấm "⚙️ Mở đối sánh chi tiết" để xem/lưu kết quả, hãy chọn ngay bên dưới xem thí sinh có <b>miễn theo văn bằng cũ</b> (Trung cấp/Cao đẳng/Đại học) hoặc chứng chỉ nào không — chọn sau khi đã lưu sẽ phải Reset và lưu lại.',
+        timer: 3200,
+        showConfirmButton: true,
+        confirmButtonText: 'Đã hiểu',
+      });
     } catch (err) {
       Swal.fire({ icon: 'error', title: 'Lỗi đối sánh', text: err.message });
     }
+  };
+
+  // ĐÃ SỬA (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 3 "miễn theo chứng chỉ", 2026-09-10):
+  // trước đây (Nguồn 2) hàm này tự tính lấy mẫu miễn văn bằng cũ rồi ghi đè trực tiếp — giờ
+  // GỘP vào 1 hàm dùng CHUNG (tinhLaiVaGhiDe) vì Nguồn 3 (và GDQP, Điều 8) THÊM 2 nguồn tự
+  // động nữa cần tính lại CÙNG LÚC với Nguồn 2 mỗi khi có gì đó đổi (tick văn bằng cũ HOẶC
+  // thêm/xoá 1 dòng chứng chỉ) — nếu để rời rạc như cũ (mỗi nơi tự tính rồi tự ghi đè) rất dễ
+  // 1 nguồn ghi đè mất kết quả của nguồn khác (vd tick văn bằng cũ xong xoá mất dòng GDQP vừa
+  // tính từ 1 dòng chứng chỉ khác). Logic hợp nhất nằm ở tinhTatCaCacDongTuDong
+  // (thamDinhHelpers.js) — xem chú thích đầy đủ ở đó.
+  const tinhLaiVaGhiDe = (scanKey, entry, overrides = {}) => {
+    const merged = { ...entry, ...overrides };
+    const allChuan = layAllChuanTuCompareResult(merged.compareResult);
+    const baselineNguon1 = layNguon1ThuanTuy(merged.ketQuaDoiSanhDaChinh || (merged.compareResult?.matched || []));
+    const { rows: dongTuDong, canhBao } = tinhTatCaCacDongTuDong({
+      mienVanBangCu: merged.mienVanBangCu,
+      dsMienVanBangCu,
+      dsChungChiDaQuet: merged.dsChungChiDaQuet,
+      dsMienTheoChungChi,
+      allChuan,
+      transcriptJSON: merged.transcriptJSON,
+      baselineNguon1,
+    });
+    updateScanCache(scanKey, { ...overrides, ketQuaDoiSanhDaChinh: [...baselineNguon1, ...dongTuDong] });
+    return canhBao;
+  };
+
+  // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2 "miễn theo văn bằng cũ",
+  // 2026-09-09): tick "Trung cấp/Cao đẳng/Đại học" ở khu vực quét bảng điểm -> tự áp mẫu
+  // miễn cố định (Điều 6, và từ Nguồn 3: cả dòng GDQP&AN theo Điều 8 nếu bảng điểm cũ có môn
+  // này) vào bản NHÁP session (scanCache.ketQuaDoiSanhDaChinh) — dùng ĐÚNG cơ chế draft có
+  // sẵn của Nguồn 1, KHÔNG viết cơ chế lưu riêng. Chỉ thay đổi bản nháp, KHÔNG đụng gì tới cột
+  // đã LƯU CHÍNH THỨC trên sheet (nếu có) — nếu hồ sơ đã lưu trước đó, cán bộ cần tự mở "⚙️ Mở
+  // đối sánh chi tiết" rồi bấm "Đặt lại (Reset)" để đưa mẫu miễn mới vào bản đang chỉnh, rồi
+  // Lưu lại (đúng hành vi Reset đã sửa ở DoiSanhModal.jsx — Reset giờ tái áp cả 3 nguồn).
+  const handleChonMienVanBangCu = (row, scanKey, giaTri) => {
+    const entry = scanCache[scanKey] || {};
+    if (!entry.compareResult) {
+      Swal.fire({ icon: 'info', title: 'Cần đối sánh CTĐT trước', text: 'Bấm "⚖️ Phân tích & Đối sánh CTĐT" trước khi chọn mẫu miễn theo văn bằng cũ.' });
+      return;
+    }
+    const canhBao = tinhLaiVaGhiDe(scanKey, entry, { mienVanBangCu: giaTri });
+    if (canhBao.length > 0) {
+      Swal.fire({ icon: 'warning', title: 'Một số điểm cần chú ý', html: canhBao.map(c => `• ${c}`).join('<br/>') + '<br/><br/>Có thể tự bổ sung tay qua "⚙️ Mở đối sánh chi tiết" nếu thật sự cần.' });
+    } else if (giaTri) {
+      Swal.fire({ icon: 'success', title: `Đã áp mẫu miễn (${giaTri})`, timer: 1400, showConfirmButton: false });
+    }
+  };
+
+  // ===================== Nguồn 3 — MIỄN THEO CHỨNG CHỈ (Điều 8-11) =====================
+  // UI đã chốt qua trao đổi (2026-09-10): mỗi dòng cán bộ CHỌN LOẠI CHỨNG CHỈ trước, rồi mới
+  // bấm upload ảnh — OCR xong tự thêm 1 dòng KẾT QUẢ vào danh sách + tự "mọc" thêm 1 dòng
+  // trống mới (không cần bấm nút "+"). "Loại đang chọn cho dòng trống" cũng lưu trong
+  // scanCache (entry.loaiChungChiDangChon) để không mất khi đổi tab/mở lại modal chi tiết.
+  const handleChonLoaiChungChiMoi = (scanKey, giaTri) => {
+    updateScanCache(scanKey, { loaiChungChiDangChon: giaTri });
+  };
+
+  const handleUploadChungChi = (row, scanKey, loaiChungChiValue, file) => {
+    if (!file || !loaiChungChiValue) return;
+    const entry = scanCache[scanKey] || {};
+    if (!entry.compareResult) {
+      Swal.fire({ icon: 'info', title: 'Cần đối sánh CTĐT trước', text: 'Bấm "⚖️ Phân tích & Đối sánh CTĐT" trước khi upload chứng chỉ.' });
+      return;
+    }
+    const dongId = 'cc-' + Date.now() + '-' + Math.round(Math.random() * 1e6);
+    const dsHienTai = entry.dsChungChiDaQuet || [];
+    const dongDangQuet = { id: dongId, loaiChungChiValue, fileName: file.name, dangQuet: true, loi: null, ocrResult: null };
+    updateScanCache(scanKey, { dsChungChiDaQuet: [...dsHienTai, dongDangQuet], loaiChungChiDangChon: '' });
+
+    docFileThanhBase64(file, async (base64String, mimeType) => {
+      let canhBaoKetQua = [];
+      try {
+        const ocrResult = await scanChungChiMutation.mutateAsync({ loaiChungChiValue, imageBase64: base64String, mimeType });
+        setScanCache(prev => {
+          const e2 = prev[scanKey] || {};
+          const ds = (e2.dsChungChiDaQuet || []).map(d => d.id === dongId ? { ...d, dangQuet: false, ocrResult, loi: null } : d);
+          const { next, canhBao } = tinhLaiSauKhiDoiDsChungChi(prev, scanKey, e2, ds);
+          canhBaoKetQua = canhBao;
+          return next;
+        });
+        if (ocrResult && ocrResult.nhanDienDung === false) {
+          Swal.fire({ icon: 'warning', title: 'Ảnh có vẻ không đúng loại đã chọn', text: 'AI đọc được nội dung nhưng nghi ngờ đây KHÔNG phải đúng loại chứng chỉ đã chọn — cán bộ tự kiểm tra lại ảnh trước khi công nhận.' });
+        } else if (canhBaoKetQua.length > 0) {
+          Swal.fire({ icon: 'warning', title: 'Một số điểm cần chú ý', html: canhBaoKetQua.map(c => `• ${c}`).join('<br/>') });
+        }
+      } catch (err) {
+        setScanCache(prev => {
+          const e2 = prev[scanKey] || {};
+          const ds = (e2.dsChungChiDaQuet || []).map(d => d.id === dongId ? { ...d, dangQuet: false, loi: err.message } : d);
+          return tinhLaiSauKhiDoiDsChungChi(prev, scanKey, e2, ds).next;
+        });
+        Swal.fire({ icon: 'error', title: 'Lỗi quét chứng chỉ', text: err.message });
+      }
+    });
+  };
+
+  // Cả 2 nhánh (thành công/lỗi) của handleUploadChungChi VÀ handleXoaDongChungChi đều cần
+  // "cập nhật dsChungChiDaQuet RỒI tính lại toàn bộ dòng tự động" — gộp thao tác đó vào đây để
+  // tránh viết trùng logic setScanCache lồng nhau (setState functional update không đọc được
+  // scanCache "mới nhất" từ closure ngoài, phải tự tính next state rồi trả về nguyên khối). Trả
+  // thêm "canhBao" (không chỉ "next") để nơi gọi tự quyết định có hiện Swal cảnh báo hay không
+  // (vd hết hạn 24 tháng, chưa đủ bộ HSK+HSKK, GDQP "Hỏi TTQP"...).
+  const tinhLaiSauKhiDoiDsChungChi = (prevAll, scanKey, entryCu, dsChungChiMoi) => {
+    const merged = { ...entryCu, dsChungChiDaQuet: dsChungChiMoi };
+    const allChuan = layAllChuanTuCompareResult(merged.compareResult);
+    const baselineNguon1 = layNguon1ThuanTuy(merged.ketQuaDoiSanhDaChinh || (merged.compareResult?.matched || []));
+    const { rows: dongTuDong, canhBao } = tinhTatCaCacDongTuDong({
+      mienVanBangCu: merged.mienVanBangCu,
+      dsMienVanBangCu,
+      dsChungChiDaQuet: dsChungChiMoi,
+      dsMienTheoChungChi,
+      allChuan,
+      transcriptJSON: merged.transcriptJSON,
+      baselineNguon1,
+    });
+    const entryMoi = { ...entryCu, dsChungChiDaQuet: dsChungChiMoi, ketQuaDoiSanhDaChinh: [...baselineNguon1, ...dongTuDong] };
+    const next = { ...prevAll, [scanKey]: entryMoi };
+    try { sessionStorage.setItem(SCAN_CACHE_KEY, JSON.stringify(next)); } catch (e) { /* vượt quota thì bỏ qua, cache trong state vẫn dùng được trong phiên hiện tại */ }
+    return { next, canhBao };
+  };
+
+  const handleXoaDongChungChi = (scanKey, dongId) => {
+    const entry = scanCache[scanKey] || {};
+    const dsMoi = (entry.dsChungChiDaQuet || []).filter(d => d.id !== dongId);
+    setScanCache(prev => tinhLaiSauKhiDoiDsChungChi(prev, scanKey, prev[scanKey] || entry, dsMoi).next);
   };
 
   const handleExportTemplate = async (row, targetNganh, scanEntry) => {
@@ -897,6 +1069,7 @@ const ThamDinhPage = () => {
       return;
     }
     setNguoiKyGBTT([]);
+    setCheDoKy('TUAN_TU');
     setBatchPreview({ type: 'gbtt', validRows: [row], excludedNote: '' });
   };
 
@@ -945,7 +1118,7 @@ const ThamDinhPage = () => {
 
     // ĐÃ THÊM (Bước 3): mở lại bảng chọn người ký từ đầu mỗi lần bấm "Xuất GBTT" —
     // ChonNguoiKyModal sẽ tự seed lại từ cấu hình ChucDanhKy vì nguoiKyGBTT về [].
-    if (type === 'gbtt') setNguoiKyGBTT([]);
+    if (type === 'gbtt') { setNguoiKyGBTT([]); setCheDoKy('TUAN_TU'); }
 
     setBatchPreview({ type, validRows, excludedNote });
   };
@@ -989,6 +1162,7 @@ const ThamDinhPage = () => {
           ngayXuatGiayBao,
           thangNhapHoc,
           soQuyetDinh: soQuyetDinh.trim(),
+          cheDoKy,
         });
         const results = Array.isArray(ket?.results) ? ket.results : [];
         const soLoi = results.filter(r => r.status === 'error').length;
@@ -1596,6 +1770,77 @@ const ThamDinhPage = () => {
                         {scanEntry.scanFileName && (
                           <div className="small text-muted mt-1" title={scanEntry.scanFileName}>File: {truncateMiddle(scanEntry.scanFileName)}</div>
                         )}
+                        {/* ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2 "miễn theo văn bằng
+                            cũ", 2026-09-09): tick 1 trong 3 loại văn bằng cũ -> tự áp mẫu miễn cố định
+                            (Điều 6) vào bảng đối sánh — xem handleChonMienVanBangCu. Chỉ bật được sau
+                            khi đã có compareResult (cần khung CTĐT để so tên học phần). */}
+                        <div className="d-flex align-items-center gap-2 flex-wrap mt-2 pt-2" style={{ borderTop: '1px dashed #ccc' }}>
+                          <span className="small text-muted">Miễn theo văn bằng cũ:</span>
+                          {['', 'Trung cấp', 'Cao đẳng', 'Đại học'].map(opt => (
+                            <div className="form-check form-check-inline mb-0" key={opt || 'khong'}>
+                              <input
+                                className="form-check-input" type="radio"
+                                id={`mvb-${scanKey}-${opt || 'khong'}`}
+                                name={`mvb-${scanKey}`}
+                                disabled={!hasCompare}
+                                checked={(scanEntry.mienVanBangCu || '') === opt}
+                                onChange={() => handleChonMienVanBangCu(row, scanKey, opt)}
+                              />
+                              <label className="form-check-label small" htmlFor={`mvb-${scanKey}-${opt || 'khong'}`}>{opt || 'Không'}</label>
+                            </div>
+                          ))}
+                          {!hasCompare && <span className="small text-muted fst-italic">(cần đối sánh CTĐT trước)</span>}
+                        </div>
+                        {/* ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 3 "miễn theo chứng
+                            chỉ", 2026-09-10): mỗi dòng chọn "Loại chứng chỉ" TRƯỚC rồi mới upload
+                            ảnh — OCR xong tự thêm dòng kết quả + tự "mọc" thêm dòng trống mới (không
+                            cần bấm nút "+"). Xem handleUploadChungChi/handleXoaDongChungChi. */}
+                        <div className="mt-2 pt-2" style={{ borderTop: '1px dashed #ccc' }}>
+                          <div className="small text-muted mb-1">Miễn theo chứng chỉ (Ngoại ngữ / Tin học / LLCT / GDQP&AN):</div>
+                          {!hasCompare && <span className="small text-muted fst-italic">(cần đối sánh CTĐT trước)</span>}
+                          {hasCompare && (
+                            <>
+                              {(scanEntry.dsChungChiDaQuet || []).map(dong => (
+                                <div key={dong.id} className="d-flex align-items-center gap-2 small mb-1 flex-wrap">
+                                  <span className="badge bg-light text-dark border fw-normal" style={{ minWidth: 150 }}>
+                                    {DS_LOAI_CHUNG_CHI.find(o => o.value === dong.loaiChungChiValue)?.label || dong.loaiChungChiValue}
+                                  </span>
+                                  {dong.dangQuet && <span className="text-muted">⏳ Đang quét "{truncateMiddle(dong.fileName)}"...</span>}
+                                  {dong.loi && <span className="text-danger">❌ Lỗi: {dong.loi}</span>}
+                                  {dong.ocrResult && !dong.loi && (
+                                    <span className="text-success">
+                                      ✅ {dong.ocrResult.tenChungChi || '(không đọc được tên)'}
+                                      {dong.ocrResult.mucDat ? ` — mức đạt: ${dong.ocrResult.mucDat}` : ''}
+                                      {dong.ocrResult.ngayCap ? ` — cấp ngày: ${dong.ocrResult.ngayCap}` : ' — (không đọc được ngày cấp)'}
+                                    </span>
+                                  )}
+                                  <button type="button" className="btn btn-sm btn-link text-danger p-0" onClick={() => handleXoaDongChungChi(scanKey, dong.id)}>Xoá</button>
+                                </div>
+                              ))}
+                              <div className="d-flex align-items-center gap-2 flex-wrap">
+                                <select
+                                  className="form-select form-select-sm" style={{ maxWidth: 340 }}
+                                  value={scanEntry.loaiChungChiDangChon || ''}
+                                  onChange={e => handleChonLoaiChungChiMoi(scanKey, e.target.value)}
+                                >
+                                  <option value="">+ Thêm chứng chỉ...</option>
+                                  {DS_LOAI_CHUNG_CHI.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                                {scanEntry.loaiChungChiDangChon && (
+                                  <>
+                                    <input
+                                      type="file" accept="image/*,application/pdf" id={`cc-file-${scanKey}`} style={{ display: 'none' }}
+                                      onChange={e => { const f = e.target.files[0]; e.target.value = ''; handleUploadChungChi(row, scanKey, scanEntry.loaiChungChiDangChon, f); }}
+                                    />
+                                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => document.getElementById(`cc-file-${scanKey}`)?.click()}>
+                                      📎 Upload ảnh chứng chỉ
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="col-4">
@@ -1703,8 +1948,17 @@ const ThamDinhPage = () => {
 
                     return (
                       <div className="mb-2">
-                        <h6 className="fw-bold" style={{ color: '#2e7d32' }}>📋 Kết quả đối sánh sơ bộ (ngành: {targetNganh})</h6>
-                        <div className="table-responsive mb-2" style={{ maxHeight: 200 }}>
+                        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                          <h6 className="fw-bold mb-0" style={{ color: '#2e7d32' }}>📋 Kết quả đối sánh sơ bộ (ngành: {targetNganh})</h6>
+                          {/* ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ, 2026-09-09): mở cửa sổ
+                              riêng (near-fullscreen) để gộp/gỡ tay bảng đối sánh — xem
+                              DoiSanhModal.jsx. Bảng bên dưới vẫn giữ nguyên CHỈ ĐỂ XEM NHANH,
+                              không đổi hành vi cũ. */}
+                          <button type="button" className="btn btn-sm btn-outline-success" onClick={() => setDoiSanhModalOpen(true)}>
+                            ⚙️ Mở đối sánh chi tiết
+                          </button>
+                        </div>
+                        <div className="table-responsive mb-2 mt-2" style={{ maxHeight: 200 }}>
                           <table className="table table-sm table-bordered mb-0" style={{ fontSize: 12 }}>
                             <thead style={{ background: '#e8f5e9' }}>
                               <tr><th>Nhóm môn</th><th>Môn CTĐT chuẩn</th><th>TC chuẩn</th><th>Môn SV đã học</th><th>TC đã học</th><th>Kết luận AI</th></tr>
@@ -1765,6 +2019,24 @@ const ThamDinhPage = () => {
                       </div>
                     );
                   })()}
+
+                  {/* ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ, 2026-09-09): modal riêng
+                      near-fullscreen để gộp/gỡ tay bảng đối sánh — nằm ở đây (bên trong cùng
+                      IIFE của modal chi tiết) để có sẵn row/targetNganh/scanEntry trong closure,
+                      không cần truyền qua nhiều lớp props. */}
+                  <DoiSanhModal
+                    show={doiSanhModalOpen}
+                    onClose={() => setDoiSanhModalOpen(false)}
+                    row={row}
+                    cccd={getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '')}
+                    targetNganh={targetNganh}
+                    scanEntry={scanEntry}
+                    scanKey={getCandidateScanKey(row)}
+                    onUpdateScanCache={updateScanCache}
+                    tranTinChi={appConfig?.TranTinChiCongNhan}
+                    dsMienVanBangCu={dsMienVanBangCu}
+                    dsMienTheoChungChi={dsMienTheoChungChi}
+                  />
 
                   {/* ĐÃ THÊM: khung nguồn để xuất "Bảng thông tin sơ bộ (PDF)" — đặt ngoài màn
                       hình (position: fixed, left: -9999px) thay vì display:none vì html2canvas
@@ -2001,10 +2273,33 @@ const ThamDinhPage = () => {
                         )}
                       </div>
                     </div>
+                    {/* ĐÃ THÊM (Ký điện tử Pha 2 — Bước 3): chọn chế độ ký cho CẢ ĐỢT xuất này
+                        — xem chú thích đầy đủ tại chỗ khai báo state cheDoKy phía trên. */}
+                    <div className="mt-3">
+                      <label className="form-label small fw-bold mb-1 d-block">Chế độ ký</label>
+                      <div className="btn-group" role="group">
+                        <input type="radio" className="btn-check" name="cheDoKy" id="cheDoKyTuanTu"
+                          checked={cheDoKy === 'TUAN_TU'} onChange={() => setCheDoKy('TUAN_TU')} />
+                        <label className="btn btn-outline-primary btn-sm" htmlFor="cheDoKyTuanTu">
+                          Tuần tự — đúng thứ tự chức danh
+                        </label>
+                        <input type="radio" className="btn-check" name="cheDoKy" id="cheDoKySongSong"
+                          checked={cheDoKy === 'SONG_SONG'} onChange={() => setCheDoKy('SONG_SONG')} />
+                        <label className="btn btn-outline-primary btn-sm" htmlFor="cheDoKySongSong">
+                          Song song — ai ký trước cũng được
+                        </label>
+                      </div>
+                      <div className="form-text small">
+                        {cheDoKy === 'SONG_SONG'
+                          ? 'Mọi người ký cùng lúc nhận được thông báo ngay, ký theo thứ tự bất kỳ — hoàn tất khi người CUỐI CÙNG ký xong.'
+                          : 'Mỗi lần chỉ 1 người tới lượt, đúng thứ tự chức danh đã chọn ở bảng dưới — người sau chỉ nhận thông báo khi người trước đã ký.'}
+                      </div>
+                    </div>
                     <ChonNguoiKyModal loaiTaiLieu="GBTT" giaTri={nguoiKyGBTT} onChange={setNguoiKyGBTT} />
                     <div className="alert alert-info small mt-3 mb-0">
-                      ℹ️ Chưa gửi email thông báo cho người ký (sẽ bổ sung ở bước sau) — người
-                      ký cần tự vào menu tài khoản → "Hồ sơ chờ ký" để thấy và ký văn bản.
+                      ℹ️ Người ký sẽ nhận email thông báo ngay khi tới lượt (xem chế độ ký ở
+                      trên) — cũng có thể tự vào menu tài khoản → "Hồ sơ chờ ký" để xem/ký mà
+                      không cần đợi email.
                     </div>
                   </>
                 )}

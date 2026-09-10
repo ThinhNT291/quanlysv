@@ -6,6 +6,20 @@ import Swal from 'sweetalert2';
 // Khai báo link GAS để fetch Lịch sử (Thay đúng link của ông vào đây)
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
 
+// ĐÃ SỬA (phát hiện khi test Ký điện tử Pha 2 — lỗi "Maximum update depth exceeded" tại
+// dòng setChiTieuLocal bên dưới): hằng số module-level, KHÔNG khai báo `[]` trực tiếp làm
+// giá trị mặc định ngay tại chỗ destructuring `const { data: chiTieuData = [] } = useQuery`
+// — mỗi lần `data` còn undefined (đang tải/đang refetch), JS tạo MỘT MẢNG RỖNG MỚI (tham
+// chiếu khác) cho giá trị mặc định đó ở MỖI LẦN RENDER, dù nội dung luôn rỗng như nhau.
+// useEffect bên dưới có `chiTieuData` trong mảng dependency — React so sánh dependency
+// bằng tham chiếu (Object.is), thấy "khác" mỗi lần render nên chạy lại effect mỗi lần,
+// gọi setChiTieuLocal(...) mỗi lần, gây re-render, lại tạo `[]` mới, lại chạy effect...
+// vòng lặp vô hạn cho tới khi query thật sự có dữ liệu (tham chiếu ổn định). Query càng
+// chậm trả lời (GAS đang bận, nhiều người dùng cùng lúc...) thì vòng lặp này càng chạy
+// lâu, browser càng "treo" rõ rệt — dùng CHUNG 1 tham chiếu cố định ở đây để defaut value
+// luôn là ĐÚNG 1 mảng duy nhất, không đổi giữa các lần render.
+const CHI_TIEU_RONG = [];
+
 const SettingsPage = () => {
   const queryClient = useQueryClient();
   const [localConfig, setLocalConfig] = useState(null);
@@ -116,7 +130,7 @@ const SettingsPage = () => {
   // riêng (ChiTieuTuyenSinh, action getChiTieu/saveChiTieu) vì bản chất khác CauHinh:
   // đây là số liệu GẮN VỚI TỪNG NĂM, tích luỹ qua nhiều năm chứ không phải danh mục
   // "hiện có gì" duy nhất như Ngành/Khóa/Hệ đào tạo ở trên.
-  const { data: chiTieuData = [] } = useQuery({
+  const { data: chiTieuData = CHI_TIEU_RONG } = useQuery({
     queryKey: ['chiTieuTuyenSinh'],
     queryFn: fetchChiTieu,
   });
@@ -193,11 +207,6 @@ const SettingsPage = () => {
                 {saveMutation.isPending ? 'Đang lưu...' : <><i className="bi bi-save me-2"></i>Lưu tất cả thay đổi</>}
             </button>
         </div>
-      </div>
-
-      <div className="alert alert-info border-0 shadow-sm">
-        <i className="bi bi-info-circle-fill me-2"></i>
-        Nhập thêm ở ô trống. <strong>Nhấp đúp chuột</strong> (Double-click) vào chữ để sửa đổi, hoặc bấm dấu <strong className="text-danger">X</strong> để xóa.
       </div>
 
       {/* ĐÃ THÊM: Chỉ tiêu tuyển sinh — nhập theo từng năm, mỗi năm 1 số cho mỗi ngành.
@@ -337,7 +346,7 @@ const SettingsPage = () => {
                                           handleRemoveItem(configObj.key, idx);
                                           setEditingItem({ category: null, index: null, value: '' });
                                       }} title="Xóa luôn mục này">
-                                          <i className="bi bi-trash-fill fs-5"></i>
+                                          <i className="bi bi-trash-fill fs-5">X</i>
                                       </button>
                                   </div>
                               ) : (
@@ -353,7 +362,7 @@ const SettingsPage = () => {
                                       </span>
                                       
                                       <button className="btn btn-sm text-danger p-0 m-0 ms-2" onClick={() => handleRemoveItem(configObj.key, idx)} title="Xóa">
-                                          <i className="bi bi-trash-fill fs-6"></i>
+                                          <i className="bi bi-trash-fill fs-6">X</i>
                                       </button>
                                   </>
                               )}

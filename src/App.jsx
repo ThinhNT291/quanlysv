@@ -17,6 +17,7 @@ import KhoSinhVienPage from './pages/KhoSinhVien/KhoSinhVienPage'; // ĐÃ THÊM
 import ChiTietHoSoKhoPage from './pages/KhoSinhVien/ChiTietHoSoKhoPage'; // ĐÃ THÊM: trang chi tiết 1 hồ sơ trong Kho
 import HoSoCaNhanPage from './pages/HoSoCaNhan/HoSoCaNhanPage'; // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 2): thay placeholder "đang xây dựng" cũ
 import ChoKyPage from './pages/KySo/ChoKyPage'; // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): trang "Hồ sơ chờ ký"
+import TaoYeuCauKySoPage from './pages/KySo/TaoYeuCauKySoPage'; // ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6): trang "Tạo yêu cầu ký số" (route /ho-so-ky-so)
 
 // ĐÃ THÊM: helper so quyền không phân biệt hoa/thường, hỗ trợ 1 tài khoản có
 // nhiều role cùng lúc (userRoles là mảng, khớp với "roles" mảng backend trả về ở
@@ -192,6 +193,7 @@ const App = () => {
     '/user-stats': 'Thống kê cá nhân',
     '/ho-so-ca-nhan': 'Hồ sơ cá nhân',
     '/ho-so-cho-ky': 'Hồ sơ chờ ký',
+    '/ho-so-ky-so': 'Tạo yêu cầu ký số',
   };
   useEffect(() => {
     if (!currentUser) { document.title = 'Đăng nhập'; return; }
@@ -587,6 +589,20 @@ const App = () => {
                           </NavLink>
                         </li>
                       )}
+                      {/* ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6): "Tạo yêu cầu ký số" — trang tải
+                          file PDF lên ký ngay (taoYeuCauKyTuFile), khớp đúng
+                          requireAuth(['ThamDinh','Admin']) của action đó bên GAS. */}
+                      {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
+                        <li>
+                          <NavLink
+                            to="/ho-so-ky-so"
+                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
+                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
+                          >
+                            <i className="bi bi-file-earmark-check me-2"></i>Tạo yêu cầu ký số
+                          </NavLink>
+                        </li>
+                      )}
                     </ul>
                   </li>
                 )}
@@ -726,6 +742,18 @@ const App = () => {
                 khoá theo role sẽ chặn nhầm đúng người cần vào nhất (vd Hiệu trưởng có thể
                 chỉ mang role CanBo trong hệ thống). Backend tự lọc theo g.userInfo.email. */}
             <Route path="/ho-so-cho-ky" element={<ChoKyPage />} />
+
+            {/* ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6): trang "Tạo yêu cầu ký số" — CÓ bọc
+                ProtectedRoute (khác /ho-so-ca-nhan, /ho-so-cho-ky ở trên) vì đây là hành
+                động TẠO yêu cầu ký (action taoYeuCauKyTuFile đòi requireAuth(['ThamDinh',
+                'Admin'])), không phải xem/ký dữ liệu của chính mình theo email — khớp đúng
+                allowedRoles=['ThamDinh'] (ProtectedRoute tự OR thêm Admin sẵn, xem định
+                nghĩa ở trên). */}
+            <Route path="/ho-so-ky-so" element={
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['ThamDinh']}>
+                <TaoYeuCauKySoPage />
+              </ProtectedRoute>
+            } />
 
             {/* Trang báo lỗi 404 */}
             <Route path="*" element={
