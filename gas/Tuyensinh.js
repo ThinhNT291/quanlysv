@@ -536,6 +536,35 @@ function hdGet_getThamDinhData(e) {
         const cleanHeaders = headers.map(h => String(h).toUpperCase().trim().replace(/\s+/g, ' '));
         const linkColIndex = cleanHeaders.indexOf("LINK HỒ SƠ");
 
+        // ĐÃ THÊM (2026-09-10 — ưu tiên hiển thị Mã sinh viên THẬT thay vì luôn để trang
+        // Thẩm định tự sinh mã tạm): dựng map cccd+nganh -> Mã sinh viên THẬT từ sheet KETQUA
+        // (đã duyệt trúng tuyển chính thức) — ưu tiên CAO NHẤT. Nếu không có trong KETQUA,
+        // giữ nguyên giá trị đã đọc thô ở cột "MÃ SINH VIÊN" ngay trên chính Trung Gian/Goc01
+        // (hồ sơ CŨ nhập tay qua "Hồ sơ cũ (có MSV)" bên Xét tuyển sẽ có sẵn ở đây) — ưu tiên
+        // THỨ NHÌ. Chỉ khi CẢ HAI đều trống, frontend (generateMaSV() trong thamDinhHelpers.js)
+        // mới tự sinh mã tạm để hiển thị — ưu tiên CUỐI CÙNG. Dùng lại kho_layDuLieuTho_() để
+        // tận dụng cache sẵn có (action 'timKiemKhoSinhVien' cũng đọc KETQUA qua đây), tránh
+        // mở thêm 1 lượt đọc Sheets sống mỗi lần tải trang Thẩm định.
+        const ketQuaMapMSV_ = {};
+        try {
+          const kqValuesTD = kho_layDuLieuTho_().kqValues;
+          if (kqValuesTD.length > 1) {
+            const kqHeadersTD = kqValuesTD[0].map(h => String(h).toUpperCase().trim().replace(/\s+/g, ' '));
+            const idxCccdKQTD = timCotTheoTen(kqHeadersTD, "CĂN CƯỚC", "SỐ CCCD", "CCCD");
+            const idxNganhKQTD = timCotTheoTen(kqHeadersTD, "NGÀNH ĐÀO TẠO", "NGÀNH");
+            const idxMaSVKQTD = timCotTheoTen(kqHeadersTD, "MÃ SINH VIÊN", "MÃ SV");
+            if (idxCccdKQTD !== -1 && idxNganhKQTD !== -1 && idxMaSVKQTD !== -1) {
+              for (let i = 1; i < kqValuesTD.length; i++) {
+                const cccdKQTD = String(kqValuesTD[i][idxCccdKQTD] || "").replace(/^['"]+|['"]+$/g, '').trim();
+                const maSVKQTD = String(kqValuesTD[i][idxMaSVKQTD] || "").replace(/^['"]+|['"]+$/g, '').trim();
+                if (!cccdKQTD || !maSVKQTD) continue;
+                const nganhKQTD = String(kqValuesTD[i][idxNganhKQTD] || "").trim().toLowerCase();
+                ketQuaMapMSV_[cccdKQTD + "_" + nganhKQTD] = maSVKQTD;
+              }
+            }
+          }
+        } catch (errKQMSV) { /* Không đọc được KETQUA thì bỏ qua — vẫn hiển thị được theo 2 ưu tiên còn lại. */ }
+
         // ĐÃ SỬA (rà soát Trunggian.gs): lấy rich-text + công thức TOÀN BỘ vùng dữ liệu
         // 1 lần duy nhất (đỡ gọi API nhiều lần trong vòng lặp) — chỉ khi thật sự có cột
         // "LINK HỒ SƠ" trên sheet.
@@ -560,6 +589,13 @@ function hdGet_getThamDinhData(e) {
             }
             rowObj[key] = val;
           }
+          // Áp ưu tiên CAO NHẤT (Mã sinh viên thật từ KETQUA) nếu có — ghi đè giá trị vừa
+          // đọc thô ở trên; nếu KETQUA không có, GIỮ NGUYÊN giá trị thô đọc được ngay từ cột
+          // "MÃ SINH VIÊN" trên Trung Gian (đã có sẵn trong rowObj, không cần làm gì thêm).
+          const cccdRowTD_ = String(rowObj["CĂN CƯỚC"] || rowObj["SỐ CCCD"] || rowObj["CCCD"] || "").trim();
+          const nganhRowTD_ = String(rowObj["NGÀNH"] || rowObj["NGÀNH ĐÀO TẠO"] || "").trim().toLowerCase();
+          const maSVThatKQTD_ = ketQuaMapMSV_[cccdRowTD_ + "_" + nganhRowTD_];
+          if (maSVThatKQTD_) rowObj["MÃ SINH VIÊN"] = maSVThatKQTD_;
           results.push(rowObj);
         }
         return responseJSON(200, "Thành công", results);
@@ -739,6 +775,10 @@ function hdGet_timKiemKhoSinhVien(e) {
         const idxKenhNopTG = timCotTheoTen(tgHeaders, "KÊNH NỘP");
         const idxSvKeyTG = timCotTheoTen(tgHeaders, "SV_KEY");
         const idxNgayNopTG = timCotTheoTen(tgHeaders, "TIME", "NGÀY NỘP", "NGÀY XỬ LÝ");
+        // ĐÃ THÊM (2026-09-10 — ưu tiên hiển thị Mã sinh viên THẬT): đọc thẳng cột "MÃ SINH
+        // VIÊN" ngay trên Trung Gian/Goc01 (hồ sơ CŨ nhập tay qua "Hồ sơ cũ (có MSV)" bên
+        // Xét tuyển sẽ có sẵn ở đây) — dùng làm ưu tiên THỨ NHÌ, sau KETQUA, trước khi tự sinh.
+        const idxMaSVTG = timCotTheoTen(tgHeaders, "MÃ SINH VIÊN", "MÃ SV");
 
         // ---- 2) Sheet KETQUA (đã duyệt trúng tuyển chính thức) ----
         const kqValues = duLieuTho.kqValues;
@@ -844,7 +884,13 @@ function hdGet_timKiemKhoSinhVien(e) {
           // generateMaSVTuChung() trả về có dấu nháy đơn ' đứng đầu (để Sheets ép kiểu Text
           // nếu ghi trực tiếp xuống ô) — ở đây chỉ dùng để HIỂN THỊ/TÌM KIẾM nên phải bỏ đi,
           // giống cách mọi nơi khác vẫn làm với CCCD/MSV đọc từ sheet.
+          // ĐÃ SỬA (2026-09-10): thêm ưu tiên THỨ NHÌ — Mã sinh viên đọc thẳng trên chính
+          // Trung Gian (idxMaSVTG) — trước đây thiếu bậc này nên hồ sơ CŨ đã có MSV thật
+          // nhưng CHƯA có trong KETQUA vẫn bị hiện mã tự sinh giả. Thứ tự đúng: KETQUA ->
+          // Mã sinh viên ở Goc01 -> tự sinh (chỉ khi cả 2 đều trống).
+          const maSVGoc01 = idxMaSVTG !== -1 ? String(row[idxMaSVTG] || "").replace(/^['"]+|['"]+$/g, '').trim() : "";
           const maSinhVien = (ketQuaCuaHang && ketQuaCuaHang.maSinhVien)
+            || maSVGoc01
             || (namXT && heDaoTao && hinhThuc && cccd ? generateMaSVTuChung(namXT, heDaoTao, hinhThuc, cccd).replace(/^'/, '') : "");
           const trangThaiVongDoi = suyRaTrangThaiVongDoi_(
             idxTrangThaiTG !== -1 ? String(row[idxTrangThaiTG] || "") : "", !!ketQuaCuaHang, !!daoTaoCuaHang
@@ -1126,6 +1172,9 @@ function hdGet_layChiTietHoSoKho(e) {
         const idxTrangThaiTG = timCotTheoTen(tgHeaders, "TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI");
         const idxKenhNopTG = timCotTheoTen(tgHeaders, "KÊNH NỘP");
         const idxNgayNopTG = timCotTheoTen(tgHeaders, "TIME", "NGÀY NỘP", "NGÀY XỬ LÝ");
+        // ĐÃ THÊM (2026-09-10 — xem chú thích đầy đủ tại hdGet_timKiemKhoSinhVien): ưu tiên
+        // THỨ NHÌ cho Mã sinh viên hiển thị, đọc thẳng trên Trung Gian.
+        const idxMaSVTG = timCotTheoTen(tgHeaders, "MÃ SINH VIÊN", "MÃ SV");
 
         const hoTen = idxHoTenTG !== -1 ? String(hangTG[idxHoTenTG] || "") : "";
         const khoa = idxKhoaTG !== -1 ? String(hangTG[idxKhoaTG] || "") : "";
@@ -1198,7 +1247,11 @@ function hdGet_layChiTietHoSoKho(e) {
           return v instanceof Date ? Utilities.formatDate(v, "GMT+7", "dd/MM/yyyy HH:mm") : String(v || "");
         })();
 
+        // ĐÃ SỬA (2026-09-10): thêm ưu tiên THỨ NHÌ (Mã sinh viên ở Goc01/Trung Gian) trước
+        // khi rơi xuống tự sinh — xem chú thích đầy đủ tại hdGet_timKiemKhoSinhVien.
+        const maSVGoc01 = idxMaSVTG !== -1 ? String(hangTG[idxMaSVTG] || "").replace(/^['"]+|['"]+$/g, '').trim() : "";
         const maSinhVien = maSinhVienTuKQ
+          || maSVGoc01
           || (namXT && heDaoTao && hinhThuc && cccd ? generateMaSVTuChung(namXT, heDaoTao, hinhThuc, cccd).replace(/^'/, '') : "");
         const trangThaiVongDoi = suyRaTrangThaiVongDoi_(
           idxTrangThaiTG !== -1 ? String(hangTG[idxTrangThaiTG] || "") : "", !!hangKQ, !!hangDT
