@@ -11,7 +11,8 @@ import {
   scanTranscriptImage, compareCurriculumAI, exportThamDinhTemplate, fetchConfig,
   fetchDanhSachMienVanBangCu, // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2)
   fetchDanhSachMienTheoChungChi, scanChungChiImage, // ĐÃ THÊM (Nguồn 3 "miễn theo chứng chỉ")
-  taoYeuCauKyGBTT // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4)
+  taoYeuCauKyGBTT, // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4)
+  xacNhanCapNhatDaDuyet // ĐÃ THÊM (theo phản hồi — "Xác nhận lại" hồ sơ đã duyệt có cập nhật)
 } from '../../api/studentApi';
 import {
   getVal, normalizeText, getRowKey, generateMaSV, getBestScore,
@@ -571,6 +572,9 @@ const ThamDinhPage = () => {
   };
 
   const approveMutation = useMutation({ mutationFn: duyetTrungTuyen });
+  // ĐÃ THÊM (theo phản hồi — "Xác nhận lại" hồ sơ đã duyệt có cập nhật KHÔNG được xuất biên
+  // nhận mới): mutation RIÊNG, tách khỏi approveMutation — xem triggerApprove bên dưới.
+  const xacNhanCapNhatMutation = useMutation({ mutationFn: xacNhanCapNhatDaDuyet });
   const missingMutation = useMutation({ mutationFn: baoThieuHoSo });
   const saveMutation = useMutation({ mutationFn: luuKetQuaThamDinh });
   const daoTaoMutation = useMutation({ mutationFn: banGiaoDaoTao });
@@ -578,7 +582,7 @@ const ThamDinhPage = () => {
   // thẩm định của hồ sơ (khác 3 mutation trên), nên không cần newOverrides khi xong.
   const gbttMutation = useMutation({ mutationFn: taoYeuCauKyGBTT });
 
-  // ===================== PHA 5: SCAN BẢNG ĐIỂM / ĐỐI SÁNH CTĐT / XUẤT TEMPLATE =====================
+  // ===================== PHA 5: SCAN BẢNG ĐIỂM AI / ĐỐI SÁNH CTĐT / XUẤT TEMPLATE =====================
 
   const scanMutation = useMutation({ mutationFn: ({ imageBase64, mimeType }) => scanTranscriptImage(imageBase64, mimeType) });
   const compareMutation = useMutation({ mutationFn: ({ nganh, transcript }) => compareCurriculumAI(nganh, transcript) });
@@ -944,21 +948,39 @@ const ThamDinhPage = () => {
     // không bấm nhầm khi chưa kịp xem lại phần vừa bổ sung.
     const rawTrangThaiApprove = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
     const chiTietCapNhatApprove = (rawTrangThaiApprove.match(/Có cập nhật: ([^)]*)\)/) || [])[1] || '';
+    // ĐÃ THÊM: đây là lượt "Xác nhận lại" (hồ sơ ĐÃ DUYỆT vừa được sửa/bổ sung) hay lượt
+    // "Duyệt trúng tuyển" ĐẦU TIÊN — quyết định gọi mutation nào ngay dưới đây.
+    const laXacNhanLai = !!chiTietCapNhatApprove;
     const confirm = await Swal.fire({
       icon: 'question',
-      title: chiTietCapNhatApprove ? 'Xác nhận LẠI hồ sơ vừa cập nhật?' : 'Duyệt trúng tuyển?',
-      text: chiTietCapNhatApprove
-        ? `Thí sinh ${hoTen} vừa cập nhật: ${chiTietCapNhatApprove}. Xác nhận lại "Đã duyệt"?`
+      title: laXacNhanLai ? 'Xác nhận LẠI hồ sơ vừa cập nhật?' : 'Duyệt trúng tuyển?',
+      text: laXacNhanLai
+        ? `Thí sinh ${hoTen} vừa cập nhật: ${chiTietCapNhatApprove}. Xác nhận lại "Đã duyệt" (KHÔNG xuất biên nhận mới)?`
         : `Duyệt trúng tuyển cho thí sinh: ${hoTen}?`,
       showCancelButton: true, confirmButtonText: 'Xác nhận', cancelButtonText: 'Huỷ'
     });
     if (!confirm.isConfirmed) return;
 
     try {
-      const result = await approveMutation.mutateAsync([buildTrungTuyenPayload(row)]);
-      Swal.fire({ icon: 'success', title: 'Thành công', text: 'Duyệt trúng tuyển thành công!' });
-      setOverride(getRowKey(row), { appState: 'Đã duyệt' });
-      if (result?.pdfUrl) window.open(result.pdfUrl, '_blank');
+      // ĐÃ SỬA (theo phản hồi — "Xác nhận lại" không được gửi biên nhận, và nút phải KHOÁ
+      // LẠI ngay sau khi bấm, chỉ mở lại khi hồ sơ có cập nhật MỚI): tách hẳn khỏi nhánh
+      // Duyệt trúng tuyển đầu tiên — gọi action nhẹ KHÔNG xuất PDF/KHÔNG gửi Google Chat, rồi
+      // ghi đè override "coCapNhatSauDuyet: false" để khoá nút NGAY trên UI (không cần đợi
+      // tải lại toàn bộ dữ liệu từ server — xem getEffectiveState/coCapNhatSauDuyet bên dưới,
+      // override chỉ mất tác dụng khi trang được tải lại, lúc đó nếu hồ sơ CÓ cập nhật mới
+      // thật (dữ liệu server đổi khác) sẽ tự nhận lại đúng, không bị "khoá cứng" oan).
+      if (laXacNhanLai) {
+        const result = await xacNhanCapNhatMutation.mutateAsync([buildTrungTuyenPayload(row)]);
+        const loi = (result?.results || []).find(r => r.status === 'error');
+        if (loi) throw new Error(loi.message);
+        Swal.fire({ icon: 'success', title: 'Đã xác nhận', text: 'Đã xác nhận lại hồ sơ — không xuất biên nhận mới.' });
+        setOverride(getRowKey(row), { appState: 'Đã duyệt', coCapNhatSauDuyet: false });
+      } else {
+        const result = await approveMutation.mutateAsync([buildTrungTuyenPayload(row)]);
+        Swal.fire({ icon: 'success', title: 'Thành công', text: 'Duyệt trúng tuyển thành công!' });
+        setOverride(getRowKey(row), { appState: 'Đã duyệt' });
+        if (result?.pdfUrl) window.open(result.pdfUrl, '_blank');
+      }
     } catch (err) {
       Swal.fire({ icon: 'error', title: 'Lỗi', text: err.message });
     }
@@ -1625,8 +1647,24 @@ const ThamDinhPage = () => {
         // thì: nút Duyệt mở khoá LẠI (đổi màu cam, để cán bộ xác nhận lại) thay vì khoá cứng
         // như hồ sơ đã duyệt bình thường; nút Y/C bổ sung cũng mở lại (tới khi hồ sơ đủ).
         const rawTrangThai = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
-        const coCapNhatSauDuyet = isDuyet && rawTrangThai.indexOf("Có cập nhật") !== -1;
+        // ĐÃ SỬA (theo phản hồi — bấm "Xác nhận lại" xong vẫn bấm tiếp được, không khoá):
+        // dữ liệu "rawTrangThai" ở trên là dữ liệu ĐÃ TẢI SẴN (rawData từ useQuery), KHÔNG tự
+        // refetch ngay sau khi xác nhận — nên dù backend đã ghi "Đã duyệt" sạch, hộp thoại vẫn
+        // đọc thấy hậu tố "(Có cập nhật: ...)" cũ cho tới khi trang tải lại dữ liệu, khiến nút
+        // không khoá lại. Giờ ưu tiên đọc override "coCapNhatSauDuyet" (set = false ngay sau
+        // khi triggerApprove xác nhận lại thành công, xem setOverride ở đó) nếu CÓ override
+        // cho đúng dòng này — override chỉ tồn tại trong phiên làm việc hiện tại (mất khi tải
+        // lại trang), lúc đó nếu hồ sơ THẬT SỰ có cập nhật mới, dữ liệu server mới sẽ tự phản
+        // ánh đúng lại, không bị khoá oan.
+        const coCapNhatOverride = localOverrides[getRowKey(row)]?.coCapNhatSauDuyet;
+        const coCapNhatSauDuyet = coCapNhatOverride !== undefined ? coCapNhatOverride : (isDuyet && rawTrangThai.indexOf("Có cập nhật") !== -1);
         const chiTietCapNhat = (rawTrangThai.match(/Có cập nhật: ([^)]*)\)/) || [])[1] || '';
+        // ĐÃ THÊM (theo phản hồi — "trạng thái thẩm định" trong bảng thông tin hiện nguyên cả
+        // dòng dài "(Có cập nhật: CỘT A, CỘT B, ...)" trông như 1 dòng tiêu đề dài dòng, thay
+        // vì chỉ cần biết NGẮN GỌN là hồ sơ đang cần xác nhận lại — chi tiết ĐẦY ĐỦ cột nào đổi
+        // vẫn còn nguyên trong hộp thoại xác nhận (chiTietCapNhat, xem triggerApprove) nên
+        // không mất thông tin, chỉ đỡ rối ở dòng hiển thị trạng thái thường trực trong modal.
+        const trangThaiHienThi = coCapNhatSauDuyet ? 'Đã duyệt (có cập nhật)' : rawTrangThai;
         const scores = calculateScores(row, targetNganh);
         const scanKey = getCandidateScanKey(row);
         const scanEntry = scanCache[scanKey] || {};
@@ -1642,9 +1680,13 @@ const ThamDinhPage = () => {
         // (coCapNhatSauDuyet=false) — hồ sơ đã duyệt mà vừa được sửa/bổ sung thì mở lại ĐÚNG
         // nút này (đổi nhãn/màu) để cán bộ xác nhận lại, thay vì khoá cứng như trước (khoá
         // cứng mới là nguyên nhân không có cách nào để "duyệt lại" hồ sơ có cập nhật).
-        const btnApproveDisabled = isSurveying || (isDuyet && !coCapNhatSauDuyet) || isBaoThieu || isTrucTiep || missingTQ.length > 0 || approveMutation.isPending;
+        // ĐÃ SỬA: gộp thêm xacNhanCapNhatMutation.isPending (action "Xác nhận lại" riêng,
+        // xem triggerApprove) — thiếu dòng này thì nút vẫn bấm được lia lịa trong lúc request
+        // "Xác nhận lại" trước đó còn đang chạy dở, đúng y hệt lỗi báo (không khoá được).
+        const btnApproveDisabled = isSurveying || (isDuyet && !coCapNhatSauDuyet) || isBaoThieu || isTrucTiep || missingTQ.length > 0 || approveMutation.isPending || xacNhanCapNhatMutation.isPending;
         const btnApproveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác'
           : approveMutation.isPending ? '⏳ Đang xuất Biên nhận...'
+          : xacNhanCapNhatMutation.isPending ? '⏳ Đang xác nhận...'
           : isTrucTiep ? '— Ngoài luồng thẩm định —'
           : coCapNhatSauDuyet ? '🔁 XÁC NHẬN LẠI (có cập nhật)'
           : isDuyet ? 'Đã duyệt'
@@ -1706,7 +1748,7 @@ const ThamDinhPage = () => {
                             trước khi bấm duyệt lại): hiện nguyên "rawTrangThai" (có thể mang hậu
                             tố "(Có cập nhật: ...)") thay vì "state" đã bị chuẩn hoá rút gọn — chỉ tô
                             cam đậm khi có cập nhật để dễ nhận ra ngay trong bảng thông tin. */}
-                        <tr><th>Trạng thái thẩm định</th><td className={coCapNhatSauDuyet ? 'text-warning fw-bold' : ''}>{rawTrangThai || state}</td></tr>
+                        <tr><th>Trạng thái thẩm định</th><td className={coCapNhatSauDuyet ? 'text-warning fw-bold' : ''}>{trangThaiHienThi || state}</td></tr>
                         {/* ĐÃ SỬA theo góp ý: chỉ tô đỏ nhạt ô BÊN PHẢI (ô chứa chữ "Thiếu...") thay
                             vì cả dòng — class "hoso-thieu-cell" đặt trực tiếp trên <td>, không còn
                             đặt trên <tr> nữa. Chữ in đậm, màu đỏ đậm tương phản tốt trên nền đỏ nhạt
@@ -1725,7 +1767,7 @@ const ThamDinhPage = () => {
                           <th>Link hồ sơ</th>
                           <td>
                             {linkOk ? (
-                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">🔗 Mở hồ sơ</a>
+                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">📎 Mở hồ sơ Drive</a>
                             ) : (
                               <span className="text-muted">Không có link hồ sơ hợp lệ</span>
                             )}
@@ -2286,7 +2328,7 @@ const ThamDinhPage = () => {
                         <input type="radio" className="btn-check" name="cheDoKy" id="cheDoKySongSong"
                           checked={cheDoKy === 'SONG_SONG'} onChange={() => setCheDoKy('SONG_SONG')} />
                         <label className="btn btn-outline-primary btn-sm" htmlFor="cheDoKySongSong">
-                          Ký tự do — ai ký trước cũng được
+                          Song song — ai ký trước cũng được
                         </label>
                       </div>
                       <div className="form-text small">

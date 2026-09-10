@@ -92,6 +92,9 @@ const postThamDinhAction = async (action, payloadArray) => {
 };
 
 export const duyetTrungTuyen = (payloadArray) => postThamDinhAction('trungTuyen', payloadArray);
+// ĐÃ THÊM: "Xác nhận lại" 1 hồ sơ đã duyệt vừa được sửa/bổ sung — KHÔNG xuất biên nhận/
+// KHÔNG gửi Google Chat, chỉ ghi lại trạng thái "Đã duyệt" sạch (xem hdPost_xacNhanCapNhatDaDuyet).
+export const xacNhanCapNhatDaDuyet = (payloadArray) => postThamDinhAction('xacNhanCapNhatDaDuyet', payloadArray);
 export const baoThieuHoSo = (payloadArray) => postThamDinhAction('baoThieu', payloadArray);
 export const luuKetQuaThamDinh = (payloadArray) => postThamDinhAction('luuKetQua', payloadArray);
 export const banGiaoDaoTao = (payloadArray) => postThamDinhAction('capNhatDaoTao', payloadArray);
