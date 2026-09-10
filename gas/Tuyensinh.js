@@ -2779,9 +2779,9 @@ function hdPost_scanDocument(e, ss) {
            let rawText = jsonGemini.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
            return responseJSON(200, "Quét thành công", JSON.parse(rawText));
         } else {
-           return responseJSON(500, "Ảnh quá mờ hoặc AI không nhận diện được", jsonGemini);
+           return responseJSON(500, "Ảnh quá mờ hoặc sai định dạng", jsonGemini);
         }
-      } catch (err) { return responseJSON(500, "Lỗi gọi AI: " + err.toString(), null); }
+      } catch (err) { return responseJSON(500, "Lỗi kết nối: " + err.toString(), null); }
     }
 
 function hdPost_scanTranscript(e, ss) {
@@ -2898,8 +2898,8 @@ function hdPost_scanChungChi(e, ss) {
         if (jsonGemini.candidates && jsonGemini.candidates[0].content.parts[0].text) {
           let rawText = jsonGemini.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
           return responseJSON(200, "Quét thành công", JSON.parse(rawText));
-        } else { return responseJSON(500, "Ảnh quá mờ hoặc AI không nhận diện được", jsonGemini); }
-      } catch (err) { return responseJSON(500, "Lỗi AI: " + err.toString(), null); }
+        } else { return responseJSON(500, "Ảnh quá mờ hoặc sai định dạng", jsonGemini); }
+      } catch (err) { return responseJSON(500, "Lỗi kết nối: " + err.toString(), null); }
     }
 
 function hdPost_exportTemplate(e, ss) {

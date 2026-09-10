@@ -276,14 +276,24 @@ function hdGet_getLogs(e) {
         if (!hasAnyRole(g.userInfo, ['Admin']) && String(username || "").trim().toLowerCase() !== g.userInfo.email) {
           return responseJSON(403, "Bạn chỉ được xem nhật ký của chính mình", null);
         }
+        // ĐÃ THÊM: hàm này được dùng ở 2 nơi khác nhau — (1) UserStatsPage.jsx gửi ĐÚNG email
+        // của người đang xem để lọc "nhật ký của riêng tôi" (giữ nguyên hành vi so khớp CHÍNH
+        // XÁC như cũ, xem vòng lặp bên dưới), và (2) SettingsPage.jsx (trang Cấu hình, chỉ
+        // Admin vào được, còn có thêm lớp PIN riêng trước khi bấm "Lịch sử") gửi
+        // "username=ALL" với Ý ĐỊNH xem TẤT CẢ — trước đây bug ở chỗ code so khớp CHỮ Y
+        // NGUYÊN (dataLog[i][1] == "ALL"), mà cột email không dòng nào bằng đúng "ALL" nên
+        // luôn trả về rỗng. Giờ nhận diện đúng ý định "ALL" (không phân biệt hoa/thường,
+        // đã trim) và bỏ qua lọc theo email — vẫn AN TOÀN vì đã bị chặn 403 ở trên nếu không
+        // phải Admin (so khớp "ALL" !== email của người gọi).
+        const laXemTatCa = String(username || "").trim().toUpperCase() === "ALL";
         const sheetLog = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("NhatKy");
         if (!sheetLog) return responseJSON(404, "Chưa tạo Sheet NhatKy", null);
-        
+
         const dataLog = sheetLog.getDataRange().getValues();
         const logs = [];
-        
+
         for (let i = dataLog.length - 1; i > 0; i--) {
-          if (dataLog[i][1] == username) {
+          if (laXemTatCa || dataLog[i][1] == username) {
             logs.push({
               ThoiGian: dataLog[i][0] instanceof Date ? dataLog[i][0].toISOString() : dataLog[i][0],
               Username: dataLog[i][1],
