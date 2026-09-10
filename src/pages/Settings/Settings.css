@@ -1,0 +1,58 @@
+/* ĐÃ THÊM: trang "Cấu hình hệ thống" (SettingsPage.jsx) — compact toàn bộ lại + đồng bộ font
+   chữ với trang Xét tuyển/Thẩm định (xem ThamDinh.css/.thamdinh-page, XetTuyen.css/
+   .xettuyen-wrapper — cùng 1 khuôn mẫu). Lý do phải override bằng px thay vì chỉ set
+   font-size trên .settings-page rồi trông chờ kế thừa: :root trong src/index.css set 18px
+   cho toàn app, các class Bootstrap (btn, form-control, table...) tính theo rem của thẻ
+   <html>, KHÔNG kế thừa theo class cha. */
+.settings-page { font-size: 15px; }
+.settings-page h4 { font-size: 18px; }
+.settings-page h5 { font-size: 16px; }
+.settings-page h6 { font-size: 14px; }
+.settings-page .btn { font-size: 13px; padding: 0.3rem 0.7rem; }
+.settings-page .btn-sm { font-size: 12px; padding: 0.2rem 0.5rem; }
+.settings-page .form-control,
+.settings-page .form-select { font-size: 13px; }
+.settings-page .form-control-sm,
+.settings-page .form-select-sm { font-size: 12px; }
+.settings-page .badge { font-size: 11px; }
+.settings-page .small { font-size: 12px; }
+.settings-page .table { font-size: 12px; }
+
+/* ĐÃ THÊM: compact chung — thu nhỏ khoảng đệm của mọi card-header/card-body trong trang này
+   (mặc định Bootstrap khá rộng, 1rem/1.25rem) để "dồn các block lên" như yêu cầu. */
+.settings-page .card-header {
+  padding: 0.5rem 0.85rem;
+}
+.settings-page .card-body {
+  padding: 0.65rem 0.85rem;
+}
+
+/* ĐÃ SỬA: khối "Chỉ tiêu tuyển sinh" giờ là 1 thẻ trong CÙNG lưới 4 cột với các thẻ danh mục
+   khác (xem SettingsPage.jsx) — không còn là bảng full-width nữa nên đã bỏ 2 rule .table cũ
+   ở đây (dead code). Chỉ còn 1 chỉnh riêng: card-header cho phép xuống dòng (năm + các nút
+   chọn nhanh năm xếp DỌC bên dưới tiêu đề) vì thẻ giờ hẹp hơn hẳn bản full-width trước đây. */
+.settings-quota-card .card-header {
+  display: block;
+}
+
+/* ĐÃ THÊM: nút "Xóa" trong danh sách mục cấu hình — trước đây chỉ có icon (bi-trash-fill),
+   1 số máy không tải được font Bootstrap Icons nên hiện trống trơn, không có ký tự nào. Giờ
+   luôn có chữ "Xóa" đi kèm icon, không phụ thuộc font icon có tải được hay không. */
+.settings-del-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ĐÃ THÊM: kéo-thả đổi thứ tự các mục trong 1 danh mục (yêu cầu — thay cho nút up/down khó
+   bấm ở dòng hẹp). Tay cầm (icon 6-chấm) đổi con trỏ thành "grab"/"grabbing" gợi ý kéo được;
+   cả dòng <li> mới là vùng draggable thật (xem SettingsPage.jsx), icon chỉ là gợi ý hình ảnh. */
+.settings-drag-handle {
+  cursor: grab;
+}
+.settings-drag-handle:active {
+  cursor: grabbing;
+}

@@ -119,7 +119,7 @@ const KhoSinhVienPage = () => {
   const moreFiltersActive = !!(nganh || khoa || heDaoTao || hinhThucDaoTao || namXetTuyen);
 
   return (
-    <div className="container-fluid py-3">
+    <div className="container-fluid py-3 kho-page">
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h3 className="text-uppercase fw-bold mb-0" style={{ color: '#037683' }}>
           <i className="bi bi-archive-fill me-2"></i>Kho tra cứu sinh viên

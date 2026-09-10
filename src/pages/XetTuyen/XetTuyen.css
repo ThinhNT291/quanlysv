@@ -9,6 +9,14 @@
 .doc-group h4, .score-group h4 { margin: 0 0 6px 0; color: #0277bd; font-size: 13px; border-bottom: 1px solid #b2ebf2; padding-bottom: 5px; font-weight: bold; }
 
 .checkbox-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; row-gap: 8px; margin-bottom: 15px; }
+/* ĐÃ THÊM (theo phản hồi — "Hồ sơ chung" tự dàn ngang CHỈ lúc đứng 1 mình, ẩn "Hồ sơ tiên
+   quyết"): class phụ gắn thêm (xem renderDocs(..., wide) trong XetTuyenPage.jsx) — KHÔNG
+   đổi .checkbox-grid gốc (vẫn 2 cột như trước giờ, dùng khi 2 khối đứng cạnh nhau y hệt bản
+   gốc). 5 cột ở màn rộng, thu dần theo màn hình hẹp hơn (3 cột dưới 1200px, 1 cột dưới 768px
+   — dùng chung rule cũ .checkbox-grid ở mốc 768px bên dưới vì lúc đó cả 2 biến thể đều nên
+   về 1 cột như nhau). */
+.checkbox-grid-wide { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1199.98px) { .checkbox-grid-wide { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* ĐÃ SỬA (yêu cầu #3): 6 cột thay vì 4 -> 11 môn + ô ĐIỂM CỘNG dồn lên còn 2 hàng. */
 .score-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 15px; }
 

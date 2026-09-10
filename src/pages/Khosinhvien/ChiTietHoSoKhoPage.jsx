@@ -169,6 +169,17 @@ const KHOA_LOAI_TRU_THONG_TIN_CANHAN = [
   'BẰNG CAO ĐẲNG', 'BẢNG ĐIỂM CAO ĐẲNG', 'BẰNG ĐẠI HỌC', 'BẢNG ĐIỂM ĐẠI HỌC', 'GIẤY TỜ ƯU TIÊN',
 ];
 
+// ĐÃ SỬA (theo phản hồi — "hồ sơ đã nộp hình như hiển thị sai"): trước đây chỉ check
+// !!chiTietTrungGian[hs.cot] — TRUTHY trên BẤT KỲ giá trị không rỗng nào, kể cả khi ô đó
+// đang ghi chuỗi văn bản "FALSE" (vẫn là 1 chuỗi không rỗng → bị tính nhầm thành "đã nộp").
+// Đồng bộ với đúng cơ chế getMissingDocs() bên ThamDinh/thamDinhHelpers.js (cột "trạng thái
+// hồ sơ" ở datalist Thẩm định đang đọc đúng theo cách này) — chỉ tính là ĐÃ NỘP khi giá trị
+// ô THẬT SỰ là 1 trong các ký hiệu tick chuẩn.
+const laDaNop = (val) => {
+  const v = String(val || '').trim().toUpperCase();
+  return v === 'TRUE' || v === '1' || v === 'V' || v === 'X' || v === 'CÓ';
+};
+
 // Card "Hồ sơ đã nộp" — thay cho việc liệt kê lẫn lộn các cột giấy tờ trong bảng KV chung.
 // Luôn hiện nhóm "chung"; 2 loại "có điều kiện" (ưu tiên/NVQS) chỉ hiện khi có dữ liệu; nhóm
 // "tiên quyết" chỉ hiện ĐÚNG 1 bộ khớp "ĐỐI TƯỢNG ĐẦU VÀO" của hồ sơ.
@@ -176,7 +187,7 @@ const HoSoDaNop = ({ chiTietTrungGian }) => {
   if (!chiTietTrungGian) return null;
   const doiTuongDauVao = chiTietTrungGian['ĐỐI TƯỢNG ĐẦU VÀO'];
   const dsTienQuyet = HO_SO_TIEN_QUYET[doiTuongDauVao] || [];
-  const dsCoDieuKien = HO_SO_CO_DIEU_KIEN.filter((hs) => !!chiTietTrungGian[hs.cot]);
+  const dsCoDieuKien = HO_SO_CO_DIEU_KIEN.filter((hs) => laDaNop(chiTietTrungGian[hs.cot]));
   const dsHienThi = [...HO_SO_CHUNG, ...dsCoDieuKien, ...dsTienQuyet];
   return (
     <div className="card border-0 shadow-sm mb-3">
@@ -196,7 +207,7 @@ const HoSoDaNop = ({ chiTietTrungGian }) => {
                 <tr key={hs.cot}>
                   <td className="fw-medium">{hs.ten}</td>
                   <td style={{ width: 40 }} className="text-end">
-                    {chiTietTrungGian[hs.cot]
+                    {laDaNop(chiTietTrungGian[hs.cot])
                       ? <i className="bi bi-check-circle-fill text-success"></i>
                       : <i className="bi bi-dash-circle text-muted"></i>}
                   </td>
@@ -409,7 +420,7 @@ const ChiTietHoSoKhoPage = () => {
   }
 
   return (
-    <div className="container-fluid py-3 kho-print-area">
+    <div className="container-fluid py-3 kho-print-area kho-page">
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div className="d-flex align-items-center gap-2 flex-wrap">
           <button className="btn btn-sm btn-outline-secondary" onClick={() => navigate('/quan-ly-ho-so-moi')}>

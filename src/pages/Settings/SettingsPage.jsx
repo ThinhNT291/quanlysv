@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchConfig, saveConfig, fetchChiTieu, saveChiTieu } from '../../api/studentApi';
 import Swal from 'sweetalert2';
+import './Settings.css';
 
 // Khai báo link GAS để fetch Lịch sử (Thay đúng link của ông vào đây)
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzkp4Nqb3kP3DjEGBucxLKPDgQamDMO8mQOOCg71_a_iHqnmuGWjU54e-QvxNGzELN9/exec";
@@ -23,7 +24,12 @@ const CHI_TIEU_RONG = [];
 const SettingsPage = () => {
   const queryClient = useQueryClient();
   const [localConfig, setLocalConfig] = useState(null);
-  
+  // ĐÃ THÊM (theo yêu cầu — nút "Lưu" mặc định disable cho tới khi có thay đổi): lưu lại
+  // đúng "ảnh chụp" localConfig tại thời điểm vừa tải/vừa lưu xong (baseline) — so sánh
+  // JSON.stringify với localConfig hiện tại để biết có đang "dirty" hay không (mọi thao tác
+  // thêm/sửa/xoá/KÉO-THẢ đổi thứ tự đều đi qua setLocalConfig nên tự động phát hiện được).
+  const [savedConfigSnapshot, setSavedConfigSnapshot] = useState(null);
+
   const [newItems, setNewItems] = useState({
       Nganh: '', KhoaNhapHoc: '', DoiTuongUT: '', KhuVucUT: '', NamXetTuyen: '',
       DoiTuongDauVao: '', HeDaoTao: '', HinhThucDaoTao: '', GioiTinh: ''
@@ -70,9 +76,18 @@ const SettingsPage = () => {
           HeDaoTao: configData.HeDaoTao || [], HinhThucDaoTao: configData.HinhThucDaoTao || [],
           GioiTinh: configData.GioiTinh || []
       };
-      setLocalConfig(JSON.parse(JSON.stringify(safeConfig))); 
+      setLocalConfig(JSON.parse(JSON.stringify(safeConfig)));
+      // ĐÃ THÊM: baseline dirty-check — cùng nội dung, tách bản clone RIÊNG (không share
+      // tham chiếu với localConfig) để sau này localConfig đổi thì baseline không tự đổi theo.
+      setSavedConfigSnapshot(JSON.parse(JSON.stringify(safeConfig)));
     }
   }, [configData]);
+
+  // ĐÃ THÊM: true khi localConfig khác baseline đã lưu — dùng để mặc định disable nút "Lưu".
+  const isConfigDirty = useMemo(() => {
+    if (!localConfig || !savedConfigSnapshot) return false;
+    return JSON.stringify(localConfig) !== JSON.stringify(savedConfigSnapshot);
+  }, [localConfig, savedConfigSnapshot]);
 
   const saveMutation = useMutation({
     mutationFn: saveConfig,
@@ -82,6 +97,34 @@ const SettingsPage = () => {
     },
     onError: (err) => Swal.fire('Lỗi', err.message, 'error')
   });
+
+  // ĐÃ THÊM (theo yêu cầu — kéo-thả đổi thứ tự các mục trong 1 danh mục): dùng HTML5 Drag
+  // and Drop API có sẵn của trình duyệt (không cần thêm thư viện ngoài — đỡ phải npm install
+  // thêm gói mới). dragItemRef nhớ tạm {category, index} của mục đang kéo — dùng useRef (chứ
+  // không phải useState) vì giá trị này chỉ cần đọc lại lúc thả (drop), không cần re-render
+  // theo nó. Chỉ cho thả HOÁN VỊ trong CÙNG 1 danh mục (kéo từ "Ngành" thả sang "Khóa nhập
+  // học" sẽ bị bỏ qua) — mỗi danh mục là 1 mảng độc lập, không có ý nghĩa gì khi trộn lẫn.
+  const dragItemRef = useRef({ category: null, index: null });
+
+  const handleDragStartItem = (category, index) => {
+    dragItemRef.current = { category, index };
+  };
+
+  const handleDragOverItem = (e) => {
+    e.preventDefault(); // bắt buộc phải preventDefault ở dragover thì onDrop mới được gọi
+  };
+
+  const handleDropItem = (category, dropIndex) => {
+    const { category: fromCategory, index: fromIndex } = dragItemRef.current;
+    dragItemRef.current = { category: null, index: null };
+    if (fromCategory !== category || fromIndex === null || fromIndex === dropIndex) return;
+    setLocalConfig(prev => {
+      const arr = [...(prev[category] || [])];
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(dropIndex, 0, moved);
+      return { ...prev, [category]: arr };
+    });
+  };
 
   const handleAddItem = (key) => {
     const item = newItems[key]?.trim();
@@ -196,107 +239,107 @@ const SettingsPage = () => {
   }
 
   return (
-    <div className="container-fluid py-4 position-relative">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h4 className="text-uppercase fw-bold" style={{ color: '#037683' }}>CẤU HÌNH HỆ THỐNG</h4>
+    <div className="container-fluid py-3 position-relative settings-page">
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h4 className="text-uppercase fw-bold mb-0" style={{ color: '#037683' }}>CẤU HÌNH HỆ THỐNG</h4>
         <div className="d-flex gap-2">
             <button className="btn btn-secondary px-3 fw-bold" onClick={() => setShowPinModal(true)}>
                 <i className="bi bi-clock-history me-2"></i>Lịch sử
             </button>
-            <button className="btn btn-success px-4 fw-bold shadow-sm" onClick={handleSaveAll} disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? 'Đang lưu...' : <><i className="bi bi-save me-2"></i>Lưu tất cả thay đổi</>}
+            <button className="btn btn-success px-4 fw-bold shadow-sm" onClick={handleSaveAll} disabled={saveMutation.isPending || !isConfigDirty}>
+                {saveMutation.isPending ? 'Đang lưu...' : <><i className="bi bi-save me-2"></i>Lưu</>}
             </button>
         </div>
       </div>
 
-      {/* ĐÃ THÊM: Chỉ tiêu tuyển sinh — nhập theo từng năm, mỗi năm 1 số cho mỗi ngành.
-          Chọn/gõ năm ở góc phải card, bảng bên dưới tự nạp lại đúng số của năm đó. */}
-      <div className="card border-0 shadow-sm mb-2">
-        <div className="card-header bg-white fw-bold text-secondary d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <span><i className="bi bi-bullseye me-2"></i>Chỉ tiêu tuyển sinh</span>
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            <label className="small text-muted mb-0">Năm:</label>
-            <input
-              type="number"
-              className="form-control form-control-sm"
-              style={{ width: 100 }}
-              value={chiTieuNam}
-              onChange={(e) => setChiTieuNam(e.target.value.trim())}
-            />
-            {cacNamDaCo.length > 0 && (
-              <div className="d-flex gap-1 flex-wrap">
-                {cacNamDaCo.map((nam) => (
-                  <button
-                    key={nam}
-                    type="button"
-                    className={`btn btn-sm ${nam === chiTieuNam ? 'btn-primary' : 'btn-outline-secondary'}`}
-                    onClick={() => setChiTieuNam(nam)}
-                  >
-                    {nam}
-                  </button>
-                ))}
+      {/* ĐÃ SỬA (yêu cầu — chia 3-4 cột, dồn block lên, đưa khối Chỉ tiêu vào chung lưới):
+          trước đây tối đa 3 cột (col-lg-4) và khối "Chỉ tiêu tuyển sinh" nằm RIÊNG 1 hàng
+          full-width phía trên (dạng bảng) — giờ 2 cột ở màn hẹp, 3 cột ở md, 4 cột ở lg trở
+          lên (đã compact chữ/padding nên 4 cột vẫn đọc rõ), và "Chỉ tiêu tuyển sinh" giờ là
+          1 thẻ NGAY TRONG cùng lưới này (cùng kích thước/khung với 9 thẻ danh mục bên dưới —
+          mỗi Ngành 1 dòng có khung trong list-group, y hệt kiểu các thẻ danh mục khác) thay
+          vì bảng full-width như trước. */}
+      <div className="row g-3 mt-0">
+        {/* ĐÃ THÊM: thẻ "Chỉ tiêu tuyển sinh" — nhập theo từng năm, mỗi năm 1 số cho mỗi
+            ngành. Chọn/gõ năm + các nút chọn nhanh năm đã có nằm trong card-header (xếp dọc
+            vì thẻ giờ hẹp hơn nhiều so với bản full-width cũ), danh sách Ngành bên dưới tự
+            cuộn dọc khi dài (giống hệt các thẻ danh mục khác). */}
+        <div className="col-6 col-md-4 col-lg-3">
+          <div className="card h-100 border-0 shadow-sm settings-quota-card">
+            <div className="card-header bg-white fw-bold text-secondary">
+              <div><i className="bi bi-bullseye me-2"></i>Chỉ tiêu tuyển sinh</div>
+              <div className="d-flex align-items-center gap-2 flex-wrap mt-2">
+                <label className="small text-muted mb-0">Năm:</label>
+                <input
+                  type="number"
+                  className="form-control form-control-sm"
+                  style={{ width: 80 }}
+                  value={chiTieuNam}
+                  onChange={(e) => setChiTieuNam(e.target.value.trim())}
+                />
               </div>
-            )}
-          </div>
-        </div>
-        <div className="card-body">
-          {(localConfig.Nganh || []).length === 0 ? (
-            <div className="text-muted small fst-italic">
-              Chưa có danh mục Ngành — thêm ở khối "Danh mục Ngành học" bên dưới trước khi nhập chỉ tiêu.
+              {cacNamDaCo.length > 0 && (
+                <div className="d-flex gap-1 flex-wrap mt-2">
+                  {cacNamDaCo.map((nam) => (
+                    <button
+                      key={nam}
+                      type="button"
+                      className={`btn btn-sm ${nam === chiTieuNam ? 'btn-primary' : 'btn-outline-secondary'}`}
+                      onClick={() => setChiTieuNam(nam)}
+                    >
+                      {nam}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <>
-              <div className="table-responsive">
-                <table className="table table-sm align-middle mb-2">
-                  <thead>
-                    <tr>
-                      <th>Ngành</th>
-                      <th style={{ width: 160 }}>Chỉ tiêu năm {chiTieuNam || '—'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {localConfig.Nganh.map((nganh) => (
-                      <tr key={nganh}>
-                        <td>{nganh}</td>
-                        <td>
+            <div className="card-body bg-light">
+              {(localConfig.Nganh || []).length === 0 ? (
+                <div className="text-muted small fst-italic">
+                  Chưa có danh mục Ngành — thêm ở thẻ "Danh mục Ngành học" bên cạnh trước khi nhập chỉ tiêu.
+                </div>
+              ) : (
+                <>
+                  <div style={{ maxHeight: '210px', overflowY: 'auto' }}>
+                    <ul className="list-group list-group-flush rounded shadow-sm">
+                      {localConfig.Nganh.map((nganh) => (
+                        <li key={nganh} className="list-group-item d-flex justify-content-between align-items-center py-1 px-2 gap-2 border-bottom border-light">
+                          <span className="small text-truncate flex-grow-1" title={nganh} style={{ minWidth: 0 }}>{nganh}</span>
                           <input
                             type="number"
                             min="0"
                             className="form-control form-control-sm"
+                            style={{ width: 64 }}
                             value={chiTieuLocal[nganh] ?? ''}
                             onChange={(e) => setChiTieuLocal(prev => ({ ...prev, [nganh]: e.target.value }))}
                             placeholder="0"
                           />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="fw-bold table-light">
-                      <td>Tổng chỉ tiêu năm {chiTieuNam || '—'}</td>
-                      <td>{tongChiTieuNam}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-              <button
-                className="btn btn-success btn-sm fw-bold"
-                onClick={() => saveChiTieuMutation.mutate()}
-                disabled={saveChiTieuMutation.isPending || !chiTieuNam}
-              >
-                {saveChiTieuMutation.isPending ? 'Đang lưu...' : <><i className="bi bi-save me-2"></i>Lưu chỉ tiêu năm {chiTieuNam}</>}
-              </button>
-            </>
-          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="d-flex justify-content-between align-items-center small fw-bold mt-2 px-1">
+                    <span>Tổng năm {chiTieuNam || '—'}</span>
+                    <span>{tongChiTieuNam}</span>
+                  </div>
+                  <button
+                    className="btn btn-success btn-sm fw-bold mt-2 w-100"
+                    onClick={() => saveChiTieuMutation.mutate()}
+                    disabled={saveChiTieuMutation.isPending || !chiTieuNam}
+                  >
+                    {saveChiTieuMutation.isPending ? 'Đang lưu...' : <><i className="bi bi-save me-2"></i>Lưu chỉ tiêu</>}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div className="row g-4 mt-1">
         {CONFIG_MAPPINGS.map((configObj) => {
           const listItems = localConfig[configObj.key] || [];
 
           return (
-            <div className="col-md-6 col-lg-4" key={configObj.key}>
+            <div className="col-6 col-md-4 col-lg-3" key={configObj.key}>
               <div className="card h-100 border-0 shadow-sm">
                 <div className="card-header bg-white fw-bold text-secondary d-flex justify-content-between align-items-center">
                   <span>{configObj.title}</span> 
@@ -316,7 +359,7 @@ const SettingsPage = () => {
                     <button className="btn btn-primary fw-bold" onClick={() => handleAddItem(configObj.key)}>Thêm</button>
                   </div>
 
-                  <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                  <div style={{ maxHeight: '210px', overflowY: 'auto' }}>
                     <ul className="list-group list-group-flush rounded shadow-sm">
                       {listItems.length === 0 ? (
                         <li className="list-group-item text-center text-muted small fst-italic">Chưa có dữ liệu</li>
@@ -325,9 +368,13 @@ const SettingsPage = () => {
                           const isEditing = editingItem.category === configObj.key && editingItem.index === idx;
 
                           return (
-                            <li key={idx} className="list-group-item d-flex justify-content-between align-items-center py-1 px-2 border-bottom border-light" 
-                                style={{ minHeight: '42px', transition: '0.2s background-color' }}>
-                              
+                            <li key={idx} className="list-group-item d-flex justify-content-between align-items-center py-1 px-2 border-bottom border-light"
+                                style={{ minHeight: '42px', transition: '0.2s background-color' }}
+                                draggable={!isEditing}
+                                onDragStart={() => handleDragStartItem(configObj.key, idx)}
+                                onDragOver={handleDragOverItem}
+                                onDrop={() => handleDropItem(configObj.key, idx)}>
+
                               {isEditing ? (
                                   // CHẾ ĐỘ ĐANG SỬA (CÓ NÚT LƯU + NÚT XÓA)
                                   <div className="d-flex w-100 align-items-center gap-2">
@@ -342,27 +389,34 @@ const SettingsPage = () => {
                                       <button className="btn btn-sm btn-success px-3 fw-bold" onClick={handleSaveEdit} title="Lưu lại">
                                           Lưu
                                       </button>
-                                      <button className="btn btn-sm text-danger px-2" onClick={() => {
+                                      <button className="btn btn-sm text-danger px-2 settings-del-btn" onClick={() => {
                                           handleRemoveItem(configObj.key, idx);
                                           setEditingItem({ category: null, index: null, value: '' });
                                       }} title="Xóa luôn mục này">
-                                          <i className="bi bi-trash-fill fs-5">X</i>
+                                          <i className="bi bi-trash-fill"></i>Xóa
                                       </button>
                                   </div>
                               ) : (
                                   // CHẾ ĐỘ XEM BÌNH THƯỜNG
                                   <>
-                                      <span 
-                                          className="small flex-grow-1" 
-                                          onDoubleClick={() => handleDoubleClick(configObj.key, idx, item)}
-                                          title="Nhấp đúp chuột để sửa"
-                                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                                      >
-                                          {item}
+                                      <span className="d-flex align-items-center flex-grow-1" style={{ minWidth: 0 }}>
+                                          {/* ĐÃ THÊM: tay cầm kéo-thả (yêu cầu — kéo thả đổi thứ tự thay vì nút
+                                              up/down khó bấm trong 1 dòng hẹp). Kéo được ngay từ bất kỳ đâu trên
+                                              cả dòng (draggable đặt ở <li>, xem phía trên) — icon này chỉ là gợi ý
+                                              trực quan + đổi con trỏ thành "grab" (xem Settings.css). */}
+                                          <i className="bi bi-grip-vertical text-muted me-1 settings-drag-handle" title="Kéo để đổi thứ tự"></i>
+                                          <span
+                                              className="small text-truncate"
+                                              onDoubleClick={() => handleDoubleClick(configObj.key, idx, item)}
+                                              title="Nhấp đúp chuột để sửa"
+                                              style={{ cursor: 'pointer', userSelect: 'none' }}
+                                          >
+                                              {item}
+                                          </span>
                                       </span>
-                                      
-                                      <button className="btn btn-sm text-danger p-0 m-0 ms-2" onClick={() => handleRemoveItem(configObj.key, idx)} title="Xóa">
-                                          <i className="bi bi-trash-fill fs-6">X</i>
+
+                                      <button className="btn btn-sm text-danger px-2 py-0 ms-2 settings-del-btn" onClick={() => handleRemoveItem(configObj.key, idx)} title="Xóa">
+                                          <i className="bi bi-trash-fill"></i>Xóa
                                       </button>
                                   </>
                               )}

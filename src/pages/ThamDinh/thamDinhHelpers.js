@@ -336,6 +336,15 @@ export function getRowKey(row) {
 }
 
 export function generateMaSV(row) {
+  // ĐÃ SỬA (2026-09-10): ƯU TIÊN mã sinh viên THẬT nếu backend đã trả về — hdGet_getThamDinhData
+  // (trang Thẩm định) và hdGet_timKiemKhoSinhVien/hdGet_layChiTietHoSoKho (Kho sinh viên) đều
+  // đã tự ưu tiên KETQUA -> Mã sinh viên ở Goc01 trước khi trả dữ liệu về đây. Hàm này giờ chỉ
+  // còn là ƯU TIÊN CUỐI CÙNG (tự sinh mã tạm) khi row hoàn toàn không có giá trị nào — đúng thứ
+  // tự: KETQUA -> Mã sinh viên ở Goc01 -> tự sinh. Vì hàm dùng chung cho MỌI chỗ hiển thị MSV
+  // trên trang Thẩm định, sửa đúng 1 chỗ này là áp dụng cho tất cả.
+  const maThat = getVal(row, ["MÃ SINH VIÊN", "MÃ SV"]);
+  if (maThat) return maThat;
+
   const namTuyen = getVal(row, ["NĂM XÉT TUYỂN", "Năm xét tuyển"]) || new Date().getFullYear();
   const heDaoTao = getVal(row, ["HỆ ĐÀO TẠO", "Hệ đào tạo"]);
   const hinhThuc = getVal(row, ["HÌNH THỨC ĐÀO TẠO", "Hình thức đào tạo"]);

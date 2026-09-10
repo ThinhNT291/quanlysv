@@ -56,7 +56,7 @@ const DICT_NGANH = {
     "Quản trị kinh doanh": ["A00", "A01", "D01", "D09", "D10", "D45", "D65", "X01", "X25", "X37"],
     "Ngôn ngữ Anh": ["A01", "C03", "C04", "D01", "D09", "D10", "D14", "D15", "X25", "X26"],
     "Ngôn ngữ Trung Quốc": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X01", "X37"],
-    "Quản trị dịch vụ du lịch và lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
+    "Quản trị dịch vụ du lịch & lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
 };
 
 const SUBJECTS_UI = [
@@ -829,8 +829,8 @@ const XetTuyenPage = () => {
     }
 
     let boxBg = '#d4edda', boxBorder = '#c3e6cb', icon = '🟢', title = "ĐỦ ĐIỀU KIỆN SƠ TUYỂN", titleColor = '#155724';
-    if (hsStatus === "FAIL" || diemStatus === "FAIL") { boxBg = '#f8d7da'; boxBorder = '#f5c6cb'; icon = '🔴'; titleColor = '#721c24'; title = hsStatus === "FAIL" ? "KHÔNG ĐỦ ĐIỀU KIỆN HS" : "KHÔNG ĐẠT ĐIỂM CHUẨN"; } 
-    else if (hsStatus === "WARN") { boxBg = '#fff3cd'; boxBorder = '#ffeeba'; icon = '🟡'; title = "ĐẠT SƠ TUYỂN (NỢ HỒ SƠ)"; titleColor = '#856404'; }
+    if (hsStatus === "FAIL" || diemStatus === "FAIL") { boxBg = '#f8d7da'; boxBorder = '#f5c6cb'; icon = '🔴'; titleColor = '#721c24'; title = hsStatus === "FAIL" ? "KHÔNG ĐỦ HỒ SƠ TIÊN QUYẾT" : "KHÔNG ĐẠT ĐIỂM CHUẨN"; } 
+    else if (hsStatus === "WARN") { boxBg = '#fff3cd'; boxBorder = '#ffeeba'; icon = '🟡'; title = "ĐẠT SƠ TUYỂN (CÒN THIẾU HỒ SƠ)"; titleColor = '#856404'; }
 
     setAdmissionResult({ hsStatus, hsColor, hsMsg, diemStatus, diemMsg, boxBg, boxBorder, icon, title, titleColor });
   }, [formData]);
@@ -847,7 +847,7 @@ const XetTuyenPage = () => {
     // thì ô "Mã sinh viên" bắt buộc phải điền — không gộp vào requiredFields chung ở trên vì
     // chỉ bắt buộc CÓ ĐIỀU KIỆN (tick mới bắt buộc).
     if (laHoSoCu && !formData.masv.trim()) {
-        alert(`Vui lòng điền Mã sinh viên (bắt buộc với "Hồ sơ cũ")`); return;
+        alert(`Vui lòng nhập Mã sinh viên`); return;
     }
     if (!biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) && !formData.khuvucuutien) {
         alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); return;
@@ -1013,7 +1013,7 @@ const XetTuyenPage = () => {
 
   const handleEditRowLocal = (index) => {
     const row = dataList[index];
-    if(!window.confirm(`Bạn có muốn tải hồ sơ của [${row["TÊN SINH VIÊN"]}] lên Form để chỉnh sửa lại không?`)) return;
+    if(!window.confirm(`Bạn có muốn tải hồ sơ của [${row["TÊN SINH VIÊN"]}] lên để chỉnh sửa lại không?`)) return;
 
     // ĐÃ THÊM (theo phản hồi — cùng nguyên nhân/cách sửa với loadOldCandidate() ở "Tìm hồ sơ
     // cũ" phía dưới, áp dụng luôn ở đây cho nhất quán vì rủi ro y hệt): nếu đang sửa dở 1 hồ
@@ -1215,9 +1215,9 @@ const XetTuyenPage = () => {
       // Giờ chỉ chặn khi CẢ HAI đều rỗng (chưa đăng nhập bằng cách nào cả).
       const token = getToken();
       const sessTok = getSessionToken();
-      if (!token && !sessTok) { alert("Lỗi xác thực: Vui lòng đăng nhập lại để sử dụng AI!"); e.target.value = ""; return; }
+      if (!token && !sessTok) { alert("Lỗi xác thực: Vui lòng đăng nhập lại!"); e.target.value = ""; return; }
 
-      setScanStatus("⏳ Đang phân tích bằng AI...");
+      setScanStatus("⏳ Scanning...");
       const img = new Image();
       img.src = URL.createObjectURL(file);
       img.onload = async () => {
@@ -1813,16 +1813,16 @@ const XetTuyenPage = () => {
               
               setImportStatus(""); setIsImportModalOpen(false); setImportFile(null);
               let msg = `Đã nạp ${finalItems.length} hồ sơ từ file Excel.`;
-              if (dupInFileCount > 0) msg += `\n⚠️ Bỏ qua ${dupInFileCount} hồ sơ trùng CCCD + Ngành NGAY TRONG file vừa chọn.`;
+              if (dupInFileCount > 0) msg += `\n⚠️ Bỏ qua ${dupInFileCount} hồ sơ trùng NGAY TRONG file vừa chọn.`;
               if (dupCount - dupInFileCount > 0) msg += `\n⚠️ Bỏ qua ${dupCount - dupInFileCount} hồ sơ trùng với danh sách đang chờ đẩy.`;
               if (dupOnSheetCount > 0) msg += `\n⚠️ Bỏ qua ${dupOnSheetCount} hồ sơ đã có sẵn trên hệ thống (người khác đã nhập trước).`;
               // ĐÃ THÊM: báo chi tiết 2 loại — cảnh báo (đã tự xử lý, hồ sơ vẫn được nạp) và
               // lỗi (hồ sơ bị loại hoàn toàn, chưa được nạp) — xem rowWarnings/rejectedRows.
               if (rowWarnings.length > 0) {
-                  msg += `\n\n⚠️ ${rowWarnings.length} hồ sơ điền cả Hệ 4 và Hệ 10 (đã tự lấy điểm có tỉ lệ % cao hơn):\n` + rowWarnings.map(w => `- ${w}`).join('\n');
+                  msg += `\n\n⚠️ ${rowWarnings.length} hồ sơ điền cả Hệ 4 và Hệ 10 (sẽ lấy điểm có ưu thế hơn):\n` + rowWarnings.map(w => `- ${w}`).join('\n');
               }
               if (rejectedRows.length > 0) {
-                  msg += `\n\n❌ ${rejectedRows.length} hồ sơ bị LOẠI do điểm không hợp lệ (CHƯA được nạp) — sửa lại đúng các dòng sau trên file Excel rồi chọn lại NGUYÊN FILE đó để import lại (hồ sơ đã nạp thành công ở trên sẽ tự bị bỏ qua vì trùng, không lo nạp đúp):\n`
+                  msg += `\n\n❌ ${rejectedRows.length} hồ sơ bị LOẠI do điểm không hợp lệ (CHƯA được nạp) — sửa lại đúng các dòng sau trên file Excel rồi chọn lại NGUYÊN FILE đó để import lại:\n`
                       + rejectedRows.map(r => `- Dòng ${r.dong} (${r.ten} - CCCD ${r.cccd}): ${r.loi.join('; ')}`).join('\n');
               }
               alert(msg);
@@ -1832,8 +1832,19 @@ const XetTuyenPage = () => {
       reader.readAsArrayBuffer(importFile);
   };
 
-  const renderDocs = (docsList) => (
-    <div className="checkbox-grid">
+  // ĐÃ SỬA (theo phản hồi — "Hồ sơ chung" tự dàn hàng ngang khi đứng 1 mình): thêm tham số
+  // "wide" (mặc định false) — CHỈ truyền true ở đúng chỗ gọi cho "Hồ sơ chung" lúc nó đang
+  // chiếm full-width (chưa chọn Đối tượng đầu vào, xem JSX bên dưới) để gắn thêm class
+  // "checkbox-grid-wide" (5 cột, tự thu bớt theo màn hình hẹp — xem XetTuyen.css). Khi đã
+  // chọn Đối tượng, "Hồ sơ chung" co lại về col-md-6 như cũ và KHÔNG còn gắn class này nữa
+  // nên tự quay về đúng 2 cột gốc — "Hồ sơ tiên quyết" luôn gọi renderDocs KHÔNG kèm wide.
+  // ĐÃ THÊM tham số "extraItem" (theo phản hồi — "GIẤY TỜ ƯU TIÊN" đang nằm lẻ 1 dòng riêng
+  // bên dưới, muốn nó nhập chung vào hàng lưới luôn): JSX tuỳ chọn được chèn thêm làm (các)
+  // ô CUỐI CÙNG ngay TRONG CÙNG div.checkbox-grid — dùng React.Fragment nên không sinh thêm
+  // 1 lớp bọc DOM nào (CSS Grid chỉ quan tâm CON TRỰC TIẾP của grid container để chia ô, nếu
+  // bọc thêm 1 <div> nữa thì nội dung bên trong đó sẽ không tự xếp vào lưới được nữa).
+  const renderDocs = (docsList, wide, extraItem) => (
+    <div className={`checkbox-grid${wide ? ' checkbox-grid-wide' : ''}`}>
       {docsList.map(doc => {
         // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT chỉ cho tick hồ sơ CÒN THIẾU): khi form bị
         // khoá vì đã duyệt (isOldRecordApproved), CHỈ ô tương ứng giấy tờ đang thiếu
@@ -1847,6 +1858,7 @@ const XetTuyenPage = () => {
           </label>
         );
       })}
+      {extraItem}
     </div>
   );
 
@@ -2019,8 +2031,8 @@ const XetTuyenPage = () => {
                         hơn so với lúc chỉ có 1 mình nó, đúng ý đã yêu cầu. */}
                     {hienOPhongVan && (
                       <div className="d-flex align-items-center gap-2">
-                        <label className="form-label small fw-bold mb-0 text-primary">ĐIỂM PV:</label>
-                        <input type="text" className="form-control form-control-sm border-primary" style={{width: '70px'}} name="diem_phong_van" value={formData.diem_phong_van} onChange={handleChange} placeholder="0.0" title="Tối đa 2 điểm — chỉ cộng vào điểm xét tuyển khi (Tổ hợp + Điểm cộng + Điểm ưu tiên) từ 15 đến dưới 16" />
+                        <label className="form-label small fw-bold mb-0 text-primary">ĐIỂM Phỏng vấn:</label>
+                        <input type="text" className="form-control form-control-sm border-primary" style={{width: '70px'}} name="diem_phong_van" value={formData.diem_phong_van} onChange={handleChange} placeholder="0.0" title="Tối đa 2 điểm" />
                       </div>
                     )}
                     <div className="d-flex align-items-center gap-2">
@@ -2059,7 +2071,7 @@ const XetTuyenPage = () => {
                   Import Excel/Tìm hồ sơ cũ theo đúng vị trí yêu cầu. Ẩn khi đang Sửa (isEditMode)
                   cùng lý do với Import Excel — không áp dụng cho luồng sửa hồ sơ đã có sẵn. */}
               {!isEditMode && (
-                  <button type="button" className={`btn btn-sm fw-bold ${laHoSoCu ? 'btn-dark text-white' : 'btn-outline-dark'}`} onClick={() => setLaHoSoCu(v => !v)} title="Hồ sơ đã có Mã sinh viên thật (thẩm định/nhập lại hồ sơ cũ)">
+                  <button type="button" className={`btn btn-sm fw-bold ${laHoSoCu ? 'btn-dark text-white' : 'btn-outline-dark'}`} onClick={() => setLaHoSoCu(v => !v)} title="Hồ sơ đã có Mã sinh viên">
                       <i className="bi bi-patch-check-fill me-1"></i> Hồ sơ cũ (có MSV)
                   </button>
               )}
@@ -2067,7 +2079,7 @@ const XetTuyenPage = () => {
                   <i className="bi bi-search me-1"></i> Tìm hồ sơ cũ
               </button>
               <button className="btn btn-sm btn-success fw-bold" onClick={() => fileInputRef.current.click()}>
-                  <i className="bi bi-camera me-1"></i> Quét CCCD/Hộ chiếu
+                  <i className="bi bi-camera me-1"></i> Scan CCCD/Hộ chiếu
               </button>
               {/* ĐÃ THÊM LẠI (theo phản hồi): nút "Tra cứu KV" từng có ở repo Xét tuyển cũ (đặt
                   cạnh ô "Khu vực ưu tiên") — đặt bên phải cụm nút thao tác nhanh này theo đúng
@@ -2105,7 +2117,7 @@ const XetTuyenPage = () => {
                 <i className="bi bi-search me-1"></i> Tìm hồ sơ cũ
             </button>
             <button type="button" className="btn btn-sm btn-success fw-bold" onClick={() => fileInputRef.current.click()}>
-                <i className="bi bi-camera me-1"></i> Quét CCCD/Hộ chiếu
+                <i className="bi bi-camera me-1"></i> Scan CCCD/Hộ chiếu
             </button>
             <button type="button" className="btn btn-sm btn-info fw-bold text-dark" onClick={openLookupModal}>
                 <i className="bi bi-geo-alt-fill me-1"></i> Tra cứu KV
@@ -2248,7 +2260,7 @@ const XetTuyenPage = () => {
             {/* Link Folder hồ sơ — theo yêu cầu, PHẢI luôn sửa được kể cả khi hồ sơ đã duyệt
                 (xem chú thích lớn đầu khối) nên KHÔNG có disabled={isOldRecordApproved} ở
                 đây, dù nằm chung 1 lưới với các ô đã khoá phía trên. */}
-            <div><label className="form-label fw-bold small mb-1 text-primary">🔗 Link Folder hồ sơ:</label><input type="text" className="form-control border-primary" name="link_folder" value={formData.link_folder} onChange={handleChange} placeholder="Link Google Drive..." /></div>
+            <div><label className="form-label fw-bold small mb-1 text-primary">🔗 Link Folder hồ sơ:</label><input type="text" className="form-control border-primary" name="link_folder" value={formData.link_folder} onChange={handleChange} placeholder="Link chứa hồ sơ..." /></div>
           </div>
 
           {/* ĐÃ THÊM (theo phản hồi): banner cảnh báo hiển thị ngay khi hồ sơ ĐÃ DUYỆT được
@@ -2256,13 +2268,19 @@ const XetTuyenPage = () => {
               thắc mắc/tưởng lỗi form. */}
           {isOldRecordApproved && (
               <div className="alert alert-warning py-2 px-3 mb-4 fw-bold" role="alert">
-                  🔒 Hồ sơ này ĐÃ ĐƯỢC DUYỆT — chỉ có thể tick bổ sung hồ sơ còn thiếu và sửa "Link Folder hồ sơ".
-                  Các trường thông tin khác đã khoá để tránh thay đổi ngoài ý muốn sau khi duyệt.
+                  🔒 Hồ sơ này ĐÃ ĐƯỢC DUYỆT — chỉ có thể tick bổ sung hồ sơ còn thiếu và sửa "Link hồ sơ".
               </div>
           )}
 
+          {/* ĐÃ SỬA (theo phản hồi — "Hồ sơ chung" đứng 1 mình thì tự dàn ngang, khi "Hồ sơ
+              tiên quyết" xuất hiện thì co lại nhường cột 2 NHƯ CŨ): "HỒ SƠ TIÊN QUYẾT" vẫn
+              ẨN HẲN cả khối cho tới khi chọn Đối tượng đầu vào (giữ nguyên ý đã chốt trước
+              đó) — nhưng giờ khi hiện ra, nó quay lại đúng vị trí col-md-6 CẠNH "Hồ sơ chung"
+              như bản gốc (KHÔNG còn xuống hàng riêng full-width nữa). "Hồ sơ chung" đổi class
+              linh động: col-12 (full-width, 5 cột — checkbox-grid-wide) lúc đứng 1 mình, hoặc
+              col-md-6 (2 cột gốc) lúc có "Hồ sơ tiên quyết" đứng cạnh. */}
           <div className="row mt-5 g-4">
-              <div className="col-md-6">
+              <div className={formData.doituongdauvao ? "col-md-6" : "col-12"}>
                   <div className="p-3 border rounded shadow-sm bg-light h-100">
                       <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
                           <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ CHUNG</h6>
@@ -2273,32 +2291,51 @@ const XetTuyenPage = () => {
                               bị bỏ tick nhầm 1 giấy tờ ĐÃ CÓ SẴN (lách qua khoá per-checkbox). */}
                           <button type="button" className="btn btn-sm btn-warning fw-bold py-0" onClick={handleSelectAllCommon} disabled={isOldRecordApproved}>⚡ Chọn/Bỏ Chọn</button>
                       </div>
-                      {renderDocs(DICT_HO_SO.chung.filter(doc => isDocApplicable(doc, formData)))}
-                      
-                      <div className="mt-3 d-flex align-items-center gap-2">
-                          <label className="checkbox-item mb-0">
-                              <input type="checkbox" name="has_giay_uutien" checked={formData.has_giay_uutien} onChange={handleChange} />
-                              <span className="fw-bold text-primary">GIẤY TỜ ƯU TIÊN</span>
+                      {/* ĐÃ SỬA (theo phản hồi — "GIẤY TỜ ƯU TIÊN" đang nằm lẻ 1 dòng riêng bên dưới
+                          lưới, muốn nó nhập chung vào thành 1 ô trong CÙNG hàng): chuyển từ 1 khối
+                          <div className="mt-3 d-flex..."> riêng (xuống hàng mới) sang truyền qua
+                          tham số extraItem của renderDocs() — giờ nằm ngay trong div.checkbox-grid,
+                          tự xếp tiếp vào ô trống cuối cùng của lưới (5 cột lúc đứng 1 mình / 2 cột
+                          lúc có "Hồ sơ tiên quyết" cạnh bên) thay vì luôn xuống dòng mới. Khi đã
+                          tick + hiện ô nhập "Nhập loại giấy...", ô nhập đó chiếm gridColumn: span 2
+                          (2 cột liền) để đủ chỗ gõ, KHÔNG lồng input vào trong <label> (để tránh
+                          bấm vào ô nhập bị hiểu nhầm thành bấm tick checkbox). */}
+                      {renderDocs(
+                        DICT_HO_SO.chung.filter(doc => isDocApplicable(doc, formData)),
+                        !formData.doituongdauvao,
+                        <React.Fragment>
+                          <label className="checkbox-item">
+                            <input type="checkbox" name="has_giay_uutien" checked={formData.has_giay_uutien} onChange={handleChange} />
+                            <span className="fw-bold text-primary">GIẤY TỜ ƯU TIÊN</span>
                           </label>
                           {formData.has_giay_uutien && (
-                              <input type="text" className="form-control form-control-sm border-primary" name="giay_uutien" value={formData.giay_uutien} onChange={handleChange} placeholder="Nhập loại giấy..." style={{ width: '180px' }} />
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <input type="text" className="form-control form-control-sm border-primary h-100" name="giay_uutien" value={formData.giay_uutien} onChange={handleChange} placeholder="Nhập loại hồ sơ..." />
+                            </div>
                           )}
-                      </div>
+                        </React.Fragment>
+                      )}
                   </div>
               </div>
 
-              <div className="col-md-6">
-                  <div className="p-3 border rounded shadow-sm bg-light h-100">
-                      <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
-                          <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ TIÊN QUYẾT</h6>
+              {formData.doituongdauvao && (
+                  <div className="col-md-6">
+                      <div className="p-3 border rounded shadow-sm bg-light h-100">
+                          <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+                              <h6 className="mb-0 fw-bold text-teal">📁 HỒ SƠ TIÊN QUYẾT</h6>
+                          </div>
+                          {renderDocs(DICT_HO_SO.tien_quyet[formData.doituongdauvao] || [])}
                       </div>
-                      {!formData.doituongdauvao ? <div className="text-muted small fst-italic mt-2">👈 Vui lòng chọn "Đối tượng đầu vào" trước</div> : 
-                          renderDocs(DICT_HO_SO.tien_quyet[formData.doituongdauvao] || [])
-                      }
                   </div>
-              </div>
+              )}
           </div>
 
+          {/* ĐÃ SỬA (theo yêu cầu — ẩn "Thông tin điểm số" cho tới khi chọn Đối tượng đầu
+              vào): trước đây tiêu đề mục III luôn hiện, chỉ score-container bên trong render
+              rỗng (null) khi chưa chọn — giờ ẨN HẲN CẢ TIÊU ĐỀ lẫn khối điểm cho tới khi có
+              formData.doituongdauvao. */}
+          {formData.doituongdauvao && (
+          <>
           <h5 className="fw-bold text-teal mb-3 mt-5" style={{ color: '#006666', borderLeft: '4px solid #008080', paddingLeft: '10px' }}>III. THÔNG TIN ĐIỂM SỐ</h5>
           {/* ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT phải khoá hết trường, kể cả điểm số):
               bọc NGOÀI div.score-container bằng <fieldset disabled>, KHÔNG đổi gì bên trong
@@ -2355,7 +2392,7 @@ const XetTuyenPage = () => {
                               </div>
                               <div className="d-flex justify-content-between align-items-center px-1 py-2 mt-2 bg-white border rounded border-danger border-opacity-25">
                                   <button type="button" className="btn btn-sm btn-outline-danger fw-bold shadow-sm" onClick={handleClearHK2025}>
-                                      <i className="bi bi-trash"></i> Xóa hết điểm 3 HK
+                                      <i className="bi bi-trash"></i> Xóa hết nhập lại
                                   </button>
                                   <div className="d-flex align-items-center gap-2">
                                       <label className="form-label small fw-bold mb-0 text-danger">ĐIỂM CỘNG:</label>
@@ -2421,6 +2458,8 @@ const XetTuyenPage = () => {
               ) : null}
           </div>
           </fieldset>
+          </>
+          )}
 
           <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mt-4 mb-4">
               <div className="flex-grow-1 order-2 order-md-1">
@@ -2602,7 +2641,7 @@ const XetTuyenPage = () => {
               <div className="modal-dialog modal-lg modal-dialog-centered">
                   <div className="modal-content shadow-lg">
                       <div className="modal-header bg-info text-white">
-                          <h5 className="modal-title fw-bold">🔍 TÌM HỒ SƠ CŨ (TỪ FILE TRUNG GIAN)</h5>
+                          <h5 className="modal-title fw-bold">🔍 TÌM HỒ SƠ CŨ</h5>
                           <button type="button" className="btn-close btn-close-white" onClick={closeSearchModal}></button>
                       </div>
                       <div className="modal-body p-4">
@@ -2617,7 +2656,7 @@ const XetTuyenPage = () => {
                               <table className="table table-hover mb-0 align-middle" style={{fontSize: '12px'}}>
                                   <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center">TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
                                   <tbody>
-                                      {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Nhập từ khóa và bấm Tìm kiếm...</td></tr>) : (
+                                      {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Danh sách trống</td></tr>) : (
                                           searchResults.map((item, index) => (
                                               <tr key={index}>
                                                   <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td><td className="text-center"><span className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}>{item.trangThai}</span></td>

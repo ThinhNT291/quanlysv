@@ -1,0 +1,41 @@
+name: Kiem tra cu phap GAS
+
+# Tu dong chay moi lan push hoac tao Pull Request co dung cham toi thu muc gas/
+on:
+  push:
+    paths:
+      - 'gas/**'
+  pull_request:
+    paths:
+      - 'gas/**'
+
+jobs:
+  kiem-tra-cu-phap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tai code ve may ao
+        uses: actions/checkout@v4
+
+      - name: Cai Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Kiem tra cu phap tung file .gs
+        run: |
+          error_found=0
+          for f in gas/*.gs; do
+            echo "Dang kiem tra: $f"
+            tmp="${f%.gs}.__check.js"
+            cp "$f" "$tmp"
+            if ! node --check "$tmp"; then
+              echo "::error file=$f::File nay bi loi cu phap, xem chi tiet o log ben tren."
+              error_found=1
+            fi
+            rm -f "$tmp"
+          done
+          if [ "$error_found" -eq 1 ]; then
+            echo "Co it nhat 1 file .gs bi loi cu phap."
+            exit 1
+          fi
+          echo "Tat ca file .gs deu hop le."

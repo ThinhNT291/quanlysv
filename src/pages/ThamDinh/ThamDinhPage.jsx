@@ -1680,7 +1680,7 @@ const ThamDinhPage = () => {
                     <table className="table table-sm table-borderless mb-0 thamdinh-info-table">
                       <tbody>
                         <tr>
-                          <th style={{ width: 230 }}>Mã SV (tự sinh)</th>
+                          <th style={{ width: 230 }}>Mã sinh viên</th>
                           {/* ĐÃ SỬA: thêm class "masv-value" -> in đậm, màu đỏ boóc-đô (xem ThamDinh.css) */}
                           <td className="masv-value">{generateMaSV(row)}</td>
                         </tr>
@@ -2064,7 +2064,7 @@ const ThamDinhPage = () => {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '1rem' }}>
                         <tbody>
                           <tr><td style={{ padding: '3px 4px', width: '45%' }}>Họ và tên</td><td style={{ padding: '3px 4px', fontWeight: 'bold' }}>{getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"])}</td></tr>
-                          <tr><td style={{ padding: '3px 4px' }}>Mã SV (tự sinh)</td><td style={{ padding: '3px 4px', fontWeight: 'bold' }}>{generateMaSV(row)}</td></tr>
+                          <tr><td style={{ padding: '3px 4px' }}>Mã sinh viên</td><td style={{ padding: '3px 4px', fontWeight: 'bold' }}>{generateMaSV(row)}</td></tr>
                           <tr><td style={{ padding: '3px 4px' }}>Số CCCD</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]).replace(/^['"]+|['"]+$/g, '')}</td></tr>
                           <tr><td style={{ padding: '3px 4px' }}>Ngành đào tạo</td><td style={{ padding: '3px 4px' }}>{ownNganh}</td></tr>
                           <tr><td style={{ padding: '3px 4px' }}>Hệ / Hình thức đào tạo</td><td style={{ padding: '3px 4px' }}>{getVal(row, ["HỆ ĐÀO TẠO"])} / {getVal(row, ["HÌNH THỨC ĐÀO TẠO"])}</td></tr>

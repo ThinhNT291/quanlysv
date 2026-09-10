@@ -1,5 +1,27 @@
 /* ĐÃ THÊM: trang "Kho tra cứu sinh viên" (route /quan-ly-ho-so-moi). */
 
+/* ========================================================
+   ĐÃ THÊM: THU NHỎ FONT, ĐỒNG BỘ VỚI TRANG XÉT TUYỂN/THẨM ĐỊNH (yêu cầu — đồng bộ kích cỡ
+   chữ). Áp dụng cho CẢ trang danh sách (KhoSinhVienPage) lẫn trang chi tiết 1 hồ sơ
+   (ChiTietHoSoKhoPage) — cả 2 đều gắn class "kho-page" ở thẻ bọc ngoài cùng. Cùng lý do như
+   .thamdinh-page/.xettuyen-wrapper (xem ThamDinh.css/XetTuyen.css): :root trong src/index.css
+   set font 18px cho toàn app, các class Bootstrap (btn, form-control, table...) dùng đơn vị
+   rem nên phải override trực tiếp bằng px, không kế thừa được qua class cha. */
+.kho-page { font-size: 15px; }
+.kho-page h3 { font-size: 20px; }
+.kho-page h4, .kho-page h5 { font-size: 16px; }
+.kho-page h6 { font-size: 14px; }
+.kho-page .btn { font-size: 13px; padding: 0.3rem 0.7rem; }
+.kho-page .btn-sm { font-size: 12px; padding: 0.2rem 0.5rem; }
+.kho-page .form-control,
+.kho-page .form-select { font-size: 13px; }
+.kho-page .form-control-sm,
+.kho-page .form-select-sm { font-size: 12px; }
+.kho-page .table { font-size: 12px; }
+.kho-page .badge { font-size: 11px; }
+.kho-page .small { font-size: 12px; }
+.kho-page .nav-tabs { font-size: 13px; }
+
 /* Nút "Lọc thêm"/"Xóa lọc" mượn đúng 2 class màu đã dùng ở ThamDinhPage.css để đồng bộ
    giao diện toàn hệ thống (trung tính khi không có gì lọc, cam nhạt khi đang lọc). */
 .kho-reset-btn {
