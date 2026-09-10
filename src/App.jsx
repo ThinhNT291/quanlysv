@@ -39,7 +39,7 @@ const ProtectedRoute = ({ userRoles, allowedRoles, children }) => {
     <div className="d-flex flex-column align-items-center justify-content-center mt-5 pt-5 text-center">
       <h1 className="text-danger display-1"><i className="bi bi-shield-lock-fill"></i></h1>
       <h3 className="text-muted mt-3 fw-bold">KHÔNG CÓ QUYỀN TRUY CẬP</h3>
-      <p className="text-secondary">Tài khoản của bạn không được phân quyền sử dụng chức năng này.</p>
+      <p className="text-secondary">Tài khoản của bạn không có quyền sử dụng chức năng này.</p>
     </div>
   );
 };
@@ -292,7 +292,7 @@ const App = () => {
   // Dùng Swal (đã có sẵn trong dự án) thay vì tự viết modal riêng cho gọn.
   const handleOpenFeedback = async () => {
     const { value: noiDung, isConfirmed } = await Swal.fire({
-      title: '💬 Gửi phản hồi',
+      title: '💬 Feedback',
       input: 'textarea',
       inputPlaceholder: 'Mô tả lỗi gặp phải hoặc góp ý của bạn...',
       showCancelButton: true,
@@ -339,11 +339,11 @@ const App = () => {
               end
               onClick={() => setIsNavCollapsed(true)}
               className="navbar-brand fw-bold d-flex align-items-center text-decoration-none"
-              style={{ color: '#0dcaf0', letterSpacing: '0.5px' }}
+              style={{ color: '#5edcf6', letterSpacing: '0.5px' }}
             >
               <img src={logoPhuXuan} alt="Phú Xuan University" className="app-logo me-2" />
               <i className="bi bi-mortarboard-fill me-2"></i>
-              <span className="d-flex flex-column text-center lh-1" style={{ fontSize: '0.8rem' }}>
+              <span className="d-flex flex-column text-center lh-1" style={{ fontSize: '0.9rem' }}>
                 <span>HỆ THỐNG</span>
                 <span>QUẢN LÝ SINH VIÊN</span>
               </span>
@@ -354,10 +354,15 @@ const App = () => {
                 xuất được. Giờ luôn hiển thị ngang hàng ngay cạnh thương hiệu, nhờ ms-auto +
                 flex-wrap sẵn có của .navbar nên màn quá hẹp sẽ tự xuống dòng chứ không tràn. */}
             <div className="nav-item dropdown d-flex align-items-center flex-shrink-0 position-relative ms-auto me-2 me-lg-3 mt-2 mt-lg-0 order-lg-2" ref={userDropdownRef}>
-              {/* ĐÃ SỬA: ẩn username khỏi nút bấm — giờ chỉ hiện avatar + role, gọn hơn. Tên
-                  tài khoản (displayName) chuyển vào bên trong menu xổ xuống, xem bên dưới. */}
+              {/* ĐÃ SỬA: ẩn username + vai trò khỏi nút bấm — giờ chỉ còn avatar, gọn hơn. Tên
+                  tài khoản (displayName) chuyển vào bên trong menu xổ xuống, xem bên dưới.
+                  ĐÃ BỎ class "dropdown-toggle" (theo yêu cầu — bỏ mũi tên xổ xuống): class này
+                  của Bootstrap chỉ dùng để VẼ mũi tên (::after) + chỉnh padding cho chỗ mũi
+                  tên đó, không liên quan gì tới việc mở/đóng menu — menu này tự quản lý bằng
+                  state isUserDropdownOpen + onClick thủ công bên dưới, không dùng JS dropdown
+                  gốc của Bootstrap, nên bỏ class đi không ảnh hưởng chức năng gì cả. */}
               <a
-                className="nav-link dropdown-toggle text-light d-flex align-items-center p-0"
+                className="nav-link text-light d-flex align-items-center p-0"
                 href="#"
                 onClick={(e) => {
                   e.preventDefault();
@@ -370,7 +375,6 @@ const App = () => {
                 ) : (
                   <i className="bi bi-person-circle fs-4 me-2"></i>
                 )}
-                <span className="small fw-bold me-1">{currentUser.role}</span>
               </a>
 
               {/* ĐÃ THÊM class "user-account-menu" (theo phản hồi): chữ trong menu này đang to
@@ -455,7 +459,7 @@ const App = () => {
                           setIsUserDropdownOpen(false);
                         }}
                       >
-                        <i className="bi bi-file-earmark-excel me-2 text-success"></i> Xuất Excel (Thẩm định)
+                        <i className="bi bi-file-earmark-excel me-2 text-success"></i> Export (All Columns)
                       </button>
                     </li>
                     {/* ĐÃ THÊM (theo phản hồi — "Xuất DS tuỳ chọn"): giống hệt cơ chế bắn sự
@@ -469,7 +473,7 @@ const App = () => {
                           setIsUserDropdownOpen(false);
                         }}
                       >
-                        <i className="bi bi-ui-checks-grid me-2 text-primary"></i> Xuất DS tuỳ chọn (Thẩm định)
+                        <i className="bi bi-ui-checks-grid me-2 text-primary"></i> Export (Customized)
                       </button>
                     </li>
                   </>
@@ -532,7 +536,7 @@ const App = () => {
                             onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
-                            <i className="bi bi-people-fill me-2"></i>Quản lý hồ sơ (Nhập học)
+                            <i className="bi bi-people-fill me-2"></i>Thu hồ sơ trực tiếp
                           </NavLink>
                         </li>
                       )}
@@ -543,7 +547,23 @@ const App = () => {
                             onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
-                            <i className="bi bi-card-checklist me-2"></i>Nhập liệu Xét tuyển
+                            <i className="bi bi-card-checklist me-2"></i>Nhập hồ sơ trực tuyến
+                          </NavLink>
+                        </li>
+                      )}
+                      {/* ĐÃ CHUYỂN vào đây (theo yêu cầu — mở "Tạo yêu cầu ký số" thêm cho
+                          TuyenSinh/CanBo): trước đây nằm trong nhóm "Thẩm định" (chỉ
+                          ThamDinh/Admin thấy nhóm đó), giờ mở rộng quyền nên chuyển sang
+                          đúng nhóm "Tuyển sinh" — nhóm này vốn đã hiện cho cả CanBo/
+                          TuyenSinh/ThamDinh/Admin (khớp đúng outer gate NHÓM 1 phía trên). */}
+                      {hasAnyRole(currentUser.roles, ['ThamDinh', 'TuyenSinh', 'CanBo', 'Admin']) && (
+                        <li>
+                          <NavLink
+                            to="/ho-so-ky-so"
+                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
+                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
+                          >
+                            <i className="bi bi-file-earmark-check me-2"></i>Hồ sơ ký số
                           </NavLink>
                         </li>
                       )}
@@ -585,21 +605,7 @@ const App = () => {
                             onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
-                            <i className="bi bi-person-fill-exclamation me-2"></i>Xác nhận định danh
-                          </NavLink>
-                        </li>
-                      )}
-                      {/* ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6): "Tạo yêu cầu ký số" — trang tải
-                          file PDF lên ký ngay (taoYeuCauKyTuFile), khớp đúng
-                          requireAuth(['ThamDinh','Admin']) của action đó bên GAS. */}
-                      {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
-                        <li>
-                          <NavLink
-                            to="/ho-so-ky-so"
-                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
-                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
-                          >
-                            <i className="bi bi-file-earmark-check me-2"></i>Tạo yêu cầu ký số
+                            <i className="bi bi-person-fill-exclamation me-2"></i>Định danh hồ sơ
                           </NavLink>
                         </li>
                       )}
@@ -630,7 +636,7 @@ const App = () => {
                             onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
                             className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
                           >
-                            <i className="bi bi-archive-fill me-2"></i>Kho tra cứu sinh viên
+                            <i className="bi bi-archive-fill me-2"></i>Student Overview
                           </NavLink>
                         </li>
                       )}
@@ -745,12 +751,14 @@ const App = () => {
 
             {/* ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6): trang "Tạo yêu cầu ký số" — CÓ bọc
                 ProtectedRoute (khác /ho-so-ca-nhan, /ho-so-cho-ky ở trên) vì đây là hành
-                động TẠO yêu cầu ký (action taoYeuCauKyTuFile đòi requireAuth(['ThamDinh',
-                'Admin'])), không phải xem/ký dữ liệu của chính mình theo email — khớp đúng
-                allowedRoles=['ThamDinh'] (ProtectedRoute tự OR thêm Admin sẵn, xem định
-                nghĩa ở trên). */}
+                động TẠO yêu cầu ký, không phải xem/ký dữ liệu của chính mình theo email.
+                ĐÃ SỬA (theo yêu cầu — mở thêm cho TuyenSinh/CanBo): trước đây chỉ
+                allowedRoles=['ThamDinh'], giờ mở thêm 'TuyenSinh','CanBo' — khớp đúng
+                requireAuth(['ThamDinh','TuyenSinh','CanBo','Admin']) đã nới ở 2 action GAS
+                dùng bởi trang này (hdGet_layCauHinhChucDanhKy, hdPost_taoYeuCauKyTuFile —
+                xem KySo.gs). ProtectedRoute tự OR thêm Admin sẵn, không cần liệt kê lại. */}
             <Route path="/ho-so-ky-so" element={
-              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['ThamDinh']}>
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['ThamDinh', 'TuyenSinh', 'CanBo']}>
                 <TaoYeuCauKySoPage />
               </ProtectedRoute>
             } />

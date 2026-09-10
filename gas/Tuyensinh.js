@@ -1927,6 +1927,23 @@ function hdPost_importStudents(e, ss) {
       // Các cột bookkeeping luôn đổi mỗi lần sửa (timestamp/tài khoản) — không tính là
       // "thay đổi có ý nghĩa" khi liệt kê cho cán bộ Thẩm định xem hồ sơ vừa cập nhật gì.
       const CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT = ["TRẠNG THÁI THẨM ĐỊNH", "NGÀY CẬP NHẬT HỒ SƠ", "TIME", "TÀI KHOẢN NHẬP LIỆU"];
+      // ĐÃ THÊM (chặn "phá khoá" hồ sơ đã duyệt — theo phản hồi 2026-09-10: "hồ sơ đã duyệt
+      // khi tải lên thì đúng là khoá, nhưng F5 cái là nó mở sạch... chặn dự phòng ở đâu đó,
+      // nếu thấy dữ liệu đẩy lên nằm trong các trường bị khoá lại thay đổi thì từ chối ghi").
+      // Trước đây việc "khoá" chỉ nằm ở tầng giao diện (disabled={isOldRecordApproved} trên
+      // Form, XetTuyenPage.jsx) — F5 làm mất cờ đó (đã sửa riêng ở XetTuyenPage.jsx, lưu qua
+      // sessionStorage), nhưng dù frontend có bị sửa/bỏ qua thế nào, backend PHẢI tự chặn
+      // được — đây là lớp chặn THẬT SỰ. Danh sách dưới đây khớp ĐÚNG các trường có
+      // disabled={isOldRecordApproved} trên Form (không tính Link hồ sơ và hồ sơ giấy tờ tick
+      // bổ sung — 2 nhóm đó CỐ Ý vẫn cho sửa sau khi duyệt, xem banner cảnh báo trên Form).
+      // Nếu hồ sơ TRƯỚC lần sửa này đã "Đã duyệt" mà client gửi giá trị khác giá trị đang có
+      // ở các cột này, GIỮ NGUYÊN giá trị cũ (không ghi giá trị mới) — xem đoạn kiểm tra
+      // daDuyetTruocKhiSua trong vòng lặp UPDATE bên dưới.
+      const COT_KHOA_KHI_DA_DUYET = [
+        "TÊN SINH VIÊN", "CĂN CƯỚC", "CCCD", "MÃ SINH VIÊN", "GIỚI TÍNH", "NGÀY SINH", "NƠI SINH",
+        "ĐỐI TƯỢNG ĐẦU VÀO", "NGÀNH", "HỆ ĐÀO TẠO", "HÌNH THỨC ĐÀO TẠO", "KHÓA",
+        "NĂM XÉT TUYỂN", "NĂM TỐT NGHIỆP THPT", "ĐỐI TƯỢNG ƯU TIÊN", "KHU VỰC ƯU TIÊN"
+      ];
 
       // TỪ ĐIỂN MÃ HÓA
       const DICT_HE_DT = {
@@ -2082,6 +2099,11 @@ function hdPost_importStudents(e, ss) {
             // đổi khác — dùng để nhét vào ô "TRẠNG THÁI THẨM ĐỊNH" cho cán bộ Thẩm định thấy
             // ngay hồ sơ vừa cập nhật CHỖ NÀO mà không cần mò vào tin nhắn Google Chat.
             const changedHeaderNames = [];
+            // ĐÃ THÊM: xem chú thích đầy đủ tại khai báo COT_KHOA_KHI_DA_DUYET phía trên đầu
+            // hàm — tính TRƯỚC vòng lặp ghi đè, dựa trên oldRowData (trạng thái TRƯỚC lần sửa
+            // này, đọc TRƯỚC khi ghi bất kỳ gì xuống dòng này ở dưới).
+            const daDuyetTruocKhiSua = idxStatus !== -1 && String(oldRowData[idxStatus] || "").trim().indexOf("Đã duyệt") !== -1;
+            const rejectedFieldNames = [];
             cleanHeaders.forEach((h, colIndex) => {
               if (cleanS[h] !== undefined) {
                   if (colIndex === idxMaSV) {
@@ -2090,6 +2112,15 @@ function hdPost_importStudents(e, ss) {
                   } else {
                       const oldValStr = String(oldRowData[colIndex] === null || oldRowData[colIndex] === undefined ? "" : oldRowData[colIndex]).trim();
                       const newValStr = String(cleanS[h]).trim();
+                      // ĐÃ THÊM: hồ sơ đã duyệt TRƯỚC lần sửa này -> từ chối tuyệt đối việc ghi
+                      // đè các cột định danh/điều kiện xét tuyển, dù client gửi giá trị khác đi
+                      // — bỏ qua HẲN field này (không log thay đổi, không setValue), giữ nguyên
+                      // giá trị đang có trên Sheet. Đây là lớp chặn THẬT ở backend, không phụ
+                      // thuộc Form phía trình duyệt có bị sửa/bỏ qua disabled hay không.
+                      if (daDuyetTruocKhiSua && oldValStr !== newValStr && COT_KHOA_KHI_DA_DUYET.indexOf(h) !== -1) {
+                        rejectedFieldNames.push(h);
+                        return;
+                      }
                       if (oldValStr !== newValStr) {
                         changeLines.push(h + ": \"" + truncateForChat(oldValStr) + "\" → \"" + truncateForChat(newValStr) + "\"");
                         if (CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT.indexOf(h) === -1) changedHeaderNames.push(h);
@@ -2119,18 +2150,21 @@ function hdPost_importStudents(e, ss) {
             // đó, xem ThamDinhPage.jsx). Nếu không có cột gì thật sự đổi (chỉ có timestamp/tài
             // khoản, xem CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT) thì trả về đúng "Đã duyệt" sạch,
             // không thêm hậu tố thừa.
-            if (idxStatus !== -1) {
-              const oldStatusRaw = String(oldRowData[idxStatus] || "").trim();
-              if (oldStatusRaw.indexOf("Đã duyệt") !== -1) {
-                const trangThaiSauKhiSua = changedHeaderNames.length > 0
-                  ? "Đã duyệt (Có cập nhật: " + changedHeaderNames.join(', ') + ")"
-                  : "Đã duyệt";
-                sheet.getRange(rowIndex, idxStatus + 1).setValue(trangThaiSauKhiSua);
-              }
+            if (idxStatus !== -1 && daDuyetTruocKhiSua) {
+              const trangThaiSauKhiSua = changedHeaderNames.length > 0
+                ? "Đã duyệt (Có cập nhật: " + changedHeaderNames.join(', ') + ")"
+                : "Đã duyệt";
+              sheet.getRange(rowIndex, idxStatus + 1).setValue(trangThaiSauKhiSua);
             }
 
             updated++;
-            updatedDetails.push({ ten: cleanS["TÊN SINH VIÊN"] || "", nganh: cleanS["NGÀNH"] || cleanS["NGANH"] || "", changes: changeLines });
+            updatedDetails.push({
+              ten: cleanS["TÊN SINH VIÊN"] || "", nganh: cleanS["NGÀNH"] || cleanS["NGANH"] || "", changes: changeLines,
+              // ĐÃ THÊM: các cột bị TỪ CHỐI ghi (xem COT_KHOA_KHI_DA_DUYET) — báo luôn trong
+              // thông báo Google Chat để cán bộ Thẩm định/Tuyển sinh biết có người cố sửa
+              // trường đã khoá của 1 hồ sơ đã duyệt, không âm thầm mất dấu vết.
+              rejected: rejectedFieldNames
+            });
           } else {
              // ĐÃ SỬA: trước đây rớt xuống appendRow tạo dòng MỚI khi không khớp được hồ sơ
              // gốc cần sửa — nguy cơ tạo hồ sơ trùng do CCCD/Ngành gửi lên lệch với dòng gốc.
@@ -2212,6 +2246,11 @@ function hdPost_importStudents(e, ss) {
             msg += "• " + (d.ten || "(chưa rõ tên)") + " — Ngành: " + (d.nganh || "(chưa rõ)") + "\n";
             if (d.changes.length > 0) d.changes.forEach(c => { msg += "    ↳ " + c + "\n"; });
             else msg += "    ↳ (không có trường nào thay đổi giá trị)\n";
+            // ĐÃ THÊM: xem chú thích tại COT_KHOA_KHI_DA_DUYET/rejectedFieldNames —
+            // hồ sơ đã duyệt, có người gửi giá trị khác cho (các) cột đã khoá, đã bị chặn.
+            if (d.rejected && d.rejected.length > 0) {
+              msg += "    🔒 ĐÃ CHẶN sửa (hồ sơ đã duyệt, giữ nguyên giá trị cũ): " + d.rejected.join(', ') + "\n";
+            }
           });
         }
         if (failedList.length > 0) {
@@ -2779,9 +2818,9 @@ function hdPost_scanDocument(e, ss) {
            let rawText = jsonGemini.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
            return responseJSON(200, "Quét thành công", JSON.parse(rawText));
         } else {
-           return responseJSON(500, "Ảnh quá mờ hoặc sai định dạng", jsonGemini);
+           return responseJSON(500, "Ảnh quá mờ hoặc AI không nhận diện được", jsonGemini);
         }
-      } catch (err) { return responseJSON(500, "Lỗi kết nối: " + err.toString(), null); }
+      } catch (err) { return responseJSON(500, "Lỗi gọi AI: " + err.toString(), null); }
     }
 
 function hdPost_scanTranscript(e, ss) {
@@ -2898,8 +2937,8 @@ function hdPost_scanChungChi(e, ss) {
         if (jsonGemini.candidates && jsonGemini.candidates[0].content.parts[0].text) {
           let rawText = jsonGemini.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
           return responseJSON(200, "Quét thành công", JSON.parse(rawText));
-        } else { return responseJSON(500, "Ảnh quá mờ hoặc sai định dạng", jsonGemini); }
-      } catch (err) { return responseJSON(500, "Lỗi kết nối: " + err.toString(), null); }
+        } else { return responseJSON(500, "Ảnh quá mờ hoặc AI không nhận diện được", jsonGemini); }
+      } catch (err) { return responseJSON(500, "Lỗi AI: " + err.toString(), null); }
     }
 
 function hdPost_exportTemplate(e, ss) {

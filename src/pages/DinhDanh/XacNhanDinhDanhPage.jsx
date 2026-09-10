@@ -74,7 +74,7 @@ const XacNhanDinhDanhPage = () => {
             <i className="bi bi-person-fill-exclamation me-2"></i>Hàng đợi xác nhận định danh
           </h4>
           <p className="text-muted small mb-0">
-            Hồ sơ trùng tên + ngày sinh với ai đó đã có trong hệ thống, nhưng chưa đủ CCCD để tự khẳng định là cùng 1 người hay khác người — cần Admin xem và xác nhận tay.
+            Hồ sơ trùng tên + ngày sinh với ai đó đã có trong hệ thống, nhưng chưa đủ căn cứ để tự khẳng định là cùng 1 người hay khác người — cần Admin xem và xác nhận thủ công.
           </p>
         </div>
         <div className="col-md-6 text-md-end mt-2 mt-md-0">

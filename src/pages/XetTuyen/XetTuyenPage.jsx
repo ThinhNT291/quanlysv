@@ -524,20 +524,28 @@ const XetTuyenPage = () => {
 
   // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT bị mở sửa tự do mọi trường, dẫn tới trạng thái
   // "tụt" về Mới bổ sung khi lưu lại rồi bấm Duyệt được lần nữa): 2 cờ dưới đây chỉ có tác
-  // dụng ở TẦNG GIAO DIỆN (khoá bớt input) — không cần lưu sessionStorage vì luôn được tính
-  // lại ngay khi tải 1 hồ sơ lên Form (loadOldCandidate/handleEditRowLocal), không cần giữ
-  // qua lần load lại trang. Việc CHẶN THẬT (không cho hạ trạng thái) đã nằm ở backend
-  // (Quanlysv.gs, importStudents) — 2 cờ này chỉ giúp người nhập liệu KHÔNG lỡ tay sửa nhầm
-  // các trường không liên quan sau khi hồ sơ đã duyệt.
-  const [isOldRecordApproved, setIsOldRecordApproved] = useState(false);
+  // dụng ở TẦNG GIAO DIỆN (khoá bớt input).
+  // ĐÃ SỬA (bug F5 mở khoá — theo phản hồi 2026-09-10): giả định cũ "không cần lưu
+  // sessionStorage vì luôn được tính lại khi tải hồ sơ lên Form" là SAI — F5 không gọi lại
+  // loadOldCandidate()/handleEditRowLocal(), chỉ khôi phục formData/isEditMode/dataList từ
+  // sessionStorage qua loadSession() (xem 3 useState ngay phía trên) — 2 cờ này bị bỏ sót
+  // nên luôn reset về false/[] sau F5 dù formData vẫn còn nguyên si dữ liệu hồ sơ đã duyệt,
+  // khiến Form "mở khoá sạch". Giờ lưu/khôi phục qua sessionStorage giống hệt formData/
+  // isEditMode/editingAction ở trên — Việc CHẶN THẬT (không cho hạ trạng thái/không cho ghi
+  // đè trường đã khoá) vẫn nằm ở backend (Quanlysv.gs, importStudents) như trước; 2 cờ này
+  // chỉ giúp người nhập liệu KHÔNG lỡ tay sửa nhầm các trường không liên quan trên UI.
+  const [isOldRecordApproved, setIsOldRecordApproved] = useState(() => loadSession('xt_isOldApproved', false));
   // ĐÃ SỬA: lưu ID (không lưu TÊN) — xem canonNamesToIds()/DICT_HO_SO_CHUAN phía trên đầu
   // file, lý do tránh lệch tên hiển thị giữa 2 bản DICT_HO_SO (bản chuẩn vs bản cục bộ).
-  const [missingDocIdsOld, setMissingDocIdsOld] = useState([]);
+  const [missingDocIdsOld, setMissingDocIdsOld] = useState(() => loadSession('xt_missingDocIdsOld', []));
 
   useEffect(() => { sessionStorage.setItem('xt_form', JSON.stringify(formData)); }, [formData]);
   useEffect(() => { sessionStorage.setItem('xt_list', JSON.stringify(dataList)); }, [dataList]);
   useEffect(() => { sessionStorage.setItem('xt_isEdit', JSON.stringify(isEditMode)); }, [isEditMode]);
   useEffect(() => { sessionStorage.setItem('xt_editAction', JSON.stringify(editingAction)); }, [editingAction]);
+  // ĐÃ THÊM (bug F5 mở khoá — xem chú thích tại khai báo useState của 2 cờ này ở trên).
+  useEffect(() => { sessionStorage.setItem('xt_isOldApproved', JSON.stringify(isOldRecordApproved)); }, [isOldRecordApproved]);
+  useEffect(() => { sessionStorage.setItem('xt_missingDocIdsOld', JSON.stringify(missingDocIdsOld)); }, [missingDocIdsOld]);
 
   const [admissionResult, setAdmissionResult] = useState(null);
   const [isPushing, setIsPushing] = useState(false);
@@ -835,22 +843,35 @@ const XetTuyenPage = () => {
     setAdmissionResult({ hsStatus, hsColor, hsMsg, diemStatus, diemMsg, boxBg, boxBorder, icon, title, titleColor });
   }, [formData]);
 
+  // ĐÃ THÊM (theo yêu cầu — báo lỗi thiếu ô (*) phải đưa con trỏ vào đúng ô đó): trước đây
+  // các chỗ validate trong handleAddRow() chỉ alert() suông rồi return, người nhập liệu phải
+  // tự mò tìm ô nào đang thiếu trên form dài. Hàm dùng chung này nhận đúng "name" của
+  // input/select (khớp thuộc tính name trên JSX, VD name="hoten") — cuộn mượt tới đó rồi đặt
+  // focus, GỌI SAU alert() (alert() là lệnh CHẶN, script đứng yên tới khi người dùng bấm OK)
+  // để không bị việc trình duyệt đang bận vẽ hộp thoại alert cắt ngang animation cuộn.
+  const focusInvalidField = (fieldName) => {
+    const el = document.querySelector(`[name="${fieldName}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.focus({ preventScroll: true });
+  };
+
   const handleAddRow = () => {
     // ĐÃ SỬA (theo phản hồi — thêm "Năm tốt nghiệp THPT"): "khuvucuutien" bỏ khỏi danh sách
     // bắt buộc CHUNG, tự kiểm tra riêng ngay dưới đây — vì ô này bị ẨN HẲN (không còn bắt
     // buộc) khi chọn mốc "Trước..." (xem biChanKhuVucUTTheoNamTN/JSX ô "Khu vực ưu tiên").
     const requiredFields = ['hoten', 'cccd', 'ngaysinh', 'nganh', 'khoa', 'namtotnghiepthpt', 'doituonguutien', 'doituongdauvao', 'namtt', 'hedaotao', 'htdaotao'];
     for (let field of requiredFields) {
-        if (!formData[field]) { alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); return; }
+        if (!formData[field]) { alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); focusInvalidField(field); return; }
     }
     // ĐÃ THÊM (theo yêu cầu 2026-09-10 — hồ sơ CŨ đã có MSV thật): tick "Hồ sơ cũ (có MSV)"
     // thì ô "Mã sinh viên" bắt buộc phải điền — không gộp vào requiredFields chung ở trên vì
     // chỉ bắt buộc CÓ ĐIỀU KIỆN (tick mới bắt buộc).
     if (laHoSoCu && !formData.masv.trim()) {
-        alert(`Vui lòng nhập Mã sinh viên`); return;
+        alert(`Vui lòng nhập Mã sinh viên`); focusInvalidField('masv'); return;
     }
     if (!biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) && !formData.khuvucuutien) {
-        alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); return;
+        alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); focusInvalidField('khuvucuutien'); return;
     }
 
     if (formData.doituongdauvao === 'Tốt nghiệp THPT' && !formData.loai_diem) {
@@ -1261,6 +1282,17 @@ const XetTuyenPage = () => {
           } catch (err) { setScanStatus("❌ Lỗi kết nối AI"); }
           e.target.value = ""; 
       };
+  };
+
+  // ĐÃ THÊM (theo yêu cầu — rút gọn nhãn trạng thái trong modal "Tìm hồ sơ cũ"): backend
+  // (hdPost_importStudents, TuyenSinh.gs) trả nguyên chuỗi "Đã duyệt (Có cập nhật: <liệt kê
+  // MỌI cột vừa đổi>)" cho hồ sơ đã duyệt rồi còn bị sửa thêm — liệt kê dài dằng dặc, tràn cột
+  // hẹp trong bảng kết quả tìm kiếm. CHỈ rút gọn ở tầng HIỂN THỊ ngay tại đây, không đụng gì
+  // tới dữ liệu thật (item.trangThai) — nơi khác (nếu có dùng lại state này) vẫn nhận đúng
+  // chuỗi gốc đầy đủ.
+  const rutGonTrangThaiTimKiem = (trangThai) => {
+    const t = String(trangThai || '');
+    return (t.indexOf('Đã duyệt') !== -1 && t.indexOf('Có cập nhật') !== -1) ? 'Đã duyệt (có bổ sung sau)' : t;
   };
 
   const executeSearchCandidate = async () => {
@@ -2646,9 +2678,15 @@ const XetTuyenPage = () => {
                       </div>
                       <div className="modal-body p-4">
                           <div className="d-flex gap-2 mb-4">
-                              <input type="text" className="form-control" placeholder="Nhập Họ tên hoặc vài số CCCD..." 
-                                     value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} 
-                                     onKeyDown={e => e.key === 'Enter' && executeSearchCandidate()} />
+                              {/* ĐÃ THÊM autoFocus (theo yêu cầu — mở modal là gõ được luôn, không cần
+                                  bấm chuột vào ô trước): input này bị unmount/mount lại mỗi lần đóng/mở
+                                  modal (cả khối modal chỉ render khi isSearchModalOpen=true), nên
+                                  autoFocus tự chạy lại đúng thời điểm mount mỗi lần mở, không cần thêm
+                                  ref/useEffect gì khác — giống cách modal "Tra cứu KV" bên dưới đã làm. */}
+                              <input type="text" className="form-control" placeholder="Nhập Họ tên hoặc vài số CCCD..."
+                                     value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)}
+                                     onKeyDown={e => e.key === 'Enter' && executeSearchCandidate()}
+                                     autoFocus />
                               <button className="btn btn-warning fw-bold text-dark px-4" onClick={executeSearchCandidate} disabled={isSearching}>{isSearching ? '⏳...' : 'Tìm kiếm'}</button>
                           </div>
                           
@@ -2659,7 +2697,7 @@ const XetTuyenPage = () => {
                                       {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Danh sách trống</td></tr>) : (
                                           searchResults.map((item, index) => (
                                               <tr key={index}>
-                                                  <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td><td className="text-center"><span className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}>{item.trangThai}</span></td>
+                                                  <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td><td className="text-center"><span className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}>{rutGonTrangThaiTimKiem(item.trangThai)}</span></td>
                                                   <td className="text-center"><button className="btn btn-sm btn-outline-primary fw-bold" onClick={() => loadOldCandidate(item)}>✏️ Sửa</button></td>
                                               </tr>
                                           ))

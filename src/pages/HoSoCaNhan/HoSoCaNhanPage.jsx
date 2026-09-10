@@ -6,16 +6,32 @@
 // Khối 1: thông tin tài khoản (chỉ đọc).
 // Khối 2: chữ ký cá nhân — ảnh chữ ký này sẽ được đóng dấu tự động vào Giấy báo trúng
 // tuyển (GBTT) khi người dùng ký duyệt ở trang "Hồ sơ chờ ký" (Bước 4 trở đi).
+// Khối 3 (ĐÃ THÊM): kết nối chữ ký số (CA) — trước đây việc gắn CA_NHA_CUNG_CAP/
+// CA_MA_THUE_BAO cho 1 tài khoản hoàn toàn do Admin tự gõ tay trong Sheet, không có gì
+// đảm bảo mã thuê bao đúng/còn hoạt động. Khối này cho người dùng tự "kết nối" CA của
+// mình — bấm Kết nối sẽ xác thực THẬT với nhà cung cấp (ca-sign-service/check-certificate,
+// không ký/không gửi thông báo tới điện thoại) trước khi lưu.
 import React, { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
-import { layChuKyCuaToi, luuChuKyCuaToi, xoaChuKyCuaToi } from '../../api/studentApi';
+import {
+  layChuKyCuaToi, luuChuKyCuaToi, xoaChuKyCuaToi,
+  layThongTinCaCuaToi, ketNoiChuKySo, xoaCaCuaToi,
+} from '../../api/studentApi';
+
+// Danh sách nhà cung cấp CA đã hỗ trợ — hiện chỉ VNPT SmartCA (xem NhaCungCapCA_/
+// xacThucChungThuCA_ ở KySo.gs); thêm hãng khác sau này chỉ cần thêm 1 dòng ở đây.
+const NHA_CUNG_CAP_CA = [
+  { ma: 'VNPT_SMARTCA', ten: 'VNPT SmartCA' },
+];
 
 const HoSoCaNhanPage = () => {
   const currentUser = JSON.parse(localStorage.getItem('tuyensinh_user')) || {};
   const queryClient = useQueryClient();
   const fileInputRef = useRef(null);
   const [dangXuLyAnh, setDangXuLyAnh] = useState(false);
+  const [nhaCungCapChon, setNhaCungCapChon] = useState(NHA_CUNG_CAP_CA[0].ma);
+  const [maThueBaoNhap, setMaThueBaoNhap] = useState('');
 
   const { data: chuKy, isLoading: dangTaiChuKy } = useQuery({
     queryKey: ['chuKyCuaToi'],
@@ -82,6 +98,57 @@ const HoSoCaNhanPage = () => {
       text: 'Bạn sẽ không ký được văn bản nào cho tới khi tải chữ ký mới lên.',
       showCancelButton: true, confirmButtonText: 'Xoá', cancelButtonText: 'Huỷ', confirmButtonColor: '#dc3545'
     }).then((r) => { if (r.isConfirmed) xoaMutation.mutate(); });
+  };
+
+  // KHỐI 3 — Kết nối chữ ký số (CA)
+  const { data: thongTinCa, isLoading: dangTaiCa } = useQuery({
+    queryKey: ['thongTinCaCuaToi'],
+    queryFn: layThongTinCaCuaToi,
+  });
+
+  const ketNoiMutation = useMutation({
+    mutationFn: ketNoiChuKySo,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['thongTinCaCuaToi'] });
+      setMaThueBaoNhap('');
+      Swal.fire({
+        icon: 'success', title: 'Đã kết nối chữ ký số',
+        text: data?.tenChuSoHuu ? `Chủ sở hữu chứng thư: ${data.tenChuSoHuu}` : undefined,
+      });
+    },
+    onError: (err) => Swal.fire({ icon: 'error', title: 'Không kết nối được', text: err.message }),
+  });
+
+  const xoaCaMutation = useMutation({
+    mutationFn: xoaCaCuaToi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['thongTinCaCuaToi'] });
+      Swal.fire({ icon: 'success', title: 'Đã huỷ kết nối chữ ký số', timer: 1500, showConfirmButton: false });
+    },
+    onError: (err) => Swal.fire({ icon: 'error', title: 'Lỗi huỷ kết nối', text: err.message }),
+  });
+
+  const handleKetNoiCa = () => {
+    const maThueBao = maThueBaoNhap.trim();
+    if (!maThueBao) {
+      Swal.fire({ icon: 'warning', title: 'Thiếu mã thuê bao', text: 'Vui lòng nhập mã thuê bao chữ ký số.' });
+      return;
+    }
+    Swal.fire({
+      icon: 'question', title: 'Xác thực chữ ký số này?',
+      html: `Hệ thống sẽ liên hệ <b>${NHA_CUNG_CAP_CA.find(n => n.ma === nhaCungCapChon)?.ten}</b> để kiểm tra mã thuê bao <b>${maThueBao}</b> — quá trình này KHÔNG gửi thông báo xác nhận nào tới điện thoại của bạn, chỉ tra cứu.`,
+      showCancelButton: true, confirmButtonText: 'Xác thực & kết nối', cancelButtonText: 'Huỷ',
+    }).then((r) => {
+      if (r.isConfirmed) ketNoiMutation.mutate({ nhaCungCap: nhaCungCapChon, maThueBao });
+    });
+  };
+
+  const handleXoaCa = () => {
+    Swal.fire({
+      icon: 'question', title: 'Huỷ kết nối chữ ký số?',
+      text: 'Bạn sẽ không dùng được lựa chọn "Ký số" cho tới khi kết nối lại.',
+      showCancelButton: true, confirmButtonText: 'Huỷ kết nối', cancelButtonText: 'Đóng', confirmButtonColor: '#dc3545'
+    }).then((r) => { if (r.isConfirmed) xoaCaMutation.mutate(); });
   };
 
   return (
@@ -165,6 +232,78 @@ const HoSoCaNhanPage = () => {
               </button>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* KHỐI 3 — Kết nối chữ ký số (CA) */}
+      <div className="card shadow-sm mt-4">
+        <div className="card-header bg-white fw-bold">
+          <i className="bi bi-patch-check me-2"></i>Chữ ký số (CA)
+        </div>
+        <div className="card-body">
+          <p className="text-muted small mb-3">
+            Ngoài chữ ký ảnh ở trên, bạn có thể kết nối chứng thư số (CA) của mình để ký các
+            văn bản ở bước ký CUỐI CÙNG bằng chữ ký số pháp lý thay vì ảnh. Khi bấm "Ký" ở
+            trang "Hồ sơ chờ ký", bạn sẽ được hỏi chọn ký bằng ảnh hay ký số mỗi lần.
+          </p>
+
+          {dangTaiCa ? (
+            <div className="text-muted">Đang tải...</div>
+          ) : thongTinCa?.coCA ? (
+            <div className="mb-3">
+              <div className="alert alert-success py-2 px-3 mb-2">
+                <i className="bi bi-check-circle me-1"></i>
+                Đã kết nối <b>{NHA_CUNG_CAP_CA.find(n => n.ma === thongTinCa.nhaCungCap)?.ten || thongTinCa.nhaCungCap}</b> —
+                mã thuê bao: <b>{thongTinCa.maThueBao}</b>
+              </div>
+              <button
+                className="btn btn-outline-danger btn-sm"
+                disabled={xoaCaMutation.isPending}
+                onClick={handleXoaCa}
+              >
+                {xoaCaMutation.isPending ? '⏳ Đang huỷ...' : '🗑️ Huỷ kết nối'}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="alert alert-secondary py-2 px-3 mb-3">
+                Bạn chưa kết nối chữ ký số nào. Đây là tính năng tuỳ chọn — không kết nối vẫn
+                ký được văn bản bằng chữ ký ảnh như bình thường.
+              </div>
+              <div className="row g-2 align-items-end mb-2">
+                <div className="col-sm-4">
+                  <label className="form-label small mb-1">Nhà cung cấp</label>
+                  <select
+                    className="form-select form-select-sm"
+                    value={nhaCungCapChon}
+                    onChange={(e) => setNhaCungCapChon(e.target.value)}
+                  >
+                    {NHA_CUNG_CAP_CA.map((n) => (
+                      <option key={n.ma} value={n.ma}>{n.ten}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-sm-5">
+                  <label className="form-label small mb-1">Mã thuê bao</label>
+                  <input
+                    type="text" className="form-control form-control-sm"
+                    placeholder="VD: số CCCD đã đăng ký SmartCA"
+                    value={maThueBaoNhap}
+                    onChange={(e) => setMaThueBaoNhap(e.target.value)}
+                  />
+                </div>
+                <div className="col-sm-3">
+                  <button
+                    className="btn btn-primary btn-sm w-100"
+                    disabled={ketNoiMutation.isPending}
+                    onClick={handleKetNoiCa}
+                  >
+                    {ketNoiMutation.isPending ? '⏳ Đang xác thực...' : '🔗 Kết nối'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

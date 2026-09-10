@@ -578,7 +578,7 @@ const ThamDinhPage = () => {
   // thẩm định của hồ sơ (khác 3 mutation trên), nên không cần newOverrides khi xong.
   const gbttMutation = useMutation({ mutationFn: taoYeuCauKyGBTT });
 
-  // ===================== PHA 5: SCAN BẢNG ĐIỂM AI / ĐỐI SÁNH CTĐT / XUẤT TEMPLATE =====================
+  // ===================== PHA 5: SCAN BẢNG ĐIỂM / ĐỐI SÁNH CTĐT / XUẤT TEMPLATE =====================
 
   const scanMutation = useMutation({ mutationFn: ({ imageBase64, mimeType }) => scanTranscriptImage(imageBase64, mimeType) });
   const compareMutation = useMutation({ mutationFn: ({ nganh, transcript }) => compareCurriculumAI(nganh, transcript) });
@@ -1725,7 +1725,7 @@ const ThamDinhPage = () => {
                           <th>Link hồ sơ</th>
                           <td>
                             {linkOk ? (
-                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">📎 Mở hồ sơ Drive</a>
+                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">🔗 Mở hồ sơ</a>
                             ) : (
                               <span className="text-muted">Không có link hồ sơ hợp lệ</span>
                             )}
@@ -2286,7 +2286,7 @@ const ThamDinhPage = () => {
                         <input type="radio" className="btn-check" name="cheDoKy" id="cheDoKySongSong"
                           checked={cheDoKy === 'SONG_SONG'} onChange={() => setCheDoKy('SONG_SONG')} />
                         <label className="btn btn-outline-primary btn-sm" htmlFor="cheDoKySongSong">
-                          Song song — ai ký trước cũng được
+                          Ký tự do — ai ký trước cũng được
                         </label>
                       </div>
                       <div className="form-text small">

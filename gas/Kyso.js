@@ -1103,6 +1103,128 @@ function kyVnptSmartCa_(thongTinThueBao, pdfBlob) {
   };
 }
 
+// ============================================================================
+// ĐÃ THÊM (theo yêu cầu — Khối 3 "Chữ ký số (CA)" ở Hồ sơ cá nhân): trước đây việc gắn
+// CA_NHA_CUNG_CAP/CA_MA_THUE_BAO cho 1 tài khoản HOÀN TOÀN thủ công — Admin tự mở Sheet gõ
+// tay, không có gì đảm bảo mã thuê bao gõ vào là ĐÚNG và THẬT SỰ có chứng thư đang hoạt động
+// (gõ sai 1 số là chỉ phát hiện ra lúc ký thật, có thể vài tháng sau). Nhóm hàm dưới đây cho
+// người dùng tự "kết nối" CA của MÌNH ngay tại Hồ sơ cá nhân — nhưng KHÔNG lưu thẳng dữ liệu
+// họ gõ: bắt buộc xác thực THẬT với nhà cung cấp trước (gọi ca-sign-service/check-certificate
+// — endpoint MỚI, CHỈ tra cứu chứng thư, không ký/không gửi thông báo xác nhận nào tới điện
+// thoại thuê bao, khác hẳn /sign) — chỉ lưu khi nhà cung cấp xác nhận có ít nhất 1 chứng thư
+// đang hoạt động. Cùng nguyên tắc adapter với NhaCungCapCA_/guiYeuCauKyCA_ ở trên: thêm nhà
+// cung cấp mới sau này = thêm 1 case, không đụng gì tới hdPost_ketNoiChuKySo.
+// ============================================================================
+
+function xacThucChungThuCA_(nhaCungCap, maThueBao) {
+  switch (String(nhaCungCap || "").trim().toUpperCase()) {
+    case 'VNPT_SMARTCA':
+      return kiemTraChungThuVnptSmartCa_(maThueBao);
+    default:
+      throw new Error("Chưa hỗ trợ xác thực nhà cung cấp chữ ký số: " + nhaCungCap);
+  }
+}
+
+// Gọi ca-sign-service/check-certificate (KHÔNG ký, chỉ tra cứu) — dùng đúng lại 4 Script
+// Property đã có sẵn cho việc ký thật (CA_SIGN_SERVICE_URL/CA_SIGN_SERVICE_SECRET/
+// VNPT_SP_ID/VNPT_SP_PASSWORD, xem kyVnptSmartCa_ ở trên), không cần cấu hình thêm gì mới.
+function kiemTraChungThuVnptSmartCa_(maThueBao) {
+  const props = PropertiesService.getScriptProperties();
+  const url = String(props.getProperty('CA_SIGN_SERVICE_URL') || '').trim();
+  const secret = String(props.getProperty('CA_SIGN_SERVICE_SECRET') || '').trim();
+  const spId = String(props.getProperty('VNPT_SP_ID') || '').trim();
+  const spPassword = String(props.getProperty('VNPT_SP_PASSWORD') || '').trim();
+  const environment = String(props.getProperty('VNPT_ENVIRONMENT') || 'uat').trim();
+  if (!url || !secret) throw new Error("Chưa cấu hình CA_SIGN_SERVICE_URL/CA_SIGN_SERVICE_SECRET (Script Properties)");
+  if (!spId || !spPassword) throw new Error("Chưa cấu hình VNPT_SP_ID/VNPT_SP_PASSWORD (Script Properties)");
+  if (!maThueBao) throw new Error("Thiếu mã thuê bao SmartCA");
+
+  const resp = UrlFetchApp.fetch(url.replace(/\/+$/, '') + '/check-certificate', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'X-Signing-Secret': secret },
+    payload: JSON.stringify({ spId: spId, spPassword: spPassword, userId: maThueBao, environment: environment }),
+    muteHttpExceptions: true
+  });
+  const httpCode = resp.getResponseCode();
+  let body = null;
+  try { body = JSON.parse(resp.getContentText()); } catch (parseErr) { body = null; }
+
+  if (httpCode !== 200 || !body || !body.success) {
+    const lyDo = (body && body.message) || resp.getContentText().slice(0, 300) || ('HTTP ' + httpCode);
+    const maLoi = body && body.code;
+    if (maLoi === 'NO_CERTIFICATE') {
+      throw new Error("Mã thuê bao này chưa có chứng thư số SmartCA nào đang hoạt động — kiểm tra lại trên app SmartCA rồi thử lại.");
+    }
+    throw new Error("ca-sign-service báo lỗi (HTTP " + httpCode + (maLoi ? ", " + maLoi : "") + "): " + lyDo);
+  }
+  return { serialNumber: body.serialNumber || '', tenChuSoHuu: body.tenChuSoHuu || '' };
+}
+
+// GET: đọc thông tin CA của CHÍNH người đang đăng nhập (chỉ trả lại cái gì ĐÃ LƯU, không tự
+// gọi VNPT lại mỗi lần tải trang Hồ sơ cá nhân — muốn xác thực lại thì bấm "Kết nối" lại).
+function hdGet_layThongTinCaCuaToi(e) {
+  const g = requireAuth(e.parameter, []);
+  if (!g.ok) return g.resp;
+  const info = layThongTinCaThueBao_(g.userInfo.email);
+  return responseJSON(200, "Thành công", info
+    ? { coCA: true, nhaCungCap: info.nhaCungCap, maThueBao: info.maThueBao }
+    : { coCA: false, nhaCungCap: '', maThueBao: '' });
+}
+
+// POST: người dùng tự nhập nhà cung cấp + mã thuê bao — XÁC THỰC THẬT trước, chỉ lưu khi
+// nhà cung cấp xác nhận hợp lệ.
+function hdPost_ketNoiChuKySo(e, ss) {
+  const g = requireAuth(e.parameter, []);
+  if (!g.ok) return g.resp;
+  try {
+    const data = JSON.parse(e.parameter.data || '{}');
+    const nhaCungCap = String(data.nhaCungCap || '').trim();
+    const maThueBao = String(data.maThueBao || '').trim();
+    if (!nhaCungCap || !maThueBao) return responseJSON(400, "Thiếu nhà cung cấp hoặc mã thuê bao", null);
+
+    let ketQuaXacThuc;
+    try {
+      ketQuaXacThuc = xacThucChungThuCA_(nhaCungCap, maThueBao);
+    } catch (errXacThuc) {
+      // ĐÃ THÊM: trả lỗi ngay ở đây, KHÔNG ghi gì vào TaiKhoan — xác thực thất bại thì
+      // không có gì để lưu, tránh Admin/người dùng tưởng đã kết nối xong.
+      return responseJSON(400, "Không xác thực được với nhà cung cấp: " + errXacThuc.message, null);
+    }
+
+    const dong = timDongTaiKhoan_(g.userInfo.email);
+    if (!dong) return responseJSON(404, "Không tìm thấy tài khoản " + g.userInfo.email + " trong sheet TaiKhoan", null);
+    if (dong.sheet.getLastColumn() < 8) {
+      return responseJSON(400, "Sheet TaiKhoan chưa có đủ cột CA_NHA_CUNG_CAP (G)/CA_MA_THUE_BAO (H) — liên hệ Admin bổ sung 2 cột này trước khi dùng chức năng chữ ký số.", null);
+    }
+    dong.sheet.getRange(dong.rowIndex, 7).setValue(nhaCungCap); // cột G
+    dong.sheet.getRange(dong.rowIndex, 8).setValue(maThueBao); // cột H
+
+    return responseJSON(200, "Đã kết nối chữ ký số thành công", {
+      serialNumber: ketQuaXacThuc.serialNumber || '',
+      tenChuSoHuu: ketQuaXacThuc.tenChuSoHuu || ''
+    });
+  } catch (err) {
+    return responseJSON(500, "Lỗi kết nối chữ ký số: " + dienGiaiLoi_(err), null);
+  }
+}
+
+// POST: huỷ kết nối CA của CHÍNH người đang đăng nhập — chỉ xoá trắng cột G/H, KHÔNG đụng
+// tới ảnh chữ ký thường (cột E/F, xem hdPost_xoaChuKyCuaToi).
+function hdPost_xoaCaCuaToi(e, ss) {
+  const g = requireAuth(e.parameter, []);
+  if (!g.ok) return g.resp;
+  try {
+    const dong = timDongTaiKhoan_(g.userInfo.email);
+    if (!dong) return responseJSON(404, "Không tìm thấy tài khoản " + g.userInfo.email + " trong sheet TaiKhoan", null);
+    if (dong.sheet.getLastColumn() < 8) return responseJSON(200, "Không có chữ ký số để xoá", { daXoa: true });
+    dong.sheet.getRange(dong.rowIndex, 7, 1, 2).clearContent(); // xoá trắng cột G+H
+    return responseJSON(200, "Đã huỷ kết nối chữ ký số", { daXoa: true });
+  } catch (err) {
+    return responseJSON(500, "Lỗi huỷ kết nối chữ ký số: " + dienGiaiLoi_(err), null);
+  }
+}
+
 // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 6): kênh thông báo EMAIL đầu tiên của cả dự án —
 // trước đây chỉ có Google Chat (guiTinNhanGoogleChat ở trên). KHÔNG BAO GIỜ throw lỗi
 // ra ngoài — nếu gửi mail hỏng thì chữ ký/trạng thái đã ghi vào Sheet RỒI, không thể
@@ -1292,7 +1414,11 @@ function hdGet_layChuKyCuaToi(e) {
       }
 
 function hdGet_layCauHinhChucDanhKy(e) {
-        const g = requireAuth(e.parameter, ['ThamDinh', 'Admin']);
+        // ĐÃ SỬA (theo yêu cầu — mở trang "Tạo yêu cầu ký số" cho TuyenSinh/CanBo): action
+        // này vốn chỉ ThamDinh/Admin gọi được (dùng cho ChonNguoiKyModal ở trang Thẩm định),
+        // nhưng TaoYeuCauKySoPage.jsx (/ho-so-ky-so) cũng gọi action này để lấy danh sách tài
+        // khoản — giờ nới thêm TuyenSinh/CanBo để trang đó dùng được cho 2 vai trò mới.
+        const g = requireAuth(e.parameter, ['ThamDinh', 'TuyenSinh', 'CanBo', 'Admin']);
         if (!g.ok) return g.resp;
         const loaiTaiLieu = String(e.parameter.loaiTaiLieu || 'GBTT').trim();
 
@@ -1834,7 +1960,9 @@ function hdPost_taoYeuCauKy(e, ss) {
     }
 
 function hdPost_taoYeuCauKyTuFile(e, ss) {
-      const g = requireAuth(e.parameter, ['ThamDinh', 'Admin']);
+      // ĐÃ SỬA (theo yêu cầu — mở trang "Tạo yêu cầu ký số" cho TuyenSinh/CanBo): trước đây
+      // chỉ ThamDinh/Admin tạo được yêu cầu ký từ file tải lên, giờ nới thêm TuyenSinh/CanBo.
+      const g = requireAuth(e.parameter, ['ThamDinh', 'TuyenSinh', 'CanBo', 'Admin']);
       if (!g.ok) return g.resp;
 
       const data = JSON.parse(e.parameter.data || '{}');

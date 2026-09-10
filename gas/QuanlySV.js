@@ -203,6 +203,12 @@ function doGet(e) {
       // cá nhân của bất kỳ tài khoản nào, không giới hạn theo vai trò.
       case 'layChuKyCuaToi': return hdGet_layChuKyCuaToi(e);
 
+      // ĐÃ THÊM (theo yêu cầu — Khối 3 "Chữ ký số (CA)" ở Hồ sơ cá nhân): đọc thông tin CA
+      // (CA_NHA_CUNG_CAP/CA_MA_THUE_BAO trên TaiKhoan) của CHÍNH người đang đăng nhập — cùng
+      // quy ước với layChuKyCuaToi ở trên (tự suy ra email từ g.userInfo, không nhận tham số
+      // email từ client).
+      case 'layThongTinCaCuaToi': return hdGet_layThongTinCaCuaToi(e);
+
       // ĐÃ THÊM — KÝ ĐIỆN TỬ PHA 1 (Bước 3): đọc bảng cấu hình "chức danh ký" cho 1
       // loại tài liệu (mặc định GBTT) — dữ liệu để dựng bảng "Chọn người ký" khi
       // Thẩm định bấm "Xuất GBTT". Vai trò giới hạn ['ThamDinh','Admin'] vì đây là
@@ -476,6 +482,17 @@ function doPost(e) {
     // ĐÃ THÊM — KÝ ĐIỆN TỬ PHA 1 (Bước 2): xoá ảnh chữ ký cá nhân của CHÍNH người
     // đang đăng nhập.
     if (action === 'xoaChuKyCuaToi') return hdPost_xoaChuKyCuaToi(e, ss);
+
+    // ĐÃ THÊM (theo yêu cầu — Khối 3 "Chữ ký số (CA)" ở Hồ sơ cá nhân): người dùng tự nhập
+    // nhà cung cấp + mã thuê bao SmartCA của MÌNH — GAS xác thực THẬT với nhà cung cấp (gọi
+    // ca-sign-service/check-certificate, KHÔNG tin thẳng dữ liệu client gõ) trước khi ghi vào
+    // CA_NHA_CUNG_CAP/CA_MA_THUE_BAO (TaiKhoan). allowedRoles=[] — cùng lý do với
+    // luuChuKyCuaToi ở trên.
+    if (action === 'ketNoiChuKySo') return hdPost_ketNoiChuKySo(e, ss);
+
+    // ĐÃ THÊM: huỷ kết nối chữ ký số (CA) của CHÍNH người đang đăng nhập — xoá trắng
+    // CA_NHA_CUNG_CAP/CA_MA_THUE_BAO, không đụng tới ảnh chữ ký thường (cột E/F).
+    if (action === 'xoaCaCuaToi') return hdPost_xoaCaCuaToi(e, ss);
 
     // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): tạo yêu cầu ký GBTT cho 1 lô sinh viên —
     // copy mẫu Doc, điền nội dung + tên người ký, ghi 1 dòng YeuCauKy + N dòng BuocKy

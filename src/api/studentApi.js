@@ -681,6 +681,27 @@ export const luuChuKyCuaToi = ({ anhBase64, mimeType }) => postKySoAction('luuCh
 // Xoá ảnh chữ ký cá nhân đang lưu.
 export const xoaChuKyCuaToi = () => postKySoAction('xoaChuKyCuaToi', {});
 
+// ĐÃ THÊM (Khối 3 "Chữ ký số (CA)" ở Hồ sơ cá nhân): người dùng tự kết nối CA của
+// mình (nhà cung cấp + mã thuê bao), backend xác thực THẬT với nhà cung cấp trước
+// khi lưu — xem hdGet_layThongTinCaCuaToi/hdPost_ketNoiChuKySo/hdPost_xoaCaCuaToi
+// (KySo.gs) và POST /check-certificate (ca-sign-service).
+
+// Lấy thông tin CA đã lưu của người đang đăng nhập — { coCA, nhaCungCap, maThueBao }.
+export const layThongTinCaCuaToi = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layThongTinCaCuaToi&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải thông tin chữ ký số');
+};
+
+// Kết nối CA — { nhaCungCap, maThueBao }. Backend xác thực với nhà cung cấp trước khi lưu.
+export const ketNoiChuKySo = ({ nhaCungCap, maThueBao }) => postKySoAction('ketNoiChuKySo', { nhaCungCap, maThueBao });
+
+// Huỷ kết nối CA đang lưu.
+export const xoaCaCuaToi = () => postKySoAction('xoaCaCuaToi', {});
+
 // ĐÃ THÊM — Bước 3: đọc bảng cấu hình "chức danh ký" cho 1 loại tài liệu (mặc định
 // GBTT) — dùng để dựng bảng "Chọn người ký" trong ChonNguoiKyModal. Trả về
 // { chucDanh: [...], danhSachTaiKhoan: [...] }.
