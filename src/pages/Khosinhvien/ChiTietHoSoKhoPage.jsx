@@ -158,7 +158,7 @@ const KHOA_LOAI_TRU_THONG_TIN_CANHAN = [
   // Goc01 lưu chi tiết điểm từng Lớp/Kỳ (xem TOM_TAT_BAN_GIAO.md) — trang Thẩm định cũng
   // loại cột này khi xuất (ThamDinhPage.jsx/CAC_COT_LOAI_BO_KHI_XUAT), không phải thứ người
   // xem hồ sơ cần thấy dạng chuỗi JSON thô.
-  'SV_KEY', 'LINK HỒ SƠ', 'TÀI KHOẢN NHẬP LIỆU', 'RAW_DIEM_HK',
+  'SV_KEY', 'LINK HỒ SƠ', 'TÀI KHOẢN NHẬP LIỆU', 'RAW_DIEM_HK', 'RAW_DIEM_KHAC_1', 'RAW_DIEM_KHAC_2',
   'TOÁN', 'VẬT LÍ', 'HÓA HỌC', 'SINH HỌC', 'NGỮ VĂN', 'LỊCH SỬ', 'ĐỊA LÝ',
   'TIẾNG ANH', 'TIẾNG TRUNG', 'TIN HỌC', 'GDKTPL',
   'ĐIỂM TB TOÀN KHÓA HỆ 4', 'ĐIỂM TB TOÀN KHÓA HỆ 10', 'ĐIỂM CỘNG', 'ĐIỂM PHỎNG VẤN',

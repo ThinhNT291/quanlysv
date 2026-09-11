@@ -24,9 +24,9 @@ jobs:
       - name: Kiem tra cu phap tung file .gs
         run: |
           error_found=0
-          for f in gas/*.gs; do
+          for f in gas/*.js; do
             echo "Dang kiem tra: $f"
-            tmp="${f%.gs}.__check.js"
+            tmp="${f%.js}.__check.js"
             cp "$f" "$tmp"
             if ! node --check "$tmp"; then
               echo "::error file=$f::File nay bi loi cu phap, xem chi tiet o log ben tren."

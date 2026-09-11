@@ -1767,7 +1767,7 @@ const ThamDinhPage = () => {
                           <th>Link hồ sơ</th>
                           <td>
                             {linkOk ? (
-                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">📎 Mở hồ sơ Drive</a>
+                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">🔗 Mở hồ sơ Drive</a>
                             ) : (
                               <span className="text-muted">Không có link hồ sơ hợp lệ</span>
                             )}
