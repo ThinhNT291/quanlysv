@@ -24,7 +24,7 @@ export const DICT_NGANH = {
     "Quản trị kinh doanh": ["A00", "A01", "D01", "D09", "D10", "D45", "D65", "X01", "X25", "X37"],
     "Ngôn ngữ Anh": ["A01", "C03", "C04", "D01", "D09", "D10", "D14", "D15", "X25", "X26"],
     "Ngôn ngữ Trung Quốc": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X01", "X37"],
-    "Quản trị dịch vụ du lịch và lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
+    "Quản trị dịch vụ du lịch & lữ hành": ["A01", "C00", "C03", "C04", "D01", "D04", "D45", "D65", "X25", "X37"]
 };
 
 export const DICT_HO_SO = {
@@ -75,7 +75,7 @@ export function isDocDaHuy(doc) {
 // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 3 "miễn theo chứng chỉ", 2026-09-10 —
 // KHÔNG liên quan Ký điện tử Pha 2): danh sách "Loại chứng chỉ" cho dropdown mỗi dòng upload ở
 // ThamDinhPage.jsx — cán bộ CHỌN LOẠI TRƯỚC rồi mới upload ảnh (theo yêu cầu người dùng, giúp
-// AI OCR đúng field ngay từ đầu thay vì tự đoán). "Tiếng Trung" tách 2 dòng HSK/HSKK riêng vì
+// AI đúng field ngay từ đầu thay vì tự đoán). "Tiếng Trung" tách 2 dòng HSK/HSKK riêng vì
 // quy định (Điều 8-11) bắt buộc đủ CẢ HAI mới kích hoạt miễn — xem NHOM_CAP_DOI/
 // NHAN_TRA_BANG_CHUNG_CHI/LOAI_CAN_HAN_24_THANG trong thamDinhHelpers.js. GIÁ TRỊ (value) ở
 // đây PHẢI khớp đúng các hằng số đó — đổi 1 bên mà quên đổi bên kia sẽ làm Nguồn 3 câm lặng

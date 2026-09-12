@@ -169,7 +169,7 @@ const ImportModal = ({ onClose, onImport, isPending }) => {
 
             <button className="btn btn-outline-info mb-4" onClick={handleDownloadTemplate} disabled={isLoadingHeaders || !headersInfo || dangTaiMau}>
               <i className="bi bi-file-earmark-arrow-down me-2"></i>
-              {isLoadingHeaders ? 'Đang tải cấu trúc cột...' : (dangTaiMau ? 'Đang tạo file mẫu...' : 'Tải file mẫu (.xlsx)')}
+              {isLoadingHeaders ? 'Processing...' : (dangTaiMau ? 'Please wait...' : 'Tải file mẫu (.xlsx)')}
             </button>
 
             <div

@@ -161,7 +161,7 @@ const DoiSanhModal = ({ show, onClose, row, cccd, targetNganh, scanEntry, scanKe
     Swal.fire({
       icon: 'warning',
       title: 'Đặt lại bảng đối sánh?',
-      text: 'Mọi gộp/gỡ tay trong phiên làm việc này sẽ mất, quay về kết quả AI trả về ban đầu (kèm mẫu miễn theo văn bằng cũ nếu đang tick). Bản đã LƯU chính thức (nếu có) không đổi cho tới khi ông bấm Lưu lại.',
+      text: 'Mọi gộp/gỡ tay sẽ mất, quay về kết quả ban đầu. Bản đã LƯU chính thức (nếu có) không đổi cho tới khi bấm bấm Lưu lại.',
       showCancelButton: true,
       confirmButtonText: 'Đặt lại',
       cancelButtonText: 'Thôi',

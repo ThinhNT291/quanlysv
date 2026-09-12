@@ -165,7 +165,7 @@ const Home = ({ currentUser }) => {
       </div>
 
       {visibleCards.length === 0 && (
-        <div className="alert alert-warning">Tài khoản của bạn chưa được phân quyền sử dụng chức năng nào.</div>
+        <div className="alert alert-warning">Tài khoản của bạn chưa có chức năng nào.</div>
       )}
     </div>
   );
