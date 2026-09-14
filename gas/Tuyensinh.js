@@ -837,7 +837,9 @@ function hdGet_getChiTieu(e) {
       }
 
 function hdGet_timKiemKhoSinhVien(e) {
-        const g = requireAuth(e.parameter, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']);
+        // ĐÃ THÊM (role mới "DaoTao" — trang Student Overview, 2026-09-14): bộ phận Đào tạo
+        // cần xem được Kho sinh viên + chi tiết hồ sơ + bảng điểm để dùng thay Excel.
+        const g = requireAuth(e.parameter, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']);
         if (!g.ok) return g.resp;
 
         // ĐÃ THÊM: đọc 4 nguồn thô (Trung Gian + KETQUA + Đào tạo + mã định danh phụ) qua
@@ -1030,7 +1032,9 @@ function hdGet_timKiemKhoSinhVien(e) {
       }
 
 function hdGet_layThongKeKho(e) {
-        const g = requireAuth(e.parameter, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']);
+        // ĐÃ THÊM (role mới "DaoTao" — trang Student Overview, 2026-09-14): bộ phận Đào tạo
+        // cần xem được Kho sinh viên + chi tiết hồ sơ + bảng điểm để dùng thay Excel.
+        const g = requireAuth(e.parameter, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']);
         if (!g.ok) return g.resp;
 
         const duLieuTho = kho_layDuLieuTho_();
@@ -1199,7 +1203,9 @@ function hdGet_layThongKeKho(e) {
       }
 
 function hdGet_layChiTietHoSoKho(e) {
-        const g = requireAuth(e.parameter, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']);
+        // ĐÃ THÊM (role mới "DaoTao" — trang Student Overview, 2026-09-14): bộ phận Đào tạo
+        // cần xem được Kho sinh viên + chi tiết hồ sơ + bảng điểm để dùng thay Excel.
+        const g = requireAuth(e.parameter, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']);
         if (!g.ok) return g.resp;
 
         // ĐÃ SỬA (theo phản hồi): URL trang chi tiết hồ sơ trước đây lộ thẳng CCCD + Ngành
@@ -1377,7 +1383,9 @@ function hdGet_layChiTietHoSoKho(e) {
       }
 
 function hdGet_layBangDiemDaoTao(e) {
-        const g = requireAuth(e.parameter, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']);
+        // ĐÃ THÊM (role mới "DaoTao" — trang Student Overview, 2026-09-14): bộ phận Đào tạo
+        // cần xem được Kho sinh viên + chi tiết hồ sơ + bảng điểm để dùng thay Excel.
+        const g = requireAuth(e.parameter, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']);
         if (!g.ok) return g.resp;
 
         const nganh = String(e.parameter.nganh || "").trim();
@@ -3167,7 +3175,11 @@ function hdPost_capNhatDaoTao(e, ss) {
 // cơ chế "thùng rác" phức tạp — dấu vết được giữ lại bằng tin nhắn Gchat gửi kèm bên dưới,
 // đủ để tra lại nếu cần sau này.
 function hdPost_huyBanGiao(e, ss) {
-      const g = requireAuth(e.parameter, ['ThamDinh', 'Admin']);
+      // ĐÃ THÊM (role mới "DaoTao" — trang Student Overview, 2026-09-14): trước đây chỉ Ban
+      // Thẩm định mới hoàn tác được (qua ThamDinhPage.jsx) — giờ mở thêm cho Đào tạo tự làm
+      // ngay tại trang chi tiết hồ sơ (ChiTietHoSoKhoPage.jsx), đúng ý tưởng "cấp acc riêng
+      // cho Đào tạo, vào Student Overview bấm Hoàn tác bàn giao".
+      const g = requireAuth(e.parameter, ['ThamDinh', 'DaoTao', 'Admin']);
       if (!g.ok) return g.resp;
 
       const incomingData = JSON.parse(e.parameter.data);
@@ -3217,12 +3229,26 @@ function hdPost_huyBanGiao(e, ss) {
       if (daXoa.length > 0) {
         try {
           const dsTen = daXoa.map(o => (o.hoTen ? String(o.hoTen) : String(o.cccd || ""))).join(", ");
+          // ĐÃ THÊM (role mới "DaoTao" — ô "Lý do" ở trang Student Overview, 2026-09-14):
+          // "lyDo" là field TUỲ CHỌN (frontend không bắt buộc điền) — gộp hết lý do của các
+          // hồ sơ có điền vào cùng 1 đoạn để Ban Thẩm định thấy NGAY tại sao bị hoàn trả,
+          // không phải tự hỏi/dò lại người vừa hoàn tác.
+          const lyDoText = daXoa.filter(o => o.lyDo && String(o.lyDo).trim())
+            .map(o => `${o.hoTen || o.cccd}: ${String(o.lyDo).trim()}`).join(" | ");
+          const nguoiThucHien = g.userInfo.name || g.userInfo.email;
           UrlFetchApp.fetch(WEBHOOK_GCHAT, {
             method: "post", headers: { "Content-Type": "application/json; charset=UTF-8" },
-            payload: JSON.stringify({ text: "↩️ *HOÀN TÁC BÀN GIAO*\nBan Thẩm định vừa HOÀN TÁC bàn giao " + daXoa.length + " hồ sơ: *" + dsTen + "*.\nĐề nghị Đào tạo/CTSV BỎ QUA (đã bị xoá khỏi danh sách bàn giao)." }),
+            payload: JSON.stringify({ text: "↩️ *HOÀN TÁC BÀN GIAO*\n" + nguoiThucHien + " vừa HOÀN TÁC bàn giao " + daXoa.length + " hồ sơ: *" + dsTen + "*.\nĐề nghị Đào tạo/CTSV BỎ QUA (đã bị xoá khỏi danh sách bàn giao)." + (lyDoText ? "\n📝 Lý do: " + lyDoText : "") }),
             muteHttpExceptions: true
           });
         } catch (notifyErr) { /* Lỗi gửi thông báo Chat không ảnh hưởng tới việc hoàn tác đã thành công */ }
+        // ĐÃ THÊM: ghi vào NhatKy (sheet audit log có sẵn, xem ghiLichSuThaoTac_ trong
+        // Auth.gs) — trước đây hành động này KHÔNG được log ở đâu cả ngoài Gchat (dễ trôi
+        // mất khi kênh Chat đông tin). Ghi RIÊNG từng hồ sơ để sau này lọc lại theo CCCD dễ.
+        daXoa.forEach(o => {
+          ghiLichSuThaoTac_(g.userInfo.email, "Hoàn tác bàn giao Đào tạo",
+            `CCCD: ${o.cccd || ''}, Ngành: ${o.nganh || ''}, Họ tên: ${o.hoTen || ''}` + (o.lyDo && String(o.lyDo).trim() ? `, Lý do: ${String(o.lyDo).trim()}` : ''));
+        });
       }
 
       // ĐÃ THÊM (redesign "Hoàn trả" — theo phản hồi 2026-09-14: để lại "Đã duyệt" sau khi
