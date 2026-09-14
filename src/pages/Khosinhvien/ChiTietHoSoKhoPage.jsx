@@ -1,8 +1,18 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { layChiTietHoSoKho, layBangDiemDaoTao } from '../../api/studentApi';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import Swal from 'sweetalert2';
+import { layChiTietHoSoKho, layBangDiemDaoTao, huyBanGiaoDaoTao } from '../../api/studentApi';
 import './KhoSinhVien.css';
+
+// ĐÃ THÊM (role mới "DaoTao" — trang Student Overview, 2026-09-14): kiểm tra role nhẹ,
+// KHÔNG có hasAnyRole dùng chung nào được export sẵn từ App.jsx (hàm đó khai báo cục bộ
+// trong component App) — viết lại 1 bản mini ở đây, roles đã được backend hạ chữ thường sẵn
+// (xem parseRoles trong Auth.gs) nên chỉ cần so sánh chữ thường, không cần .toLowerCase() 2 lần.
+const coQuyenHoanTac = (currentUser) => {
+  const roles = currentUser?.roles || [];
+  return ['thamdinh', 'daotao', 'admin'].some(r => roles.includes(r));
+};
 
 // ===================================================================
 // TRANG CHI TIẾT 1 HỒ SƠ — ĐÃ THÊM theo yêu cầu: bấm vào 1 dòng ở trang Kho sẽ mở ra TRANG
@@ -390,11 +400,15 @@ const TabDiemSo = ({ nganh, maSinhVien }) => {
   );
 };
 
-const ChiTietHoSoKhoPage = () => {
+// ĐÃ THÊM (role mới "DaoTao" — trang Student Overview, 2026-09-14): currentUser truyền
+// xuống từ App.jsx (xem <ChiTietHoSoKhoPage currentUser={currentUser} />) — mặc định {}
+// để không lỗi nếu lỡ có chỗ nào gọi component này mà quên truyền prop.
+const ChiTietHoSoKhoPage = ({ currentUser } = {}) => {
   // key8 -> route chính "/sprofile/student/:key8"; cccd/nganh -> route dự phòng cũ
   // "/quan-ly-ho-so-moi/ho-so/:cccd/:nganh" (chỉ khớp 1 trong 2 kiểu tuỳ đang ở route nào).
   const { key8, cccd, nganh } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('tongquan');
 
   const { data, isLoading, isError, error } = useQuery({
@@ -403,6 +417,41 @@ const ChiTietHoSoKhoPage = () => {
   });
 
   const handlePrint = () => window.print();
+
+  // ĐÃ THÊM (role mới "DaoTao" — "Hoàn tác bàn giao" ngay tại trang chi tiết, 2026-09-14):
+  // tái sử dụng ĐÚNG action backend 'huyBanGiao' (hdPost_huyBanGiao) đã có sẵn cho
+  // ThamDinhPage.jsx — chỉ khác là gọi từ đây kèm thêm "lyDo" (tuỳ chọn, KHÔNG bắt buộc
+  // điền — hộp thoại vẫn cho xác nhận dù để trống ô lý do). Backend tự gộp lý do vào Gchat
+  // + ghi log NhatKy (xem hdPost_huyBanGiao).
+  const huyBanGiaoMutation = useMutation({ mutationFn: huyBanGiaoDaoTao });
+  const triggerHoanTacBanGiao = async () => {
+    const { value: lyDo, isConfirmed } = await Swal.fire({
+      icon: 'warning',
+      title: 'Hoàn tác bàn giao',
+      html: `Hồ sơ <b>${data.hoTen}</b> sẽ bị XOÁ khỏi danh sách đã gửi cho Đào tạo/CTSV và chuyển sang trạng thái <b>"Hoàn trả"</b> để Ban Thẩm định xử lý lại. Chỉ dùng khi phát hiện vấn đề thật sự cần xem lại.`,
+      input: 'textarea',
+      inputLabel: 'Lý do (không bắt buộc, nhưng nên ghi rõ để Ban Thẩm định xử lý đúng chỗ)',
+      inputPlaceholder: 'VD: Sai mã ngành, thiếu quyết định trúng tuyển đính kèm...',
+      showCancelButton: true, confirmButtonText: 'Hoàn tác', cancelButtonText: 'Không',
+      confirmButtonColor: '#dc3545',
+    });
+    if (!isConfirmed) return;
+
+    try {
+      const result = await huyBanGiaoMutation.mutateAsync([{
+        cccd: data.cccd, nganh: data.nganh, hoTen: data.hoTen,
+        lyDo: String(lyDo || '').trim(),
+      }]);
+      if (!result?.hoanTac) {
+        Swal.fire({ icon: 'warning', title: 'Không tìm thấy', text: 'Hồ sơ này không có (hoặc không còn) trong danh sách đã bàn giao Đào tạo.' });
+        return;
+      }
+      Swal.fire({ icon: 'success', title: 'Đã hoàn tác', text: 'Trạng thái thẩm định chuyển sang "Hoàn trả" — Ban Thẩm định sẽ xử lý lại.' });
+      queryClient.invalidateQueries({ queryKey: ['khoChiTietHoSo', key8, cccd, nganh] });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Lỗi', text: err.message });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -433,9 +482,21 @@ const ChiTietHoSoKhoPage = () => {
           <h4 className="fw-bold mb-0">{data.hoTen}</h4>
           <span className={`badge bg-${BADGE_MAU[data.trangThai] || 'secondary'}`}>{data.trangThai}</span>
         </div>
-        <button className="btn btn-sm btn-outline-primary" onClick={handlePrint}>
-          <i className="bi bi-printer me-1"></i>In nhanh
-        </button>
+        <div className="d-flex align-items-center gap-2">
+          {/* ĐÃ THÊM (role mới "DaoTao", 2026-09-14): chỉ hiện khi hồ sơ ĐÃ bàn giao VÀ
+              người đang xem có quyền (ThamDinh/DaoTao/Admin) — đúng tinh thần nút tương tự
+              trong ThamDinhPage.jsx (menu "Xuất file"), giờ có thêm ở đây để Đào tạo tự làm
+              được, không phải nhờ Ban Thẩm định. */}
+          {data.trangThai === 'Đã bàn giao Đào tạo' && coQuyenHoanTac(currentUser) && (
+            <button className="btn btn-sm btn-outline-danger" disabled={huyBanGiaoMutation.isPending} onClick={triggerHoanTacBanGiao}>
+              <i className="bi bi-arrow-counterclockwise me-1"></i>
+              {huyBanGiaoMutation.isPending ? 'Đang xử lý...' : 'Hoàn tác bàn giao'}
+            </button>
+          )}
+          <button className="btn btn-sm btn-outline-primary" onClick={handlePrint}>
+            <i className="bi bi-printer me-1"></i>In nhanh
+          </button>
+        </div>
       </div>
 
       {/* ---- Thông tin nhanh — LUÔN HIỆN, không nằm trong tab nào (đúng ý cần thấy ngay bất

@@ -613,8 +613,10 @@ const App = () => {
                   </li>
                 )}
 
-                {/* NHÓM 3 — HỆ THỐNG: Kho tra cứu sinh viên + Cấu hình hệ thống. */}
-                {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
+                {/* NHÓM 3 — HỆ THỐNG: Kho tra cứu sinh viên + Cấu hình hệ thống.
+                    ĐÃ THÊM "DaoTao" (2026-09-14) — role mới cho bộ phận Đào tạo, chỉ cần
+                    thấy đúng mục "Student Overview", không cần "Cấu hình hệ thống". */}
+                {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']) && (
                   <li className="nav-item dropdown position-relative" ref={heThongRef}>
                     <a
                       className="nav-link px-3 rounded dropdown-toggle text-light"
@@ -629,7 +631,7 @@ const App = () => {
                       className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroups.hethong ? 'show' : ''}`}
                       style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
                     >
-                      {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
+                      {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']) && (
                         <li>
                           <NavLink
                             to="/quan-ly-ho-so-moi"
@@ -697,8 +699,14 @@ const App = () => {
             } />
 
             {/* Kho tra cứu sinh viên — ĐÃ THÊM. ProtectedRoute tự OR thêm Admin sẵn. */}
+            {/* ĐÃ THÊM (role mới "DaoTao" — trang Student Overview, 2026-09-14): bộ phận Đào
+                tạo được cấp acc riêng (role "DaoTao" trong sheet TaiKhoan), vào được đúng
+                trang này thay vì quản lý bằng Excel — chỉ thêm quyền XEM, còn hành động
+                "Hoàn tác bàn giao" tự khoá/mở theo trạng thái từng hồ sơ ngay trong
+                ChiTietHoSoKhoPage.jsx (xem currentUser truyền xuống bên dưới), không cần
+                route riêng. */}
             <Route path="/quan-ly-ho-so-moi" element={
-              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh']}>
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao']}>
                 <KhoSinhVienPage />
               </ProtectedRoute>
             } />
@@ -710,15 +718,17 @@ const App = () => {
                 KhoSinhVienPage.jsx). Route CŨ /quan-ly-ho-so-moi/ho-so/:cccd/:nganh vẫn giữ
                 lại làm dự phòng CHỈ cho hồ sơ chưa từng được gắn SV_KEY (nên chưa có key8 để
                 dùng) — cùng trỏ vào đúng 1 component ChiTietHoSoKhoPage, component tự nhận
-                biết đang được mở theo kiểu nào (xem useParams() trong đó). */}
+                biết đang được mở theo kiểu nào (xem useParams() trong đó).
+                ĐÃ THÊM: truyền currentUser xuống — ChiTietHoSoKhoPage cần biết role để quyết
+                định có hiện nút "Hoàn tác bàn giao" hay không (chỉ ThamDinh/DaoTao/Admin). */}
             <Route path="/sprofile/student/:key8" element={
-              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh']}>
-                <ChiTietHoSoKhoPage />
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao']}>
+                <ChiTietHoSoKhoPage currentUser={currentUser} />
               </ProtectedRoute>
             } />
             <Route path="/quan-ly-ho-so-moi/ho-so/:cccd/:nganh" element={
-              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh']}>
-                <ChiTietHoSoKhoPage />
+              <ProtectedRoute userRoles={currentUser.roles} allowedRoles={['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao']}>
+                <ChiTietHoSoKhoPage currentUser={currentUser} />
               </ProtectedRoute>
             } />
 

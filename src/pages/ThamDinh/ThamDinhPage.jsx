@@ -118,13 +118,16 @@ const ThamDinhPage = () => {
   });
 
   const today = useMemo(() => new Date(), []);
-  const sevenDaysAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d; }, []);
-  // ĐÃ THÊM: chốt lại đúng 2 chuỗi ngày mặc định (7 ngày gần nhất) 1 lần duy nhất, dùng
+  // ĐÃ SỬA (theo phản hồi 2026-09-14 — bảng trắng "không có hồ sơ" dù server trả đủ dữ
+  // liệu, chỉ vì hồ sơ mới nhất nộp cách đây hơn 7 ngày): nới mặc định từ 7 lên 30 ngày —
+  // đặt tên biến theo đúng số ngày mới để khỏi gây hiểu lầm khi đọc lại sau này.
+  const thirtyDaysAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d; }, []);
+  // ĐÃ THÊM: chốt lại đúng 2 chuỗi ngày mặc định (30 ngày gần nhất) 1 lần duy nhất, dùng
   // lại cả lúc khởi tạo state lẫn lúc "Xóa bộ lọc" / so sánh xem bộ lọc có đang bị đổi
   // khác mặc định hay không (xem isFilterActive bên dưới) — tránh 2 nơi tính ra 2 giá
   // trị lệch nhau do gọi fmtDateInput() ở 2 chỗ khác lúc (dù cùng ngày thì không lệch,
   // nhưng gộp về 1 biến vẫn rõ ràng và an toàn hơn).
-  const defaultDateFrom = useMemo(() => fmtDateInput(sevenDaysAgo), [sevenDaysAgo]);
+  const defaultDateFrom = useMemo(() => fmtDateInput(thirtyDaysAgo), [thirtyDaysAgo]);
   const defaultDateTo = useMemo(() => fmtDateInput(today), [today]);
 
   const [search, setSearch] = useState('');
@@ -333,7 +336,7 @@ const ThamDinhPage = () => {
   const resetFilters = () => {
     setSearch('');
     // ĐÃ SỬA: trước đây bấm "Xóa bộ lọc" xóa 2 ô ngày về RỖNG (hiện tất cả hồ sơ từ
-    // trước tới nay), khác với trạng thái ban đầu lúc mới vào trang (mặc định 7 ngày
+    // trước tới nay), khác với trạng thái ban đầu lúc mới vào trang (mặc định 30 ngày
     // gần nhất) — giờ trả về đúng mặc định ban đầu để "Xóa bộ lọc" và "mới vào trang"
     // luôn là cùng 1 trạng thái, khớp với logic đổi màu nút bên dưới (isFilterActive).
     setDateFrom(defaultDateFrom); setDateTo(defaultDateTo);

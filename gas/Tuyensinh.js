@@ -2047,6 +2047,25 @@ function hdPost_importStudents(e, ss) {
       // Các cột bookkeeping luôn đổi mỗi lần sửa (timestamp/tài khoản) — không tính là
       // "thay đổi có ý nghĩa" khi liệt kê cho cán bộ Thẩm định xem hồ sơ vừa cập nhật gì.
       const CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT = ["TRẠNG THÁI THẨM ĐỊNH", "NGÀY CẬP NHẬT HỒ SƠ", "TIME", "TÀI KHOẢN NHẬP LIỆU"];
+      // ĐÃ THÊM (sửa bug — "Có cập nhật" liệt kê NGUYÊN CẢ nùi giấy tờ dù chỉ tick thêm 1
+      // cái, 2026-09-14): nguyên nhân là các cột giấy tờ (ẢNH THẺ, BẢN SAO ID...) trên Trung
+      // Gian đang để dạng ô TICK (checkbox) thật của Google Sheets — đọc bằng getValues() ra
+      // BOOLEAN JS thật (true/false), String(true) = "true" (chữ THƯỜNG); trong khi frontend
+      // (XetTuyenPage.jsx) luôn gửi lên chuỗi "TRUE"/"FALSE" (chữ HOA, xem
+      // `newRow[doc.name.toUpperCase()] = formData[doc.id] ? "TRUE" : "FALSE"`) — so sánh
+      // "true" !== "TRUE" ra kết quả LUÔN LUÔN khác nhau (dù giá trị thật giống hệt), nên MỌI
+      // cột giấy tờ đều bị coi là "vừa đổi" ở MỌI lần sửa, bất kể người dùng có thật sự tick
+      // thêm gì hay không. Hàm này so sánh KHÔNG PHÂN BIỆT HOA/THƯỜNG riêng cho cặp giá trị
+      // dạng TRUE/FALSE (giữ nguyên so sánh CHÍNH XÁC — có phân biệt hoa/thường — cho mọi giá
+      // trị khác, vì với các cột chữ bình thường đổi hoa/thường VẪN là 1 lần sửa thật sự, VD
+      // cán bộ gõ lại đúng chính tả họ tên).
+      const giaTriGiongNhau_ = (a, b) => {
+        const aUp = a.toUpperCase(), bUp = b.toUpperCase();
+        const aIsBool = aUp === "TRUE" || aUp === "FALSE";
+        const bIsBool = bUp === "TRUE" || bUp === "FALSE";
+        if (aIsBool && bIsBool) return aUp === bUp;
+        return a === b;
+      };
       // ĐÃ THÊM (chặn "phá khoá" hồ sơ đã duyệt — theo phản hồi 2026-09-10: "hồ sơ đã duyệt
       // khi tải lên thì đúng là khoá, nhưng F5 cái là nó mở sạch... chặn dự phòng ở đâu đó,
       // nếu thấy dữ liệu đẩy lên nằm trong các trường bị khoá lại thay đổi thì từ chối ghi").
@@ -2242,11 +2261,11 @@ function hdPost_importStudents(e, ss) {
                       // — bỏ qua HẲN field này (không log thay đổi, không setValue), giữ nguyên
                       // giá trị đang có trên Sheet. Đây là lớp chặn THẬT ở backend, không phụ
                       // thuộc Form phía trình duyệt có bị sửa/bỏ qua disabled hay không.
-                      if (daDuyetTruocKhiSua && oldValStr !== newValStr && COT_KHOA_KHI_DA_DUYET.indexOf(h) !== -1) {
+                      if (daDuyetTruocKhiSua && !giaTriGiongNhau_(oldValStr, newValStr) && COT_KHOA_KHI_DA_DUYET.indexOf(h) !== -1) {
                         rejectedFieldNames.push(h);
                         return;
                       }
-                      if (oldValStr !== newValStr) {
+                      if (!giaTriGiongNhau_(oldValStr, newValStr)) {
                         changeLines.push(h + ": \"" + truncateForChat(oldValStr) + "\" → \"" + truncateForChat(newValStr) + "\"");
                         if (CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT.indexOf(h) === -1) changedHeaderNames.push(h);
                       }
