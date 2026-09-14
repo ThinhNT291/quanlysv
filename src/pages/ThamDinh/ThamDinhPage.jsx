@@ -8,15 +8,20 @@ import html2pdf from 'html2pdf.js';
 import * as XLSX from 'xlsx';
 import {
   fetchThamDinhData, duyetTrungTuyen, baoThieuHoSo, luuKetQuaThamDinh, banGiaoDaoTao,
+  huyBanGiaoDaoTao, // ĐÃ THÊM (tinh chỉnh UI/UX — "Hoàn tác bàn giao")
   scanTranscriptImage, compareCurriculumAI, exportThamDinhTemplate, fetchConfig,
   fetchDanhSachMienVanBangCu, // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2)
   fetchDanhSachMienTheoChungChi, scanChungChiImage, // ĐÃ THÊM (Nguồn 3 "miễn theo chứng chỉ")
   taoYeuCauKyGBTT, // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4)
-  xacNhanCapNhatDaDuyet // ĐÃ THÊM (theo phản hồi — "Xác nhận lại" hồ sơ đã duyệt có cập nhật)
+  xacNhanCapNhatDaDuyet, // ĐÃ THÊM (theo phản hồi — "Xác nhận lại" hồ sơ đã duyệt có cập nhật)
+  duyetNhe // ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14 — "Duyệt nhẹ" cho hồ sơ "Tái rà soát")
 } from '../../api/studentApi';
 import {
   getVal, normalizeText, getRowKey, generateMaSV, getBestScore,
   getRawScoreNumber, getRawDateNumber, getMissingDocs, getMissingTienQuyet, getAppState,
+  // ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): đọc 2 cột MỚI CẦN_XEM_LẠI/
+  // CHI_TIẾT_THAY_ĐỔI thay cho hậu tố "(Có cập nhật: ...)" cũ — xem thamDinhHelpers.js.
+  getCanXemLai, getChiTietThayDoi,
   calculateScores, isSafeDriveUrl, getCandidateScanKey,
   // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2 "miễn theo văn bằng cũ",
   // 2026-09-09): xem chú thích đầy đủ tại nơi định nghĩa trong thamDinhHelpers.js.
@@ -296,8 +301,17 @@ const ThamDinhPage = () => {
     else if (sortBy === "date_asc") result.sort((a, b) => getRawDateNumber(a) - getRawDateNumber(b));
     else if (sortBy === "score_desc") result.sort((a, b) => getRawScoreNumber(b) - getRawScoreNumber(a));
     else if (sortBy === "status") {
-      const statusRank = { "Đang chờ duyệt": 1, "Mới bổ sung": 2, "Đã báo thiếu": 3, "Đã duyệt": 4, "Đã trúng tuyển": 5 };
-      result.sort((a, b) => (statusRank[getEffectiveState(a)] || 6) - (statusRank[getEffectiveState(b)] || 6));
+      // ĐÃ SỬA (redesign "Tái rà soát"/"Hoàn trả"/"Đã bàn giao Đào tạo", 2026-09-14): "Hoàn
+      // trả" xếp ĐẦU TIÊN (0) — cố ý nổi bật hơn cả "Đang chờ duyệt", vì đây là hồ sơ vừa bị
+      // phát hiện có vấn đề ở khâu bàn giao, cần xử lý sớm, không nên lẫn/chìm xuống dưới.
+      // "Tái rà soát" xếp cạnh "Đang chờ duyệt" (cùng nhóm "còn việc cần làm"). "Mới bổ sung"
+      // giữ lại trong bảng RANK (dữ liệu cũ vẫn còn) nhưng không còn nơi nào ghi mới giá trị
+      // này nữa. "Đã bàn giao Đào tạo" xếp cuối cùng (đã xong việc).
+      const statusRank = {
+        "Hoàn trả": 0, "Đang chờ duyệt": 1, "Tái rà soát": 1.5, "Mới bổ sung": 2,
+        "Đã báo thiếu": 3, "Đã duyệt": 4, "Đã trúng tuyển": 5, "Đã bàn giao Đào tạo": 6
+      };
+      result.sort((a, b) => (statusRank[getEffectiveState(a)] ?? 7) - (statusRank[getEffectiveState(b)] ?? 7));
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -557,16 +571,28 @@ const ThamDinhPage = () => {
   // (Quanlysv.gs/importStudents) giờ có thể ghi "Đã duyệt (Có cập nhật: ...)" thay vì hạ
   // xuống "Mới bổ sung" khi sửa 1 hồ sơ đã duyệt (xem chú thích đầy đủ ở đó). Badge đổi màu
   // cam + thêm dấu * để cán bộ nhận ra ngay hồ sơ này vừa có thay đổi cần xem lại.
+  // ĐÃ SỬA (redesign trạng thái thẩm định, 2026-09-14): dấu "*" (cần xem lại) giờ đọc từ
+  // cột CẦN_XEM_LẠI (getCanXemLai) thay vì dò hậu tố "(Có cập nhật: ...)" trong chuỗi RAW —
+  // áp dụng cho CẢ "Đã duyệt *" (như cũ) LẪN "Đã yêu cầu BS *" (MỚI — hồ sơ báo thiếu vừa
+  // được bổ sung, cần thẩm định lại trước khi duyệt đầy đủ). Thêm 3 badge cho 3 trạng thái
+  // mới của redesign: "Tái rà soát", "Đã bàn giao Đào tạo", "Hoàn trả".
   const stateBadge = (row, state, saved) => {
     if (saved) return { text: "Đã lưu", cls: "btn-secondary" };
     // ĐÃ THÊM: hồ sơ Thu hồ sơ trực tiếp (Nhập học) — nhãn riêng, tách rõ khỏi luồng thẩm định.
     if (state === "Đã trúng tuyển") return { text: "Đã trúng tuyển (NH)", cls: "btn-dark" };
+    if (state === "Đã bàn giao Đào tạo") return { text: "Đã bàn giao ĐT", cls: "btn-dark" };
+    // "Hoàn trả" cố tình dùng màu ĐỎ (btn-danger) — nổi bật hơn hẳn mọi trạng thái khác, đúng
+    // tinh thần "dễ nhận ra ngay, không được bỏ sót" đã chốt khi thiết kế trạng thái này.
+    if (state === "Hoàn trả") return { text: "⚠️ Hoàn trả", cls: "btn-danger" };
     if (state === "Đã duyệt") {
-      const rawTrangThai = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
-      if (rawTrangThai.indexOf("Có cập nhật") !== -1) return { text: "Đã duyệt *", cls: "btn-warning text-dark" };
+      if (getCanXemLai(row)) return { text: "Đã duyệt *", cls: "btn-warning text-dark" };
       return { text: "Đã duyệt", cls: "btn-success" };
     }
-    if (state === "Đã báo thiếu") return { text: "Đã yêu cầu BS", cls: "btn-warning" };
+    if (state === "Đã báo thiếu") {
+      if (getCanXemLai(row)) return { text: "Đã yêu cầu BS *", cls: "btn-warning text-dark" };
+      return { text: "Đã yêu cầu BS", cls: "btn-warning" };
+    }
+    if (state === "Tái rà soát") return { text: "Tái rà soát", cls: "btn-info" };
     if (state === "Mới bổ sung") return { text: "Mới bổ sung", cls: "btn-info" };
     return { text: "Thẩm định", cls: "btn-outline-primary" };
   };
@@ -575,9 +601,15 @@ const ThamDinhPage = () => {
   // ĐÃ THÊM (theo phản hồi — "Xác nhận lại" hồ sơ đã duyệt có cập nhật KHÔNG được xuất biên
   // nhận mới): mutation RIÊNG, tách khỏi approveMutation — xem triggerApprove bên dưới.
   const xacNhanCapNhatMutation = useMutation({ mutationFn: xacNhanCapNhatDaDuyet });
+  // ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): "Duyệt nhẹ" cho hồ sơ "Tái rà soát"
+  // (nộp lại có MSV thật, chưa từng qua "Đã duyệt") — KHÔNG xuất biên nhận mới, xem
+  // triggerApprove bên dưới.
+  const duyetNheMutation = useMutation({ mutationFn: duyetNhe });
   const missingMutation = useMutation({ mutationFn: baoThieuHoSo });
   const saveMutation = useMutation({ mutationFn: luuKetQuaThamDinh });
   const daoTaoMutation = useMutation({ mutationFn: banGiaoDaoTao });
+  // ĐÃ THÊM (tinh chỉnh UI/UX — "Hoàn tác bàn giao"): xem triggerHuyBanGiao bên dưới.
+  const huyBanGiaoMutation = useMutation({ mutationFn: huyBanGiaoDaoTao });
   // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): tạo yêu cầu ký GBTT — KHÔNG đổi trạng thái
   // thẩm định của hồ sơ (khác 3 mutation trên), nên không cần newOverrides khi xong.
   const gbttMutation = useMutation({ mutationFn: taoYeuCauKyGBTT });
@@ -942,21 +974,52 @@ const ThamDinhPage = () => {
       return;
     }
     const hoTen = getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]);
-    // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT vừa có cập nhật): đổi hẳn nội dung hộp thoại
-    // xác nhận khi đây là lượt "duyệt lại" (không phải duyệt lần đầu) — nhắc rõ những cột đã
-    // đổi (đọc thẳng từ rawTrangThai, xem chú thích ở Quanlysv.gs/importStudents) để cán bộ
-    // không bấm nhầm khi chưa kịp xem lại phần vừa bổ sung.
-    const rawTrangThaiApprove = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
-    const chiTietCapNhatApprove = (rawTrangThaiApprove.match(/Có cập nhật: ([^)]*)\)/) || [])[1] || '';
-    // ĐÃ THÊM: đây là lượt "Xác nhận lại" (hồ sơ ĐÃ DUYỆT vừa được sửa/bổ sung) hay lượt
-    // "Duyệt trúng tuyển" ĐẦU TIÊN — quyết định gọi mutation nào ngay dưới đây.
-    const laXacNhanLai = !!chiTietCapNhatApprove;
+    // ĐÃ SỬA (redesign trạng thái thẩm định, 2026-09-14): nguồn "có đang cần xem lại hay
+    // không" chuyển từ dò hậu tố "(Có cập nhật: ...)" trong chuỗi RAW sang đọc thẳng 2 cột
+    // MỚI CẦN_XEM_LẠI/CHI_TIẾT_THAY_ĐỔI (xem getCanXemLai/getChiTietThayDoi trong
+    // thamDinhHelpers.js, ghi bởi Quanlysv.gs/importStudents) — cột enum trạng thái giờ
+    // SẠCH, không còn mang hậu tố. Đồng thời phân biệt RÕ 4 tình huống bấm "Duyệt" khác
+    // nhau (trước đây chỉ có 2: lần đầu / xác nhận lại):
+    //  - laXacNhanLai: hồ sơ ĐÃ DUYỆT vừa có cập nhật -> xác nhận lại NHẸ (không PDF/Gchat),
+    //    hành vi giữ nguyên 100% như trước.
+    //  - laDuyetNhe: hồ sơ "Tái rà soát" (nộp lại có MSV thật, CHƯA từng qua "Đã duyệt") ->
+    //    duyệt NHẸ (không PDF/Gchat) — action mới hdPost_duyetNhe.
+    //  - laDuyetLaiBaoThieu: hồ sơ "Đã báo thiếu" vừa được bổ sung xong (CẦN_XEM_LẠI=TRUE)
+    //    -> duyệt ĐẦY ĐỦ như lần đầu (CÓ xuất biên nhận mới) vì đây là lần đầu tiên hồ sơ
+    //    thực sự đủ điều kiện, chưa từng "Đã duyệt".
+    //  - laDuyetLaiHoanTra: hồ sơ "Hoàn trả" (vừa bị hoàn tác bàn giao vì phát hiện vấn đề)
+    //    -> duyệt lại ĐẦY ĐỦ như lần đầu (đã chốt với người dùng: bị hoàn trả nghĩa là có vấn
+    //    đề thật, nên duyệt lại phải nghiêm ngặt y hệt lần đầu, KHÔNG dùng đường "xác nhận
+    //    lại" nhẹ).
+    //  - còn lại: duyệt trúng tuyển lần đầu như cũ.
+    const stateApprove = getEffectiveState(row);
+    const canXemLaiApprove = getCanXemLai(row);
+    const chiTietThayDoiApprove = getChiTietThayDoi(row);
+    const laXacNhanLai = stateApprove === "Đã duyệt" && canXemLaiApprove;
+    const laDuyetNhe = stateApprove === "Tái rà soát";
+    const laDuyetLaiBaoThieu = stateApprove === "Đã báo thiếu" && canXemLaiApprove;
+    const laDuyetLaiHoanTra = stateApprove === "Hoàn trả";
+
+    let title, text;
+    if (laXacNhanLai) {
+      title = 'Xác nhận LẠI hồ sơ vừa cập nhật?';
+      text = `Thí sinh ${hoTen} vừa cập nhật: ${chiTietThayDoiApprove}. Xác nhận lại "Đã duyệt" (KHÔNG xuất biên nhận mới)?`;
+    } else if (laDuyetNhe) {
+      title = 'Duyệt hồ sơ tái rà soát?';
+      text = `Thí sinh ${hoTen} đã có Mã sinh viên (hồ sơ nộp lại/tái rà soát). Duyệt "Đã duyệt" (KHÔNG xuất biên nhận mới)?`;
+    } else if (laDuyetLaiBaoThieu) {
+      title = 'Duyệt trúng tuyển (đã bổ sung)?';
+      text = `Thí sinh ${hoTen} vừa bổ sung: ${chiTietThayDoiApprove || 'hồ sơ còn thiếu trước đó'}. Duyệt trúng tuyển và xuất biên nhận mới?`;
+    } else if (laDuyetLaiHoanTra) {
+      title = 'Duyệt lại hồ sơ vừa hoàn trả?';
+      text = `Thí sinh ${hoTen} vừa bị HOÀN TÁC bàn giao (đã phát hiện vấn đề cần xử lý lại). Duyệt lại ĐẦY ĐỦ như lần đầu (xuất biên nhận mới)?`;
+    } else {
+      title = 'Duyệt trúng tuyển?';
+      text = `Duyệt trúng tuyển cho thí sinh: ${hoTen}?`;
+    }
+
     const confirm = await Swal.fire({
-      icon: 'question',
-      title: laXacNhanLai ? 'Xác nhận LẠI hồ sơ vừa cập nhật?' : 'Duyệt trúng tuyển?',
-      text: laXacNhanLai
-        ? `Thí sinh ${hoTen} vừa cập nhật: ${chiTietCapNhatApprove}. Xác nhận lại "Đã duyệt" (KHÔNG xuất biên nhận mới)?`
-        : `Duyệt trúng tuyển cho thí sinh: ${hoTen}?`,
+      icon: 'question', title, text,
       showCancelButton: true, confirmButtonText: 'Xác nhận', cancelButtonText: 'Huỷ'
     });
     if (!confirm.isConfirmed) return;
@@ -975,10 +1038,23 @@ const ThamDinhPage = () => {
         if (loi) throw new Error(loi.message);
         Swal.fire({ icon: 'success', title: 'Đã xác nhận', text: 'Đã xác nhận lại hồ sơ — không xuất biên nhận mới.' });
         setOverride(getRowKey(row), { appState: 'Đã duyệt', coCapNhatSauDuyet: false });
+      } else if (laDuyetNhe) {
+        // ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): "Tái rà soát" -> "Đã duyệt",
+        // dùng action nhẹ (hdPost_duyetNhe) — KHÔNG xuất biên nhận mới/KHÔNG báo Gchat đầy đủ,
+        // vì hồ sơ này chỉ đang "nộp lại", không phải duyệt trúng tuyển thật sự lần đầu.
+        const result = await duyetNheMutation.mutateAsync([buildTrungTuyenPayload(row)]);
+        const loi = (result?.results || []).find(r => r.status === 'error');
+        if (loi) throw new Error(loi.message);
+        Swal.fire({ icon: 'success', title: 'Đã duyệt', text: 'Đã duyệt (nhẹ) — không xuất biên nhận mới.' });
+        setOverride(getRowKey(row), { appState: 'Đã duyệt', coCapNhatSauDuyet: false });
       } else {
+        // Duyệt trúng tuyển ĐẦY ĐỦ — dùng chung cho: lần đầu, "Đã báo thiếu" vừa bổ sung
+        // xong, và "Hoàn trả" vừa được xử lý lại xong (cả 3 tình huống đều cần xuất biên
+        // nhận mới + báo Gchat đầy đủ như lần đầu — action backend hdPost_trungTuyen không
+        // phân biệt trạng thái trước đó, luôn ghi "Đã duyệt" sạch cho hồ sơ khớp CCCD+Ngành).
         const result = await approveMutation.mutateAsync([buildTrungTuyenPayload(row)]);
         Swal.fire({ icon: 'success', title: 'Thành công', text: 'Duyệt trúng tuyển thành công!' });
-        setOverride(getRowKey(row), { appState: 'Đã duyệt' });
+        setOverride(getRowKey(row), { appState: 'Đã duyệt', coCapNhatSauDuyet: false });
         if (result?.pdfUrl) window.open(result.pdfUrl, '_blank');
       }
     } catch (err) {
@@ -1073,6 +1149,46 @@ const ThamDinhPage = () => {
     }
   };
 
+  // ĐÃ THÊM (tinh chỉnh UI/UX — "Hoàn tác bàn giao"): gọi từ menu "Xuất file" của modal
+  // thẩm định chi tiết (giống đúng vị trí openGbttPreviewSingle) — chỉ hiện/dùng được khi
+  // row["DA_BAN_GIAO_DAO_TAO"] === true. Trả về true/false (không dùng ở đây vì gọi trực
+  // tiếp từ onClick, nhưng giữ nguyên kiểu trả về để tái dùng được nếu sau này cần đóng
+  // modal đang mở theo kết quả). Sau khi hoàn tác thành công, BẮT BUỘC invalidate
+  // 'thamDinhData' — khác triggerSyncDaoTao (bàn giao không đổi gì ở nguồn Trung Gian nên
+  // không cần) — vì giờ chính field DA_BAN_GIAO_DAO_TAO của hồ sơ này đã đổi, cần tải lại
+  // để cảnh báo ở Task #36 phản ánh đúng ngay, không đợi cache 2 phút của kho_layDuLieuTho_()
+  // (cache đó chỉ ảnh hưởng trang Kho sinh viên, KHÔNG dùng ở đây).
+  const triggerHuyBanGiao = async (row) => {
+    const hoTen = getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"]);
+    const confirm = await Swal.fire({
+      icon: 'warning', title: 'Hoàn tác bàn giao',
+      text: `Hồ sơ "${hoTen}" sẽ bị XOÁ khỏi danh sách đã gửi cho Đào tạo/CTSV (Đào tạo sẽ nhận thông báo bỏ qua dòng này). Chỉ dùng khi bàn giao NHẦM. Tiếp tục?`,
+      showCancelButton: true, confirmButtonText: 'Hoàn tác', cancelButtonText: 'Không', confirmButtonColor: '#dc3545'
+    });
+    if (!confirm.isConfirmed) return false;
+
+    try {
+      const result = await huyBanGiaoMutation.mutateAsync([{
+        cccd: getVal(row, ["CĂN CƯỚC", "CCCD", "SỐ CCCD"]),
+        nganh: getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]),
+        hoTen,
+      }]);
+      if (!result?.hoanTac) {
+        Swal.fire({ icon: 'warning', title: 'Không tìm thấy', text: 'Hồ sơ này không có (hoặc không còn) trong danh sách đã bàn giao Đào tạo.' });
+        return false;
+      }
+      // ĐÃ SỬA (redesign trạng thái thẩm định, 2026-09-14): backend (hdPost_huyBanGiao) giờ
+      // ghi thêm trạng thái "Hoàn trả" (không còn hạ về "Đã duyệt" như trước — dễ bị bỏ sót)
+      // — nhắc rõ trong thông báo để cán bộ biết cần xử lý lại hồ sơ này.
+      Swal.fire({ icon: 'success', title: 'Đã hoàn tác', text: 'Đã xoá hồ sơ khỏi danh sách bàn giao Đào tạo. Trạng thái thẩm định chuyển sang "Hoàn trả" — cần xử lý/duyệt lại.' });
+      queryClient.invalidateQueries({ queryKey: ['thamDinhData'] });
+      return true;
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Lỗi', text: err.message });
+      return false;
+    }
+  };
+
   // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 3, bổ sung theo phản hồi): đường đi cho 1 hồ sơ
   // lẻ — gọi từ nút trong menu "Xuất file" của modal thẩm định chi tiết. Không tái sử
   // dụng openBatchPreview() vì hàm đó luôn lấy nguồn từ selectedKeys (tick chọn ở bảng
@@ -1080,7 +1196,24 @@ const ThamDinhPage = () => {
   // gì tới các dòng đang được tick chọn ngoài bảng. Dùng lại đúng điều kiện hợp lệ như
   // nhánh 'gbtt' của openBatchPreview để 2 đường đi (hàng loạt / 1 hồ sơ) luôn nhất
   // quán với nhau.
-  const openGbttPreviewSingle = (row) => {
+  // ĐÃ THÊM (tinh chỉnh UI/UX — cảnh báo Xuất GBTT sau khi đã bàn giao Đào tạo, phương án
+  // đã chốt: KHÔNG khoá cứng, chỉ cảnh báo mềm rồi vẫn cho xuất tiếp nếu người dùng xác
+  // nhận — vì vẫn có tình huống hợp lệ cần xuất lại GBTT sau khi đã bàn giao (quên xuất
+  // trước đó, cần in lại...). Field "DA_BAN_GIAO_DAO_TAO" do backend cấp (xem
+  // hdGet_getThamDinhData, TuyenSinh.gs) — đối chiếu CCCD+Ngành với sheet Đào tạo thật,
+  // không phải suy đoán ở frontend. Dùng CHUNG cho cả 2 đường (hàng loạt/1 hồ sơ lẻ) để
+  // luôn nhất quán, giống đúng tinh thần comment ở openGbttPreviewSingle bên dưới.
+  const xacNhanNeuDaBanGiao_ = async (rows) => {
+    const soDaBanGiao = rows.filter(r => r["DA_BAN_GIAO_DAO_TAO"] === true).length;
+    if (soDaBanGiao === 0) return true;
+    const text = rows.length === 1
+      ? 'Hồ sơ này ĐÃ được bàn giao sang Đào tạo/CTSV — rất có thể đã từng xuất Giấy báo trúng tuyển trước đó. Bạn vẫn muốn xuất lại?'
+      : `Có ${soDaBanGiao}/${rows.length} hồ sơ ĐÃ được bàn giao sang Đào tạo/CTSV — rất có thể đã từng xuất Giấy báo trúng tuyển trước đó. Bạn vẫn muốn tiếp tục xuất GBTT cho các hồ sơ đã chọn?`;
+    const confirm = await Swal.fire({ icon: 'warning', title: 'Hồ sơ đã bàn giao', text, showCancelButton: true, confirmButtonText: 'Vẫn xuất', cancelButtonText: 'Huỷ' });
+    return confirm.isConfirmed;
+  };
+
+  const openGbttPreviewSingle = async (row) => {
     const state = getEffectiveState(row);
     if (isTrucTiepKenh(row)) {
       Swal.fire({ icon: 'warning', title: 'Không thể xuất GBTT', text: 'Hồ sơ Thu hồ sơ trực tiếp không thuộc luồng thẩm định.' });
@@ -1090,12 +1223,13 @@ const ThamDinhPage = () => {
       Swal.fire({ icon: 'warning', title: 'Không thể xuất GBTT', text: 'Chỉ xuất được Giấy báo trúng tuyển cho hồ sơ ĐÃ DUYỆT trúng tuyển.' });
       return;
     }
+    if (!(await xacNhanNeuDaBanGiao_([row]))) return;
     setNguoiKyGBTT([]);
     setCheDoKy('TUAN_TU');
     setBatchPreview({ type: 'gbtt', validRows: [row], excludedNote: '' });
   };
 
-  const openBatchPreview = (type) => {
+  const openBatchPreview = async (type) => {
     const selectedRows = filteredData.filter(r => selectedKeys.has(getRowKey(r)));
     if (selectedRows.length === 0) {
       Swal.fire({ icon: 'warning', title: 'Chú ý', text: 'Chưa chọn hồ sơ nào.' });
@@ -1109,12 +1243,22 @@ const ThamDinhPage = () => {
       if (type === 'duyet') {
         if (isTrucTiepKenh(row)) reason = "hồ sơ Thu hồ sơ trực tiếp (không thuộc luồng thẩm định)";
         else if (state === "Đã duyệt") reason = "đã duyệt";
+        // ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): loại 3 trạng thái MỚI khỏi
+        // "Duyệt hàng loạt" — mỗi trạng thái cần 1 loại xác nhận/hộp thoại riêng (duyệt nhẹ
+        // cho "Tái rà soát", duyệt lại đầy đủ có cảnh báo riêng cho "Hoàn trả", và "Đã bàn
+        // giao Đào tạo" thì không còn duyệt được nữa) — ép phải xử lý TỪNG hồ sơ qua modal
+        // chi tiết (triggerApprove), không gộp chung được vào 1 lô như "Đã báo thiếu" đã bị
+        // loại sẵn từ trước.
+        else if (state === "Tái rà soát") reason = "cần duyệt riêng (Tái rà soát)";
+        else if (state === "Hoàn trả") reason = "cần duyệt riêng (Hoàn trả)";
+        else if (state === "Đã bàn giao Đào tạo") reason = "đã bàn giao Đào tạo";
         else if (state === "Đã báo thiếu") reason = "đã báo thiếu";
         else if (getMissingTienQuyet(row).length > 0) reason = "thiếu hồ sơ tiên quyết";
       } else if (type === 'baothieu') {
         if (isTrucTiepKenh(row)) reason = "hồ sơ Thu hồ sơ trực tiếp (không thuộc luồng thẩm định)";
         else if (state === "Đã duyệt") reason = "đã duyệt";
         else if (state === "Đã báo thiếu") reason = "đã báo thiếu";
+        else if (state === "Đã bàn giao Đào tạo") reason = "đã bàn giao Đào tạo";
       } else if (type === 'luucsdl') {
         if (getEffectiveSaved(row)) reason = "đã lưu vào CSDL";
       } else if (type === 'gbtt') {
@@ -1140,7 +1284,13 @@ const ThamDinhPage = () => {
 
     // ĐÃ THÊM (Bước 3): mở lại bảng chọn người ký từ đầu mỗi lần bấm "Xuất GBTT" —
     // ChonNguoiKyModal sẽ tự seed lại từ cấu hình ChucDanhKy vì nguoiKyGBTT về [].
-    if (type === 'gbtt') { setNguoiKyGBTT([]); setCheDoKy('TUAN_TU'); }
+    if (type === 'gbtt') {
+      // ĐÃ THÊM (cảnh báo Xuất GBTT sau khi đã bàn giao) — xem xacNhanNeuDaBanGiao_ phía
+      // trên. Đặt SAU khi đã có validRows cuối cùng (loại xong hồ sơ không hợp lệ) để
+      // đếm đúng số hồ sơ THẬT SỰ sẽ được xuất, không tính hồ sơ đã bị loại ở trên.
+      if (!(await xacNhanNeuDaBanGiao_(validRows))) return;
+      setNguoiKyGBTT([]); setCheDoKy('TUAN_TU');
+    }
 
     setBatchPreview({ type, validRows, excludedNote });
   };
@@ -1387,9 +1537,14 @@ const ThamDinhPage = () => {
                 >
                   <option value="">-- Trạng thái thẩm định --</option>
                   <option value="Đang chờ duyệt">Đang chờ duyệt</option>
+                  {/* ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): 3 trạng thái MỚI —
+                      "Hoàn trả" đặt lên đầu (cùng tinh thần "dễ nhận ra ngay" như statusRank). */}
+                  <option value="Hoàn trả">⚠️ Hoàn trả</option>
+                  <option value="Tái rà soát">Tái rà soát</option>
                   <option value="Mới bổ sung">Mới bổ sung</option>
                   <option value="Đã báo thiếu">Đã báo thiếu</option>
                   <option value="Đã duyệt">Đã duyệt</option>
+                  <option value="Đã bàn giao Đào tạo">Đã bàn giao Đào tạo</option>
                   <option value="Đã trúng tuyển">Đã trúng tuyển (Nhập học)</option>
                 </select>
                 <select
@@ -1630,6 +1785,12 @@ const ThamDinhPage = () => {
 
       {viewingIndex !== null && filteredData[viewingIndex] && (() => {
         const row = filteredData[viewingIndex];
+        // ĐÃ BỎ (theo phản hồi — hiểu nhầm vị trí): modal chỉ-đọc cho hồ sơ đã bàn giao
+        // KHÔNG đặt ở đây — trang Thẩm định (trang của chính đội thẩm định) vẫn mở modal
+        // chỉnh sửa đầy đủ như cũ cho MỌI hồ sơ, kể cả đã bàn giao (họ vẫn cần xem lại chi
+        // tiết trong công việc hàng ngày). Modal chỉ-đọc CHỈ áp dụng ở trang Xét tuyển, khi
+        // nhân viên nhập liệu bấm "Tìm hồ sơ cũ" — xem HoSoDaBanGiaoModal.jsx (dùng lại từ
+        // ../ThamDinh/) + executeSearchCandidate trong XetTuyenPage.jsx.
         const ownNganh = getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]);
         const targetNganh = crossCheckNganh || ownNganh;
         const isSurveying = crossCheckNganh !== '';
@@ -1638,33 +1799,41 @@ const ThamDinhPage = () => {
         const isDuyet = state === "Đã duyệt";
         const isBaoThieu = state === "Đã báo thiếu";
         const isTrucTiep = isTrucTiepKenh(row);
+        // ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): 3 trạng thái MỚI — xem
+        // suyRaTrangThaiVongDoi_/getAppState.
+        const isTaiRaSoat = state === "Tái rà soát";
+        const isHoanTra = state === "Hoàn trả";
+        const isBanGiaoDaoTao = state === "Đã bàn giao Đào tạo";
         const missingTQ = getMissingTienQuyet(row);
         const missing = getMissingDocs(row);
-        // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT có cập nhật/bổ sung thêm): đọc RAW "TRẠNG
-        // THÁI THẨM ĐỊNH" (khác "state" đã bị chuẩn hoá chỉ còn "Đã duyệt") — khi sửa 1 hồ sơ
-        // đã duyệt, backend (Quanlysv.gs/importStudents) ghi thêm hậu tố "(Có cập nhật: <các
-        // cột vừa đổi>)" vào NGUYÊN ô này thay vì hạ về "Mới bổ sung". coCapNhatSauDuyet=true
-        // thì: nút Duyệt mở khoá LẠI (đổi màu cam, để cán bộ xác nhận lại) thay vì khoá cứng
-        // như hồ sơ đã duyệt bình thường; nút Y/C bổ sung cũng mở lại (tới khi hồ sơ đủ).
         const rawTrangThai = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
-        // ĐÃ SỬA (theo phản hồi — bấm "Xác nhận lại" xong vẫn bấm tiếp được, không khoá):
-        // dữ liệu "rawTrangThai" ở trên là dữ liệu ĐÃ TẢI SẴN (rawData từ useQuery), KHÔNG tự
-        // refetch ngay sau khi xác nhận — nên dù backend đã ghi "Đã duyệt" sạch, hộp thoại vẫn
-        // đọc thấy hậu tố "(Có cập nhật: ...)" cũ cho tới khi trang tải lại dữ liệu, khiến nút
-        // không khoá lại. Giờ ưu tiên đọc override "coCapNhatSauDuyet" (set = false ngay sau
-        // khi triggerApprove xác nhận lại thành công, xem setOverride ở đó) nếu CÓ override
-        // cho đúng dòng này — override chỉ tồn tại trong phiên làm việc hiện tại (mất khi tải
-        // lại trang), lúc đó nếu hồ sơ THẬT SỰ có cập nhật mới, dữ liệu server mới sẽ tự phản
-        // ánh đúng lại, không bị khoá oan.
+        // ĐÃ SỬA (redesign trạng thái thẩm định, 2026-09-14): "có đang cần xem lại hay không"
+        // giờ đọc từ cột MỚI CẦN_XEM_LẠI (getCanXemLai) thay vì dò hậu tố "(Có cập nhật:
+        // ...)" trong rawTrangThai — cột enum trạng thái giờ SẠCH. Vẫn ưu tiên đọc override
+        // "coCapNhatSauDuyet" trước (set = false ngay sau khi triggerApprove xử lý xong,
+        // xem setOverride ở đó) vì dữ liệu "row" ở đây là dữ liệu ĐÃ TẢI SẴN (rawData từ
+        // useQuery), không tự refetch ngay — không có override thì mới đọc thẳng cột.
         const coCapNhatOverride = localOverrides[getRowKey(row)]?.coCapNhatSauDuyet;
-        const coCapNhatSauDuyet = coCapNhatOverride !== undefined ? coCapNhatOverride : (isDuyet && rawTrangThai.indexOf("Có cập nhật") !== -1);
-        const chiTietCapNhat = (rawTrangThai.match(/Có cập nhật: ([^)]*)\)/) || [])[1] || '';
+        const canXemLai = coCapNhatOverride !== undefined ? coCapNhatOverride : getCanXemLai(row);
+        // ĐÃ THÊM: hồ sơ ĐÃ DUYỆT vừa có cập nhật (như cũ) — mở lại nút Duyệt (đổi màu cam,
+        // "Xác nhận lại" nhẹ, không PDF).
+        const coCapNhatSauDuyet = isDuyet && canXemLai;
+        // ĐÃ THÊM (MỚI — hồ sơ "Đã báo thiếu" vừa được bổ sung xong): mở lại nút Duyệt để
+        // duyệt trúng tuyển ĐẦY ĐỦ (khác coCapNhatSauDuyet ở trên — đây là lần đầu thực sự
+        // đủ điều kiện, không phải "xác nhận lại" hồ sơ đã từng duyệt).
+        const baoThieuCanXemLai = isBaoThieu && canXemLai;
         // ĐÃ THÊM (theo phản hồi — "trạng thái thẩm định" trong bảng thông tin hiện nguyên cả
         // dòng dài "(Có cập nhật: CỘT A, CỘT B, ...)" trông như 1 dòng tiêu đề dài dòng, thay
         // vì chỉ cần biết NGẮN GỌN là hồ sơ đang cần xác nhận lại — chi tiết ĐẦY ĐỦ cột nào đổi
-        // vẫn còn nguyên trong hộp thoại xác nhận (chiTietCapNhat, xem triggerApprove) nên
-        // không mất thông tin, chỉ đỡ rối ở dòng hiển thị trạng thái thường trực trong modal.
-        const trangThaiHienThi = coCapNhatSauDuyet ? 'Đã duyệt (có cập nhật)' : rawTrangThai;
+        // vẫn còn nguyên trong hộp thoại xác nhận (xem chiTietThayDoiApprove trong
+        // triggerApprove) nên không mất thông tin, chỉ đỡ rối ở dòng hiển thị trạng thái
+        // thường trực trong modal.
+        // ĐÃ SỬA: thêm nhánh hiển thị ngắn gọn cho "Đã báo thiếu (vừa bổ sung)" — cùng tinh
+        // thần "Đã duyệt (có cập nhật)" cũ, tránh hiện thẳng chuỗi rawTrangThai (giờ chỉ còn
+        // "Đã báo thiếu" sạch, không tự nói lên được là ĐÃ có bổ sung mới hay chưa).
+        const trangThaiHienThi = coCapNhatSauDuyet ? 'Đã duyệt (có cập nhật)'
+          : baoThieuCanXemLai ? 'Đã báo thiếu (vừa bổ sung)'
+          : rawTrangThai;
         const scores = calculateScores(row, targetNganh);
         const scanKey = getCandidateScanKey(row);
         const scanEntry = scanCache[scanKey] || {};
@@ -1683,21 +1852,38 @@ const ThamDinhPage = () => {
         // ĐÃ SỬA: gộp thêm xacNhanCapNhatMutation.isPending (action "Xác nhận lại" riêng,
         // xem triggerApprove) — thiếu dòng này thì nút vẫn bấm được lia lịa trong lúc request
         // "Xác nhận lại" trước đó còn đang chạy dở, đúng y hệt lỗi báo (không khoá được).
-        const btnApproveDisabled = isSurveying || (isDuyet && !coCapNhatSauDuyet) || isBaoThieu || isTrucTiep || missingTQ.length > 0 || approveMutation.isPending || xacNhanCapNhatMutation.isPending;
+        // ĐÃ SỬA (redesign trạng thái thẩm định, 2026-09-14): thêm nhánh cho 3 trạng thái mới.
+        // "Đã bàn giao Đào tạo" khoá HẲN nút Duyệt (hồ sơ đã bàn giao xong, xử lý lại ở đây
+        // không còn ý nghĩa — chỉ "Lưu vào CSDL"/"Xuất Excel/PDF" còn dùng được). "Hoàn trả"
+        // và "Tái rà soát" mở nút Duyệt (xem 4 nhánh laXacNhanLai/laDuyetNhe/
+        // laDuyetLaiBaoThieu/laDuyetLaiHoanTra trong triggerApprove). "Đã báo thiếu" giờ CHỈ
+        // khoá khi CHƯA có bổ sung mới (baoThieuCanXemLai=false) — trước đây khoá cứng luôn.
+        const btnApproveDisabled = isSurveying || isBanGiaoDaoTao || (isDuyet && !coCapNhatSauDuyet) || (isBaoThieu && !baoThieuCanXemLai) || isTrucTiep || missingTQ.length > 0 || approveMutation.isPending || xacNhanCapNhatMutation.isPending || duyetNheMutation.isPending;
         const btnApproveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác'
-          : approveMutation.isPending ? '⏳ Đang xuất Biên nhận...'
+          : (approveMutation.isPending || duyetNheMutation.isPending) ? '⏳ Đang xử lý...'
           : xacNhanCapNhatMutation.isPending ? '⏳ Đang xác nhận...'
           : isTrucTiep ? '— Ngoài luồng thẩm định —'
+          : isBanGiaoDaoTao ? 'Đã bàn giao Đào tạo'
+          : isHoanTra ? '🔁 DUYỆT LẠI (hoàn trả)'
+          : isTaiRaSoat ? '✅ DUYỆT (tái rà soát)'
+          : baoThieuCanXemLai ? '🔁 DUYỆT (đã bổ sung)'
           : coCapNhatSauDuyet ? '🔁 XÁC NHẬN LẠI (có cập nhật)'
           : isDuyet ? 'Đã duyệt'
+          : isBaoThieu ? 'Đã Y/C bổ sung'
           : missingTQ.length > 0 ? '❌ Thiếu HS Tiên Quyết'
           : '✅ DUYỆT TRÚNG TUYỂN';
 
         // ĐÃ SỬA (theo phản hồi): hồ sơ đã duyệt NHƯNG có cập nhật mới thì nút Y/C bổ sung
         // cũng mở lại — CHỈ khoá lại khi hồ sơ đã ĐỦ giấy tờ (missing.length === 0), đúng ý
         // "chỉ khi nào hồ sơ ĐỦ thì nút Y/C bổ sung mới khóa".
-        const btnMissingDisabled = isSurveying || (isDuyet && !coCapNhatSauDuyet) || isBaoThieu || isTrucTiep || (coCapNhatSauDuyet && missing.length === 0) || missingMutation.isPending;
-        const btnMissingText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : isTrucTiep ? '— Ngoài luồng thẩm định —' : missingMutation.isPending ? '⏳ Đang xử lý...' : isBaoThieu ? 'Đã Y/C bổ sung' : '⚠️ Y/C BỔ SUNG HS';
+        // ĐÃ SỬA (redesign trạng thái thẩm định, 2026-09-14):
+        //  - thêm "isBanGiaoDaoTao" vào điều kiện khoá — hồ sơ đã bàn giao xong thì "Y/C bổ
+        //    sung" cũng không còn ý nghĩa ở trang này nữa (giống hệt lý do khoá nút Duyệt).
+        //  - "isBaoThieu" giờ CHỈ khoá khi CHƯA có bổ sung mới (!baoThieuCanXemLai) — hồ sơ
+        //    "Đã báo thiếu" vừa được bổ sung thì mở lại nút này, cho phép cán bộ báo thiếu
+        //    TIẾP nếu bổ sung chưa đủ (thay vì chỉ có mỗi lựa chọn Duyệt).
+        const btnMissingDisabled = isSurveying || isBanGiaoDaoTao || (isDuyet && !coCapNhatSauDuyet) || (isBaoThieu && !baoThieuCanXemLai) || isTrucTiep || (coCapNhatSauDuyet && missing.length === 0) || missingMutation.isPending;
+        const btnMissingText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : isTrucTiep ? '— Ngoài luồng thẩm định —' : isBanGiaoDaoTao ? 'Đã bàn giao Đào tạo' : missingMutation.isPending ? '⏳ Đang xử lý...' : (isBaoThieu && !baoThieuCanXemLai) ? 'Đã Y/C bổ sung' : '⚠️ Y/C BỔ SUNG HS';
 
         const btnSaveDisabled = isSurveying || saved || saveMutation.isPending;
         const btnSaveText = isSurveying ? '🔒 Tắt Khảo sát để Thao tác' : saveMutation.isPending ? '⏳ Đang lưu...' : saved ? 'Đã lưu vào CSDL' : '💾 LƯU VÀO CSDL';
@@ -1748,7 +1934,7 @@ const ThamDinhPage = () => {
                             trước khi bấm duyệt lại): hiện nguyên "rawTrangThai" (có thể mang hậu
                             tố "(Có cập nhật: ...)") thay vì "state" đã bị chuẩn hoá rút gọn — chỉ tô
                             cam đậm khi có cập nhật để dễ nhận ra ngay trong bảng thông tin. */}
-                        <tr><th>Trạng thái thẩm định</th><td className={coCapNhatSauDuyet ? 'text-warning fw-bold' : ''}>{trangThaiHienThi || state}</td></tr>
+                        <tr><th>Trạng thái thẩm định</th><td className={(coCapNhatSauDuyet || baoThieuCanXemLai) ? 'text-warning fw-bold' : isHoanTra ? 'text-danger fw-bold' : ''}>{trangThaiHienThi || state}</td></tr>
                         {/* ĐÃ SỬA theo góp ý: chỉ tô đỏ nhạt ô BÊN PHẢI (ô chứa chữ "Thiếu...") thay
                             vì cả dòng — class "hoso-thieu-cell" đặt trực tiếp trên <td>, không còn
                             đặt trên <tr> nữa. Chữ in đậm, màu đỏ đậm tương phản tốt trên nền đỏ nhạt
@@ -1767,7 +1953,7 @@ const ThamDinhPage = () => {
                           <th>Link hồ sơ</th>
                           <td>
                             {linkOk ? (
-                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">🔗 Mở hồ sơ Drive</a>
+                              <a href={linkHoSo} target="_blank" rel="noopener noreferrer">📎 Mở hồ sơ Drive</a>
                             ) : (
                               <span className="text-muted">Không có link hồ sơ hợp lệ</span>
                             )}
@@ -2147,10 +2333,13 @@ const ThamDinhPage = () => {
                   <button className="btn btn-warning" disabled={btnMissingDisabled} onClick={() => triggerMissing(row)}>{btnMissingText}</button>
                   <button className="btn btn-primary" disabled={btnSaveDisabled} onClick={() => triggerSave(row)}>{btnSaveText}</button>
                   {/* ĐÃ SỬA: đổi màu cam khi hồ sơ đã duyệt vừa có cập nhật (coCapNhatSauDuyet)
-                      — tái sử dụng ĐÚNG action Duyệt cũ (triggerApprove/action 'trungTuyen'),
-                      bấm lại sẽ ghi đè trạng thái về "Đã duyệt" sạch, không cần action/modal
-                      con riêng nào khác. */}
-                  <button className={`btn ${coCapNhatSauDuyet ? 'btn-warning text-dark' : 'btn-success'}`} disabled={btnApproveDisabled} onClick={() => triggerApprove(row)}>{btnApproveText}</button>
+                      hoặc đã báo thiếu vừa bổ sung (baoThieuCanXemLai) — tái sử dụng ĐÚNG
+                      action Duyệt cũ (triggerApprove/action 'trungTuyen'), bấm lại sẽ ghi đè
+                      trạng thái về "Đã duyệt" sạch, không cần action/modal con riêng nào khác.
+                      ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): đổi màu ĐỎ (danger)
+                      riêng cho "Hoàn trả" — nhấn mạnh đây là duyệt lại sau khi phát hiện vấn
+                      đề, khác hẳn duyệt bình thường/xác nhận lại nhẹ. */}
+                  <button className={`btn ${isHoanTra ? 'btn-danger' : (coCapNhatSauDuyet || baoThieuCanXemLai) ? 'btn-warning text-dark' : 'btn-success'}`} disabled={btnApproveDisabled} onClick={() => triggerApprove(row)}>{btnApproveText}</button>
                   {/* ĐÃ THÊM: nút "Xuất file" — tự dựng menu xổ xuống bằng React state (dự án
                       không có Bootstrap JS/react-bootstrap, xem ghi chú exportMenuOpen phía trên).
                       Menu mở LÊN TRÊN (dropup, bottom:100%) vì nút nằm ở footer cuối modal. */}
@@ -2184,6 +2373,22 @@ const ThamDinhPage = () => {
                             📄 Giấy báo trúng tuyển (gửi ký)
                           </button>
                         </li>
+                        {/* ĐÃ THÊM (tinh chỉnh UI/UX — "Hoàn tác bàn giao"): chỉ HIỆN khi hồ sơ
+                            này thật sự đã có mặt trong danh sách bàn giao Đào tạo — field do
+                            backend cấp (DA_BAN_GIAO_DAO_TAO, xem hdGet_getThamDinhData), không
+                            phải suy đoán ở frontend. Đặt cuối menu + màu đỏ vì là thao tác hiếm
+                            dùng, mang tính "sửa sai". (Trang Thẩm định vẫn mở modal chỉnh sửa
+                            đầy đủ cho MỌI hồ sơ kể cả đã bàn giao — xem ghi chú ở nơi mở modal,
+                            viewingIndex phía trên — nên mục này vẫn với tới được bình thường,
+                            khác trang Xét tuyển/"Tìm hồ sơ cũ" dùng modal chỉ-đọc riêng.) */}
+                        {row["DA_BAN_GIAO_DAO_TAO"] === true && (
+                          <li>
+                            <button type="button" className="dropdown-item text-danger" disabled={huyBanGiaoMutation.isPending}
+                              onClick={() => { setExportMenuOpen(false); triggerHuyBanGiao(row); }}>
+                              ↩️ Hoàn tác bàn giao Đào tạo
+                            </button>
+                          </li>
+                        )}
                       </ul>
                     )}
                   </div>

@@ -199,14 +199,87 @@ function generateMaSVTuChung(namXT, heDT, hinhThuc, cccdStr) {
 // TRẠNG THÁI THẨM ĐỊNH của Trung Gian) dùng CHUNG đúng 4 giá trị mà getAppState() bên
 // frontend (thamDinhHelpers.js) đang dùng, để 2 nơi không lệch nhau.
 function suyRaTrangThaiVongDoi_(trangThaiTrungGian, coKetQua, coDaoTao) {
+  // ĐÃ THÊM (redesign "Tái rà soát"/"Hoàn trả", 2026-09-14): coDaoTao (suy ra từ việc CÓ mặt
+  // ở sheet Đào tạo) vẫn giữ làm ƯU TIÊN CAO NHẤT — đây là lớp dự phòng cho các hồ sơ đã bàn
+  // giao TỪ TRƯỚC khi hdPost_capNhatDaoTao được sửa để ghi thật "Đã bàn giao Đào tạo" ngược
+  // lại Trung Gian (xem hdPost_capNhatDaoTao) — nếu vì lý do gì đó cột TRẠNG THÁI THẨM ĐỊNH
+  // chưa kịp cập nhật (dữ liệu cũ chưa backfill), nhánh này vẫn suy đúng ra được.
   if (coDaoTao) return "Đã bàn giao Đào tạo";
   if (coKetQua) return "Đã trúng tuyển (chờ bàn giao)";
   const t = String(trangThaiTrungGian || "");
   if (t.indexOf("Đã trúng tuyển") !== -1) return "Đã trúng tuyển"; // kênh "Thu hồ sơ trực tiếp" — không qua KETQUA.
+  if (t.indexOf("Hoàn trả") !== -1) return "Hoàn trả";
   if (t.indexOf("Đã duyệt") !== -1) return "Đã duyệt";
   if (t.indexOf("Đã báo thiếu") !== -1) return "Đã báo thiếu";
-  if (t.indexOf("Mới bổ sung") !== -1) return "Mới bổ sung";
+  if (t.indexOf("Tái rà soát") !== -1) return "Tái rà soát";
+  if (t.indexOf("Mới bổ sung") !== -1) return "Mới bổ sung"; // chỉ còn đọc dữ liệu cũ, không còn nơi nào ghi mới giá trị này.
   return "Đang chờ duyệt";
+}
+
+// ĐÃ THÊM (tinh chỉnh UI/UX — tách ra dùng CHUNG cho cả 'getThamDinhData' VÀ
+// 'searchOldRecord', trước đó chỉ viết inline trong 'getThamDinhData'): dựng SET
+// cccd+nganh cho MỌI hồ sơ đã có mặt trong sheet Đào tạo (getSheets()[0] của
+// KETQUA_SHEET_ID, ĐÚNG sheet mà action 'capNhatDaoTao' ghi vào) — dùng CHUNG khoá CĂN
+// CƯỚC+NGÀNH như mọi chỗ đối chiếu 3 nguồn khác trong hệ thống (xem
+// suyRaTrangThaiVongDoi_/timKiemKhoSinhVien). Dùng kho_layDuLieuTho_() (có cache 2 phút)
+// nên gọi nhiều lần trong 1 request (hoặc nhiều request gần nhau) không tốn thêm lượt đọc
+// Sheets thật.
+function layDaoTaoKeySet_() {
+  const daoTaoKeySet_ = {};
+  try {
+    const dtValuesTD = kho_layDuLieuTho_().dtValues;
+    if (dtValuesTD.length > 1) {
+      const dtHeadersTD = dtValuesTD[0].map(h => String(h).toUpperCase().trim().replace(/\s+/g, ' '));
+      const idxCccdDTTD = timCotTheoTen(dtHeadersTD, "CĂN CƯỚC", "SỐ CCCD", "CCCD");
+      const idxNganhDTTD = timCotTheoTen(dtHeadersTD, "NGÀNH ĐÀO TẠO", "NGÀNH");
+      if (idxCccdDTTD !== -1 && idxNganhDTTD !== -1) {
+        for (let i = 1; i < dtValuesTD.length; i++) {
+          const cccdDTTD = String(dtValuesTD[i][idxCccdDTTD] || "").replace(/^['"]+|['"]+$/g, '').trim();
+          if (!cccdDTTD) continue;
+          const nganhDTTD = String(dtValuesTD[i][idxNganhDTTD] || "").trim().toLowerCase();
+          daoTaoKeySet_[cccdDTTD + "_" + nganhDTTD] = true;
+        }
+      }
+    }
+  } catch (errDTTD) { /* Không đọc được sheet Đào tạo thì bỏ qua — coi như chưa hồ sơ nào bàn giao (an toàn: không hiện cảnh báo thừa). */ }
+  return daoTaoKeySet_;
+}
+
+// ĐÃ THÊM (tinh chỉnh UI/UX — tách ra dùng CHUNG, cùng lý do với layDaoTaoKeySet_ ở trên):
+// dựng map cccd+nganh -> TOÀN BỘ hàng KETQUA (dạng {tên cột: giá trị}) — ảnh chụp "điểm,
+// số môn, tín chỉ công nhận dự kiến..." tại đúng thời điểm cán bộ bấm "💾 Lưu CSDL" (xem
+// hdPost_luuKetQua) — nguồn DUY NHẤT còn giữ được các số liệu này sau khi hồ sơ đã bàn
+// giao (dữ liệu quét/đối sánh bảng điểm ở trang Thẩm định chỉ sống trong state React của
+// phiên làm việc, mất khi tải lại trang). Cố tình lấy TOÀN BỘ cột thay vì chọn lọc tên cột
+// cụ thể — vừa không cần biết trước tên cột thật, vừa tự động theo kịp nếu sau này sheet
+// KETQUA có thêm cột mới, đúng tinh thần "đọc header động" mà hdPost_luuKetQua/
+// hdPost_capNhatDaoTao đang làm.
+function layKetQuaFullMap_() {
+  const ketQuaFullMap_ = {};
+  try {
+    const kqValuesTD2 = kho_layDuLieuTho_().kqValues;
+    if (kqValuesTD2.length > 1) {
+      const kqHeadersTD2 = kqValuesTD2[0].map(h => String(h).trim());
+      const kqHeadersTD2Clean = kqHeadersTD2.map(h => h.toUpperCase().replace(/\s+/g, ' '));
+      const idxCccdKQTD2 = timCotTheoTen(kqHeadersTD2Clean, "CĂN CƯỚC", "SỐ CCCD", "CCCD");
+      const idxNganhKQTD2 = timCotTheoTen(kqHeadersTD2Clean, "NGÀNH ĐÀO TẠO", "NGÀNH");
+      if (idxCccdKQTD2 !== -1 && idxNganhKQTD2 !== -1) {
+        for (let i = 1; i < kqValuesTD2.length; i++) {
+          const cccdKQTD2 = String(kqValuesTD2[i][idxCccdKQTD2] || "").replace(/^['"]+|['"]+$/g, '').trim();
+          if (!cccdKQTD2) continue;
+          const nganhKQTD2 = String(kqValuesTD2[i][idxNganhKQTD2] || "").trim().toLowerCase();
+          const hangObj = {};
+          for (let c = 0; c < kqHeadersTD2.length; c++) {
+            let v = kqValuesTD2[i][c];
+            if (v instanceof Date) v = Utilities.formatDate(v, "GMT+7", "dd/MM/yyyy");
+            hangObj[kqHeadersTD2[c]] = (v === null || v === undefined) ? "" : String(v).replace(/^['"]+|['"]+$/g, '');
+          }
+          ketQuaFullMap_[cccdKQTD2 + "_" + nganhKQTD2] = hangObj;
+        }
+      }
+    }
+  } catch (errKQFull) { /* Không đọc được KETQUA thì bỏ qua — chỉ còn hồ sơ cơ bản. */ }
+  return ketQuaFullMap_;
 }
 
 // ĐÃ THÊM: bộ nhớ đệm (cache) tạm cho action 'timKiemKhoSinhVien' — mục đích DUY NHẤT là
@@ -565,6 +638,12 @@ function hdGet_getThamDinhData(e) {
           }
         } catch (errKQMSV) { /* Không đọc được KETQUA thì bỏ qua — vẫn hiển thị được theo 2 ưu tiên còn lại. */ }
 
+        // ĐÃ SỬA (rút gọn — logic thật chuyển sang 2 hàm dùng CHUNG layKetQuaFullMap_()/
+        // layDaoTaoKeySet_(), đặt cạnh suyRaTrangThaiVongDoi_ đầu file, vì action
+        // 'searchOldRecord' giờ cũng cần đúng 2 map này — xem chú thích đầy đủ tại đó).
+        const ketQuaFullMap_ = layKetQuaFullMap_();
+        const daoTaoKeySet_ = layDaoTaoKeySet_();
+
         // ĐÃ SỬA (rà soát Trunggian.gs): lấy rich-text + công thức TOÀN BỘ vùng dữ liệu
         // 1 lần duy nhất (đỡ gọi API nhiều lần trong vòng lặp) — chỉ khi thật sự có cột
         // "LINK HỒ SƠ" trên sheet.
@@ -596,6 +675,12 @@ function hdGet_getThamDinhData(e) {
           const nganhRowTD_ = String(rowObj["NGÀNH"] || rowObj["NGÀNH ĐÀO TẠO"] || "").trim().toLowerCase();
           const maSVThatKQTD_ = ketQuaMapMSV_[cccdRowTD_ + "_" + nganhRowTD_];
           if (maSVThatKQTD_) rowObj["MÃ SINH VIÊN"] = maSVThatKQTD_;
+          // ĐÃ THÊM (cảnh báo Xuất GBTT sau khi đã bàn giao): xem chú thích tại nơi dựng
+          // daoTaoKeySet_ phía trên.
+          rowObj["DA_BAN_GIAO_DAO_TAO"] = !!daoTaoKeySet_[cccdRowTD_ + "_" + nganhRowTD_];
+          // ĐÃ THÊM (modal tổng hợp cho hồ sơ đã bàn giao, Khối 1): xem chú thích tại nơi
+          // dựng ketQuaFullMap_ phía trên.
+          rowObj["KETQUA_LUU_CSDL"] = ketQuaFullMap_[cccdRowTD_ + "_" + nganhRowTD_] || null;
           results.push(rowObj);
         }
         return responseJSON(200, "Thành công", results);
@@ -1495,7 +1580,13 @@ function hdPost_searchOldRecord(e, ss) {
       const rawHeaders = values[0];
       // Chuẩn hóa tiêu đề: Viết hoa, xóa dấu cách thừa để dò cho chuẩn
       const cleanHeaders = rawHeaders.map(h => String(h).trim().toUpperCase().replace(/\s+/g, ' '));
-      
+
+      // ĐÃ THÊM (tinh chỉnh UI/UX — modal chỉ-đọc cho hồ sơ đã bàn giao): dựng 1 LẦN cho cả
+      // lượt tìm kiếm (không phải mỗi hồ sơ khớp từ khoá mới dựng lại) — xem chú thích đầy
+      // đủ tại nơi gắn vào từng kết quả bên dưới.
+      const daoTaoKeySetSOR_ = layDaoTaoKeySet_();
+      const ketQuaFullMapSOR_ = layKetQuaFullMap_();
+
       let results = [];
       for (let i = 1; i < values.length; i++) {
         // Dò linh hoạt: Dù ông đặt tên là CĂN CƯỚC hay CCCD đều tìm được
@@ -1538,12 +1629,26 @@ function hdPost_searchOldRecord(e, ss) {
               rowData[h] = val;
            });
 
+           // ĐÃ THÊM (tinh chỉnh UI/UX — modal tổng hợp CHỈ-ĐỌC cho hồ sơ đã bàn giao ở trang
+           // Xét tuyển/"Tìm hồ sơ cũ"): đối chiếu ĐÚNG khoá CĂN CƯỚC+NGÀNH như
+           // hdGet_getThamDinhData (dùng lại 2 hàm layDaoTaoKeySet_()/layKetQuaFullMap_()) —
+           // dựng khoá theo CÙNG cách chuẩn hoá (chỉ bỏ dấu nháy, KHÔNG lọc số như biến "cccd"
+           // phía trên — biến đó lọc digit để TÌM KIẾM theo từ khoá, không dùng để so khớp
+           // khoá liên-sheet) để chắc chắn khớp với 2 map này. Frontend (executeSearchCandidate)
+           // dùng "daBanGiaoDaoTao" để quyết định hiện nút "✏️ Sửa" (mở form) hay "👁️ Xem"
+           // (mở modal chỉ-đọc, không đẩy lên form nữa).
+           const cccdKeyChuan_ = String(idxCccd !== -1 ? values[i][idxCccd] : "").replace(/^['"]+|['"]+$/g, '').trim();
+           const nganhKeyChuan_ = String(idxNganh !== -1 ? values[i][idxNganh] : "").trim().toLowerCase();
+           const banGiaoKey_ = cccdKeyChuan_ + "_" + nganhKeyChuan_;
+
            results.push({
               hoTen: idxName !== -1 ? values[i][idxName] : "Unknown",
               cccd: cccd,
               nganh: idxNganh !== -1 ? values[i][idxNganh] : "Unknown",
               trangThai: idxStatus !== -1 ? values[i][idxStatus] : "Chưa rõ",
-              fullData: rowData
+              fullData: rowData,
+              daBanGiaoDaoTao: !!daoTaoKeySetSOR_[banGiaoKey_],
+              ketQuaLuuCSDL: ketQuaFullMapSOR_[banGiaoKey_] || null
            });
         }
       }
@@ -1924,6 +2029,13 @@ function hdPost_importStudents(e, ss) {
       // không — nếu có thì ghi đè LẦN 2 đúng ô này (xem đoạn code ngay sau vòng forEach ở
       // dưới), không cho phép hạ xuống "Mới bổ sung" như client vừa gửi.
       const idxStatus = cleanHeaders.indexOf("TRẠNG THÁI THẨM ĐỊNH");
+      // ĐÃ THÊM (redesign "Tái rà soát"/CẦN_XEM_LẠI, 2026-09-14): 2 cột MỚI thay thế cơ chế
+      // hậu tố "(Có cập nhật: X, Y)" nhét chung vào TRẠNG THÁI THẨM ĐỊNH — CẦN TỰ THÊM 2 cột
+      // này vào Trung Gian (đặt tên đúng y hệt, có gạch dưới): CẦN_XEM_LẠI (true/false),
+      // CHI_TIẾT_THAY_ĐỔI (text). Nếu chưa thêm cột, code vẫn chạy được (idx = -1, tự bỏ qua
+      // bước ghi cờ) — chỉ mất phần hiển thị "cần xem lại", không hỏng luồng chính.
+      const idxCanXemLai = cleanHeaders.indexOf("CẦN_XEM_LẠI");
+      const idxChiTietThayDoi = cleanHeaders.indexOf("CHI_TIẾT_THAY_ĐỔI");
       // Các cột bookkeeping luôn đổi mỗi lần sửa (timestamp/tài khoản) — không tính là
       // "thay đổi có ý nghĩa" khi liệt kê cho cán bộ Thẩm định xem hồ sơ vừa cập nhật gì.
       const CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT = ["TRẠNG THÁI THẨM ĐỊNH", "NGÀY CẬP NHẬT HỒ SƠ", "TIME", "TÀI KHOẢN NHẬP LIỆU"];
@@ -2102,6 +2214,11 @@ function hdPost_importStudents(e, ss) {
             // ĐÃ THÊM: xem chú thích đầy đủ tại khai báo COT_KHOA_KHI_DA_DUYET phía trên đầu
             // hàm — tính TRƯỚC vòng lặp ghi đè, dựa trên oldRowData (trạng thái TRƯỚC lần sửa
             // này, đọc TRƯỚC khi ghi bất kỳ gì xuống dòng này ở dưới).
+            // ĐÃ SỬA (redesign "Tái rà soát"/"Hoàn trả"/CẦN_XEM_LẠI, 2026-09-14): đổi tên biến
+            // cho đúng ý nghĩa hiện tại (chỉ còn dùng để KHOÁ FIELD, xem COT_KHOA_KHI_DA_DUYET
+            // ngay dưới) — việc "ghi lại trạng thái sau khi sửa" giờ tách thành khối riêng SAU
+            // vòng forEach (đọc oldStatusRaw), áp dụng cho MỌI trạng thái gốc chứ không riêng
+            // "Đã duyệt" nữa.
             const daDuyetTruocKhiSua = idxStatus !== -1 && String(oldRowData[idxStatus] || "").trim().indexOf("Đã duyệt") !== -1;
             const rejectedFieldNames = [];
             cleanHeaders.forEach((h, colIndex) => {
@@ -2138,23 +2255,30 @@ function hdPost_importStudents(e, ss) {
               }
             });
 
-            // ĐÃ THÊM (theo phản hồi — hồ sơ ĐÃ DUYỆT bị "tụt" về Mới bổ sung khi sửa/bổ
-            // sung, dẫn tới bấm Duyệt lại được lần nữa): nếu trạng thái TRƯỚC lần sửa này
-            // (oldRowData, đọc TRƯỚC khi ghi đè ở trên) đã là "Đã duyệt", GHI ĐÈ LẦN 2 đúng ô
-            // trạng thái thành "Đã duyệt (Có cập nhật: <các cột vừa đổi>)" — KHÔNG để giá trị
-            // "Mới bổ sung" mà client vừa gửi (ở vòng forEach trên) tồn tại. Cố tình KHÔNG
-            // thêm cột cờ riêng — mọi nơi đang kiểm tra trạng thái (getAppState() bên
-            // thamDinhHelpers.js, ThamDinhPage.jsx) đều dùng chuỗi con "Đã duyệt" (.includes)
-            // nên vẫn nhận đúng là ĐÃ DUYỆT dù có thêm hậu tố; ThamDinhPage.jsx nhận diện thêm
-            // hậu tố "(Có cập nhật" để đổi màu nút + cho bấm Duyệt lại (mở khoá TẠM riêng nút
-            // đó, xem ThamDinhPage.jsx). Nếu không có cột gì thật sự đổi (chỉ có timestamp/tài
-            // khoản, xem CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT) thì trả về đúng "Đã duyệt" sạch,
-            // không thêm hậu tố thừa.
-            if (idxStatus !== -1 && daDuyetTruocKhiSua) {
-              const trangThaiSauKhiSua = changedHeaderNames.length > 0
-                ? "Đã duyệt (Có cập nhật: " + changedHeaderNames.join(', ') + ")"
-                : "Đã duyệt";
-              sheet.getRange(rowIndex, idxStatus + 1).setValue(trangThaiSauKhiSua);
+            // ĐÃ SỬA (redesign "Tái rà soát"/"Hoàn trả"/CẦN_XEM_LẠI, 2026-09-14): thay hẳn cơ
+            // chế hậu tố "(Có cập nhật: ...)" nhét chung vào TRẠNG THÁI THẨM ĐỊNH bằng nguyên
+            // tắc đã chốt — sửa 1 hồ sơ ở BẤT KỲ trạng thái nào (không riêng "Đã duyệt") LUÔN
+            // GIỮ NGUYÊN trạng thái gốc (bỏ hẳn việc ép về "Mới bổ sung"/để giá trị client gửi
+            // ở vòng forEach cột phía trên tồn tại — dòng dưới đây LUÔN ghi đè lại đúng nguyên
+            // văn oldStatusRaw, bất kể client gửi gì cho cột này, cùng triết lý "backend PHẢI
+            // tự chặn được" như COT_KHOA_KHI_DA_DUYET ở trên). Nếu trạng thái gốc là "Đã
+            // duyệt" hoặc "Đã báo thiếu" (tức đã có 1 hành động Thẩm định xảy ra rồi) VÀ có ít
+            // nhất 1 trường thật sự đổi giá trị (changedHeaderNames), bật cờ CẦN_XEM_LẠI=true +
+            // ghi CHI_TIẾT_THAY_ĐỔI — 2 cột RIÊNG thay vì nhét vào chung 1 chuỗi, nên mọi nơi
+            // đọc lại chỉ cần so sánh đúng-bằng, không cần regex dò hậu tố nữa. Với "Chưa thẩm
+            // định"/"Tái rà soát" (chưa ai quyết định gì) thì không bật cờ vì chưa có gì "cần
+            // xem lại" cả — sửa xong vẫn y nguyên trạng thái gốc, không có gì khác biệt.
+            const oldStatusRaw = idxStatus !== -1 ? String(oldRowData[idxStatus] || "").trim() : "";
+            const goDaBaoThieuTruocKhiSua = oldStatusRaw.indexOf("Đã báo thiếu") !== -1;
+            const canXemLaiMoi = (daDuyetTruocKhiSua || goDaBaoThieuTruocKhiSua) && changedHeaderNames.length > 0;
+            if (idxStatus !== -1) {
+              sheet.getRange(rowIndex, idxStatus + 1).setValue(oldStatusRaw);
+            }
+            if (idxCanXemLai !== -1) {
+              sheet.getRange(rowIndex, idxCanXemLai + 1).setValue(canXemLaiMoi ? "TRUE" : "FALSE");
+            }
+            if (idxChiTietThayDoi !== -1) {
+              sheet.getRange(rowIndex, idxChiTietThayDoi + 1).setValue(canXemLaiMoi ? changedHeaderNames.join(', ') : "");
             }
 
             updated++;
@@ -2192,6 +2316,13 @@ function hdPost_importStudents(e, ss) {
                }
                existingMaSVSet[msvNhapTay] = true;
              }
+             // ĐÃ THÊM (redesign "Tái rà soát", 2026-09-14): lớp an toàn ở BACKEND, không tin
+             // tuyệt đối giá trị TRẠNG THÁI THẨM ĐỊNH mà frontend gửi lên — nếu dòng này thật
+             // sự có MSV do người nhập tự điền (msvNhapTay, khác hồ sơ mới tinh để trống cho
+             // generateMaSV tự sinh), LUÔN ép về "Tái rà soát" bất kể frontend gửi gì, vì đây
+             // đúng là định nghĩa của "hồ sơ cũ nhập lại". frontend (XetTuyenPage.jsx) vẫn tự
+             // quyết định đúng giá trị này trước khi gửi — đây chỉ là lớp chặn dự phòng.
+             if (msvNhapTay && idxStatus !== -1) cleanS[cleanHeaders[idxStatus]] = "Tái rà soát";
              if (targetMaSVCol && !cleanS[targetMaSVCol] && newMaSV) cleanS[targetMaSVCol] = newMaSV;
              // ĐÃ THÊM: hồ sơ MỚI từ luồng Xét tuyển -> gắn KÊNH NỘP = "TS Online" mặc định
              // (không có gì để "ghi đè nhầm" ở nhánh này vì đây là dòng hoàn toàn mới).
@@ -2403,13 +2534,19 @@ function hdPost_trungTuyen(e, ss) {
             // (trang Nhập học, đã có trạng thái "Đã trúng tuyển") trùng CCCD+Ngành với 1
             // hồ sơ Xét tuyển đang được duyệt ở đây, sẽ bị GHI ĐÈ NHẦM sang "Đã duyệt".
             // Giờ bắt buộc khớp thêm KÊNH NỘP (nếu sheet có cột này) trước khi ghi.
-            let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1;
+            let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1, canXemLaiCol = -1, chiTietCol = -1;
             for (let h = 0; h < headers.length; h++) {
               const hName = String(headers[h]).toUpperCase().trim().replace(/\s+/g, ' ');
               if (hName === "CĂN CƯỚC" || hName === "SỐ CCCD" || hName === "CCCD") cccdCol = h;
               if (hName === "NGÀNH ĐÀO TẠO" || hName === "NGÀNH") nganhCol = h;
               if (hName.indexOf("TRẠNG THÁI") !== -1) statusCol = h;
               if (hName === "KÊNH NỘP") kenhCol = h;
+              // ĐÃ THÊM (redesign "Tái rà soát"/"Hoàn trả"/CẦN_XEM_LẠI, 2026-09-14): duyệt
+              // trúng tuyển đầy đủ LUÔN đưa hồ sơ về "Đã duyệt" sạch — nếu hồ sơ đang mang cờ
+              // CẦN_XEM_LẠI từ trước (VD vừa từ "Đã báo thiếu"/"Hoàn trả" được duyệt lại đầy
+              // đủ), phải xoá cờ đó đi, không để "mồ côi" trên 1 hồ sơ đã sang trạng thái mới.
+              if (hName === "CẦN_XEM_LẠI") canXemLaiCol = h;
+              if (hName === "CHI_TIẾT_THAY_ĐỔI") chiTietCol = h;
             }
             if (cccdCol !== -1 && nganhCol !== -1 && statusCol !== -1) {
               rawData.forEach((sv, idx) => {
@@ -2424,6 +2561,8 @@ function hdPost_trungTuyen(e, ss) {
                     const sheetKenh = kenhCol !== -1 ? String(values[i][kenhCol] || "").trim() : "";
                     if (sheetCccd === payloadCccd && sheetNganh === payloadNganh && (kenhCol === -1 || sheetKenh === payloadKenh)) {
                       sheet2.getRange(i + 1, statusCol + 1).setValue("Đã duyệt");
+                      if (canXemLaiCol !== -1) sheet2.getRange(i + 1, canXemLaiCol + 1).setValue("FALSE");
+                      if (chiTietCol !== -1) sheet2.getRange(i + 1, chiTietCol + 1).setValue("");
                       found = true; break;
                     }
                   }
@@ -2475,13 +2614,15 @@ function hdPost_xacNhanCapNhatDaDuyet(e, ss) {
         const values = sheet.getDataRange().getValues();
         const headers = values[0];
 
-        let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1;
+        let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1, canXemLaiCol = -1, chiTietCol = -1;
         for (let h = 0; h < headers.length; h++) {
           const hName = String(headers[h]).toUpperCase().trim().replace(/\s+/g, ' ');
           if (hName === "CĂN CƯỚC" || hName === "SỐ CCCD" || hName === "CCCD") cccdCol = h;
           if (hName === "NGÀNH ĐÀO TẠO" || hName === "NGÀNH") nganhCol = h;
           if (hName.indexOf("TRẠNG THÁI") !== -1) statusCol = h;
           if (hName === "KÊNH NỘP") kenhCol = h;
+          if (hName === "CẦN_XEM_LẠI") canXemLaiCol = h;
+          if (hName === "CHI_TIẾT_THAY_ĐỔI") chiTietCol = h;
         }
         if (cccdCol === -1 || nganhCol === -1 || statusCol === -1) {
           return responseJSON(500, "Sheet Trung Gian thiếu cột CĂN CƯỚC/NGÀNH/TRẠNG THÁI", null);
@@ -2500,13 +2641,22 @@ function hdPost_xacNhanCapNhatDaDuyet(e, ss) {
             if (sheetCccd === cccd && sheetNganh === nganh && (kenhCol === -1 || sheetKenh === kenh)) {
               found = true;
               const rawStatus = String(values[i][statusCol] || "").trim();
-              // ĐÃ THÊM: chỉ xử lý đúng tình huống "Đã duyệt (...)" — nếu từ lúc mở modal tới
-              // giờ trạng thái đã bị đổi sang khác (VD ai đó vừa Y/C bổ sung ở tab khác) thì
-              // báo lỗi rõ ràng, KHÔNG âm thầm ép về "Đã duyệt".
-              if (rawStatus.indexOf("Đã duyệt") === -1) {
-                results.push({ cccd: cccd, nganh: nganh, status: "error", message: "Hồ sơ không còn ở trạng thái Đã duyệt (có thể vừa bị đổi ở nơi khác) — tải lại trang để xem trạng thái mới nhất." });
+              // ĐÃ SỬA (redesign CẦN_XEM_LẠI, 2026-09-14): trước đây nhận diện "lượt xác nhận
+              // lại" chỉ qua hậu tố "(Có cập nhật:...)" trong chính chuỗi trạng thái — giờ đọc
+              // thẳng cột CẦN_XEM_LẠI (nếu sheet đã có cột này); nếu CHƯA có cột (chưa kịp
+              // thêm tay), tạm lùi về cách đọc cũ (dò hậu tố) để không vỡ hành vi hiện tại.
+              // Vẫn giữ nguyên tinh thần cũ: nếu từ lúc mở modal tới giờ trạng thái đã bị đổi
+              // sang khác (VD ai đó vừa Y/C bổ sung ở tab khác) thì báo lỗi rõ, KHÔNG âm thầm
+              // ép về "Đã duyệt".
+              const canXemLaiHienTai = canXemLaiCol !== -1
+                ? String(values[i][canXemLaiCol] || "").trim().toUpperCase() === "TRUE"
+                : rawStatus.indexOf("Có cập nhật") !== -1;
+              if (rawStatus.indexOf("Đã duyệt") === -1 || !canXemLaiHienTai) {
+                results.push({ cccd: cccd, nganh: nganh, status: "error", message: "Hồ sơ không còn ở trạng thái 'Đã duyệt — cần xem lại' (có thể vừa bị đổi ở nơi khác) — tải lại trang để xem trạng thái mới nhất." });
               } else {
                 sheet.getRange(i + 1, statusCol + 1).setValue("Đã duyệt");
+                if (canXemLaiCol !== -1) sheet.getRange(i + 1, canXemLaiCol + 1).setValue("FALSE");
+                if (chiTietCol !== -1) sheet.getRange(i + 1, chiTietCol + 1).setValue("");
                 results.push({ cccd: cccd, nganh: nganh, status: "success", message: "Đã xác nhận lại — không xuất biên nhận mới." });
               }
               break;
@@ -2521,6 +2671,93 @@ function hdPost_xacNhanCapNhatDaDuyet(e, ss) {
         return responseJSON(200, "success", { results: results });
       } catch (err) {
         return responseJSON(500, "Lỗi xác nhận lại: " + dienGiaiLoi_(err), null);
+      }
+    }
+
+// ĐÃ THÊM (redesign "Tái rà soát", 2026-09-14): "duyệt NHẸ" cho hồ sơ đang ở trạng thái "Tái
+// rà soát" (hồ sơ nhập LẠI vào hệ thống nhưng đã có MSV thật từ trước — xem A2/A4/B2 trong
+// bảng đã chốt với người dùng). KHÁC hẳn hdPost_xacNhanCapNhatDaDuyet (dùng cho hồ sơ ĐÃ
+// TỪNG "Đã duyệt" được xác nhận LẠI lần 2, ở NGAY TRÊN) — hồ sơ "Tái rà soát" CHƯA TỪNG qua
+// "Đã duyệt" lần nào, nhưng vì bản chất là hồ sơ cũ (có thể đã có biên nhận giấy/hệ thống
+// khác trước khi có hệ thống này) nên KHÔNG xuất lại biên nhận PDF — chỉ ghi trạng thái +
+// báo Gchat nhẹ. Tách hẳn 1 action riêng (thay vì nới lỏng guard của
+// hdPost_xacNhanCapNhatDaDuyet) vì ngữ nghĩa khác nhau — log NhatKy cũng ghi riêng.
+function hdPost_duyetNhe(e, ss) {
+      const g = requireAuth(e.parameter, ['ThamDinh', 'Admin']);
+      if (!g.ok) return g.resp;
+      try {
+        const rawData = JSON.parse(e.parameter.data);
+        if (!Array.isArray(rawData) || rawData.length === 0) return responseJSON(400, "Không có dữ liệu", null);
+
+        const TRUNGGIAN_ID = PropertiesService.getScriptProperties().getProperty('TRUNGGIAN_SHEET_ID');
+        const WEBHOOK_GCHAT = PropertiesService.getScriptProperties().getProperty('WEBHOOK_GCHAT');
+        const ssTrungGian = SpreadsheetApp.openById(TRUNGGIAN_ID);
+        const sheet = ssTrungGian.getSheets()[0];
+        const values = sheet.getDataRange().getValues();
+        const headers = values[0];
+
+        let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1, canXemLaiCol = -1, chiTietCol = -1;
+        for (let h = 0; h < headers.length; h++) {
+          const hName = String(headers[h]).toUpperCase().trim().replace(/\s+/g, ' ');
+          if (hName === "CĂN CƯỚC" || hName === "SỐ CCCD" || hName === "CCCD") cccdCol = h;
+          if (hName === "NGÀNH ĐÀO TẠO" || hName === "NGÀNH") nganhCol = h;
+          if (hName.indexOf("TRẠNG THÁI") !== -1) statusCol = h;
+          if (hName === "KÊNH NỘP") kenhCol = h;
+          if (hName === "CẦN_XEM_LẠI") canXemLaiCol = h;
+          if (hName === "CHI_TIẾT_THAY_ĐỔI") chiTietCol = h;
+        }
+        if (cccdCol === -1 || nganhCol === -1 || statusCol === -1) {
+          return responseJSON(500, "Sheet Trung Gian thiếu cột CĂN CƯỚC/NGÀNH/TRẠNG THÁI", null);
+        }
+
+        const results = [];
+        const tenDaDuyet = [];
+        rawData.forEach(sv => {
+          const cccd = String(sv.soCCCD || "").replace(/\D/g, '');
+          const nganh = String(sv.nganh || "").trim().toLowerCase();
+          const kenh = String(sv.kenhNop || "").trim();
+          let found = false;
+          for (let i = 1; i < values.length; i++) {
+            const sheetCccd = String(values[i][cccdCol]).replace(/\D/g, '');
+            const sheetNganh = String(values[i][nganhCol]).trim().toLowerCase();
+            const sheetKenh = kenhCol !== -1 ? String(values[i][kenhCol] || "").trim() : "";
+            if (sheetCccd === cccd && sheetNganh === nganh && (kenhCol === -1 || sheetKenh === kenh)) {
+              found = true;
+              const rawStatus = String(values[i][statusCol] || "").trim();
+              // Chặn giống hệt tinh thần hdPost_xacNhanCapNhatDaDuyet: nếu từ lúc mở modal tới
+              // giờ trạng thái đã bị đổi (VD ai đó vừa Y/C bổ sung ở tab khác), báo lỗi rõ,
+              // KHÔNG âm thầm ép về "Đã duyệt".
+              if (rawStatus.indexOf("Tái rà soát") === -1) {
+                results.push({ cccd: cccd, nganh: nganh, status: "error", message: "Hồ sơ không còn ở trạng thái 'Tái rà soát' (có thể vừa bị đổi ở nơi khác) — tải lại trang để xem trạng thái mới nhất." });
+              } else {
+                sheet.getRange(i + 1, statusCol + 1).setValue("Đã duyệt");
+                if (canXemLaiCol !== -1) sheet.getRange(i + 1, canXemLaiCol + 1).setValue("FALSE");
+                if (chiTietCol !== -1) sheet.getRange(i + 1, chiTietCol + 1).setValue("");
+                tenDaDuyet.push(String(sv.hoTen || cccd));
+                results.push({ cccd: cccd, nganh: nganh, status: "success", message: "Đã duyệt (nhẹ) — không xuất biên nhận mới." });
+              }
+              break;
+            }
+          }
+          if (!found) results.push({ cccd: cccd, nganh: nganh, status: "error", message: "Không tìm thấy hồ sơ tương ứng." });
+        });
+        SpreadsheetApp.flush();
+
+        if (tenDaDuyet.length > 0) {
+          try {
+            UrlFetchApp.fetch(WEBHOOK_GCHAT, {
+              method: "post", headers: { "Content-Type": "application/json; charset=UTF-8" },
+              payload: JSON.stringify({ text: "✅ *DUYỆT NHẸ — TÁI RÀ SOÁT*\nĐã duyệt (không xuất biên nhận mới, hồ sơ nhập lại đã có MSV thật) cho: *" + tenDaDuyet.join(", ") + "*." }),
+              muteHttpExceptions: true
+            });
+          } catch (notifyErr) { /* Lỗi gửi thông báo Chat không ảnh hưởng tới việc duyệt đã thành công */ }
+        }
+
+        ghiLichSuThaoTac_(g.userInfo.email, "Duyệt nhẹ (Tái rà soát)", rawData.length + " thí sinh — không xuất biên nhận/thông báo PDF mới");
+
+        return responseJSON(200, "success", { results: results });
+      } catch (err) {
+        return responseJSON(500, "Lỗi duyệt nhẹ: " + dienGiaiLoi_(err), null);
       }
     }
 
@@ -2624,13 +2861,20 @@ function hdPost_baoThieu(e, ss) {
             // ĐÃ THÊM (rà soát an toàn 2 luồng chung 1 sheet): dò thêm cột KÊNH NỘP, cùng
             // lý do đã sửa ở action 'trungTuyen' — tránh ghi đè nhầm trạng thái "Đã trúng
             // tuyển" (Thu hồ sơ trực tiếp) thành "Đã báo thiếu" khi trùng CCCD+Ngành.
-            let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1;
+            let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1, canXemLaiCol = -1, chiTietCol = -1;
             for (let h = 0; h < headers.length; h++) {
               const hName = String(headers[h]).toUpperCase().trim().replace(/\s+/g, ' ');
               if (hName === "CĂN CƯỚC" || hName === "SỐ CCCD" || hName === "CCCD") cccdCol = h;
               if (hName === "NGÀNH ĐÀO TẠO" || hName === "NGÀNH") nganhCol = h;
               if (hName.indexOf("TRẠNG THÁI") !== -1) statusCol = h;
               if (hName === "KÊNH NỘP") kenhCol = h;
+              // ĐÃ THÊM (redesign "Tái rà soát"/CẦN_XEM_LẠI, 2026-09-14): dù là báo thiếu LẦN
+              // ĐẦU (cờ vốn chưa từng bật) hay báo thiếu LẠI cho 1 hồ sơ "Đã báo thiếu" đang
+              // mang cờ CẦN_XEM_LẠI=true (case cán bộ xem hồ sơ thí sinh vừa bổ sung nhưng vẫn
+              // quyết định còn thiếu, cập nhật lại lý do) — luôn xoá sạch cờ ở đây, vì đây LÀ
+              // hành động thẩm định xử lý xong tình huống "cần xem lại" đó.
+              if (hName === "CẦN_XEM_LẠI") canXemLaiCol = h;
+              if (hName === "CHI_TIẾT_THAY_ĐỔI") chiTietCol = h;
             }
             if (cccdCol !== -1 && nganhCol !== -1 && statusCol !== -1) {
               data.forEach((sv, idx) => {
@@ -2645,6 +2889,8 @@ function hdPost_baoThieu(e, ss) {
                     const sheetKenh = kenhCol !== -1 ? String(values[i][kenhCol] || "").trim() : "";
                     if (sheetCccd === payloadCccd && sheetNganh === payloadNganh && (kenhCol === -1 || sheetKenh === payloadKenh)) {
                       sheet2.getRange(i + 1, statusCol + 1).setValue("Đã báo thiếu");
+                      if (canXemLaiCol !== -1) sheet2.getRange(i + 1, canXemLaiCol + 1).setValue("FALSE");
+                      if (chiTietCol !== -1) sheet2.getRange(i + 1, chiTietCol + 1).setValue("");
                       found = true; break;
                     }
                   }
@@ -2852,7 +3098,192 @@ function hdPost_capNhatDaoTao(e, ss) {
         } catch (notifyErr) { /* Lỗi gửi thông báo Chat không ảnh hưởng tới việc bàn giao đã thành công */ }
       }
 
-      return responseJSON(200, "success", { added: newRows.length });
+      // ĐÃ THÊM (redesign "Đã bàn giao Đào tạo" — ghi trạng thái THẬT thay vì chỉ suy ra qua
+      // DA_BAN_GIAO_DAO_TAO, theo phương án 2 đã chốt với người dùng ngày 2026-09-14): sau khi
+      // ghi xong dòng vào sheet Đào tạo (KETQUA) ở trên, ghi NGƯỢC lại đúng dòng tương ứng bên
+      // Trung Gian — dò theo CCCD+Ngành, CÙNG kiểu dò mà hdPost_trungTuyen/hdPost_baoThieu
+      // đang dùng. Cố tình KHÔNG gộp vào vòng lặp phía trên (vòng đó thao tác trên sheet Đào
+      // tạo, vòng này thao tác trên Trung Gian — 2 spreadsheet khác nhau) — tách riêng để lỗi
+      // ở bước nào cũng báo rõ ràng theo đúng dòng đó, không làm hỏng việc bàn giao chính (đã
+      // ghi xong ở trên) nếu bước ghi-ngược này gặp sự cố giữa chừng.
+      let trangThaiCapNhat = 0;
+      const trangThaiKhongTim = [];
+      if (newRows.length > 0) {
+        try {
+          const TRUNGGIAN_ID = PropertiesService.getScriptProperties().getProperty('TRUNGGIAN_SHEET_ID');
+          const ssTrungGian = SpreadsheetApp.openById(TRUNGGIAN_ID);
+          const sheetTG = ssTrungGian.getSheets()[0];
+          const valuesTG = sheetTG.getDataRange().getValues();
+          const headersTG = valuesTG[0];
+          let cccdColTG = -1, nganhColTG = -1, statusColTG = -1;
+          for (let h = 0; h < headersTG.length; h++) {
+            const hName = String(headersTG[h]).toUpperCase().trim().replace(/\s+/g, ' ');
+            if (hName === "CĂN CƯỚC" || hName === "SỐ CCCD" || hName === "CCCD") cccdColTG = h;
+            if (hName === "NGÀNH ĐÀO TẠO" || hName === "NGÀNH") nganhColTG = h;
+            if (hName.indexOf("TRẠNG THÁI") !== -1) statusColTG = h;
+          }
+          if (cccdColTG !== -1 && nganhColTG !== -1 && statusColTG !== -1) {
+            incomingData.forEach(obj => {
+              const cccdBG = String(obj["CĂN CƯỚC"] || obj["CCCD"] || "").replace(/^['"]+|['"]+$/g, '').trim();
+              const nganhBG = String(obj["NGÀNH"] || obj["NGÀNH ĐÀO TẠO"] || "").trim().toLowerCase();
+              if (!cccdBG) return;
+              let foundTG = false;
+              for (let i = 1; i < valuesTG.length; i++) {
+                const sheetCccdTG = String(valuesTG[i][cccdColTG] || "").replace(/^['"]+|['"]+$/g, '').trim();
+                const sheetNganhTG = String(valuesTG[i][nganhColTG] || "").trim().toLowerCase();
+                if (sheetCccdTG === cccdBG && sheetNganhTG === nganhBG) {
+                  sheetTG.getRange(i + 1, statusColTG + 1).setValue("Đã bàn giao Đào tạo");
+                  trangThaiCapNhat++;
+                  foundTG = true;
+                  break;
+                }
+              }
+              if (!foundTG) trangThaiKhongTim.push({ cccd: cccdBG, nganh: nganhBG });
+            });
+            SpreadsheetApp.flush();
+          }
+        } catch (errGhiNguoc) {
+          // Không để lỗi ở bước ghi-ngược làm hỏng kết quả bàn giao chính đã thành công ở
+          // trên — chỉ báo lại trong response để cán bộ biết cần kiểm tra thủ công.
+          Logger.log("Lỗi ghi ngược trạng thái 'Đã bàn giao Đào tạo' vào Trung Gian: " + errGhiNguoc.toString());
+        }
+      }
+      if (trangThaiKhongTim.length > 0) {
+        Logger.log("Bàn giao thành công nhưng KHÔNG tìm thấy dòng Trung Gian tương ứng để ghi trạng thái cho: " + JSON.stringify(trangThaiKhongTim));
+      }
+
+      return responseJSON(200, "success", { added: newRows.length, trangThaiCapNhat: trangThaiCapNhat, trangThaiKhongTim: trangThaiKhongTim.length });
+    }
+
+// ĐÃ THÊM (tinh chỉnh UI/UX sau Ký điện tử Pha 2 — "Hoàn tác bàn giao"): action ĐỐI XỨNG
+// với 'capNhatDaoTao' — capNhatDaoTao THÊM dòng vào sheet Đào tạo (getSheets()[0] của
+// KETQUA_SHEET_ID), hàm này XOÁ ĐÚNG dòng đó đi. Cố tình chọn XOÁ thẳng thay vì thêm 1
+// cột trạng thái "đã huỷ": (1) sheet Đào tạo là sổ làm việc của phòng Đào tạo/CTSV, đổi
+// cấu trúc cột của họ là việc lớn hơn hẳn, không nên tự ý; (2) 'DA_BAN_GIAO_DAO_TAO' ở
+// action 'getThamDinhData' (xem daoTaoKeySet_ phía trên) suy ra TRỰC TIẾP từ việc CÓ mặt
+// hàng trong sheet này hay không — xoá hàng là cách DUY NHẤT vừa hoàn tác thật sự vừa tự
+// động đồng bộ lại đúng trạng thái đó, không cần sửa gì thêm ở action kia. Tình huống này
+// được xác nhận là RẤT HIẾM (bàn giao nhầm, phát hiện gần như ngay sau đó) nên không cần
+// cơ chế "thùng rác" phức tạp — dấu vết được giữ lại bằng tin nhắn Gchat gửi kèm bên dưới,
+// đủ để tra lại nếu cần sau này.
+function hdPost_huyBanGiao(e, ss) {
+      const g = requireAuth(e.parameter, ['ThamDinh', 'Admin']);
+      if (!g.ok) return g.resp;
+
+      const incomingData = JSON.parse(e.parameter.data);
+      if (!incomingData || incomingData.length === 0) return responseJSON(400, "Không có dữ liệu", null);
+
+      const KETQUA_SHEET_ID = PropertiesService.getScriptProperties().getProperty('KETQUA_SHEET_ID');
+      const WEBHOOK_GCHAT = PropertiesService.getScriptProperties().getProperty('WEBHOOK_GCHAT');
+      const ssDT = SpreadsheetApp.openById(KETQUA_SHEET_ID);
+      const sheetDT = ssDT.getSheets()[0];
+      const lastRow = sheetDT.getLastRow();
+      if (lastRow < 2) return responseJSON(404, "Chưa có hồ sơ nào được bàn giao sang Đào tạo", null);
+
+      const lastCol = sheetDT.getLastColumn();
+      const headers = sheetDT.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim().toUpperCase().replace(/\s+/g, ' '));
+      const cccdIndex = timCotTheoTen(headers, "CĂN CƯỚC", "SỐ CCCD", "CCCD");
+      const nganhIndex = timCotTheoTen(headers, "NGÀNH ĐÀO TẠO", "NGÀNH");
+      if (cccdIndex === -1 || nganhIndex === -1) {
+        return responseJSON(500, "Sheet Đào tạo thiếu cột CĂN CƯỚC/NGÀNH — không xác định chắc chắn được hồ sơ cần hoàn tác", null);
+      }
+
+      const daXoa = []; const khongTim = [];
+      // Đọc lại dữ liệu MỖI VÒNG LẶP (thay vì đọc 1 lần đầu) vì deleteRow() làm lệch số thứ
+      // tự hàng của MỌI dòng phía dưới — với số lượng hoàn tác mỗi lần rất nhỏ (thường 1),
+      // đơn giản và chắc chắn đúng quan trọng hơn tối ưu tốc độ ở đây.
+      for (let k = 0; k < incomingData.length; k++) {
+        const obj = incomingData[k];
+        const cccdRaw = String(obj.cccd || "").replace(/^['"]+|['"]+$/g, '').trim();
+        const nganhRaw = String(obj.nganh || "").trim().toLowerCase();
+        if (!cccdRaw) { khongTim.push(obj); continue; }
+
+        const soHangHienTai = sheetDT.getLastRow();
+        if (soHangHienTai < 2) { khongTim.push(obj); continue; }
+        const data = sheetDT.getRange(2, 1, soHangHienTai - 1, lastCol).getValues();
+
+        let viTriXoa = -1;
+        for (let i = 0; i < data.length; i++) {
+          const cKey = String(data[i][cccdIndex] || "").replace(/^['"]+|['"]+$/g, '').trim();
+          const nKey = String(data[i][nganhIndex] || "").trim().toLowerCase();
+          if (cKey === cccdRaw && nKey === nganhRaw) { viTriXoa = i; break; }
+        }
+
+        if (viTriXoa === -1) { khongTim.push(obj); continue; }
+        sheetDT.deleteRow(viTriXoa + 2); // +1 vì data bắt đầu từ hàng 2, +1 nữa vì viTriXoa 0-based
+        daXoa.push(obj);
+      }
+
+      if (daXoa.length > 0) {
+        try {
+          const dsTen = daXoa.map(o => (o.hoTen ? String(o.hoTen) : String(o.cccd || ""))).join(", ");
+          UrlFetchApp.fetch(WEBHOOK_GCHAT, {
+            method: "post", headers: { "Content-Type": "application/json; charset=UTF-8" },
+            payload: JSON.stringify({ text: "↩️ *HOÀN TÁC BÀN GIAO*\nBan Thẩm định vừa HOÀN TÁC bàn giao " + daXoa.length + " hồ sơ: *" + dsTen + "*.\nĐề nghị Đào tạo/CTSV BỎ QUA (đã bị xoá khỏi danh sách bàn giao)." }),
+            muteHttpExceptions: true
+          });
+        } catch (notifyErr) { /* Lỗi gửi thông báo Chat không ảnh hưởng tới việc hoàn tác đã thành công */ }
+      }
+
+      // ĐÃ THÊM (redesign "Hoàn trả" — theo phản hồi 2026-09-14: để lại "Đã duyệt" sau khi
+      // hoàn tác dễ gây nhầm lẫn/bỏ sót vì trông y hệt hồ sơ bình thường, nên ghi hẳn 1 trạng
+      // thái RIÊNG "Hoàn trả" để nổi bật, không lẫn với "Đã duyệt"): ghi ngược lại Trung Gian
+      // cho từng hồ sơ vừa hoàn tác thành công (đã có mặt trong daXoa) — CÙNG kiểu dò CCCD+
+      // Ngành như bên hdPost_capNhatDaoTao (đối xứng: nơi kia ghi "Đã bàn giao Đào tạo" khi
+      // bàn giao, đây ghi "Hoàn trả" khi hoàn tác). Nút "Duyệt" cho hồ sơ "Hoàn trả" (xem
+      // ThamDinhPage.jsx/thamDinhHelpers.js) đi theo luồng ĐẦY ĐỦ (PDF+Chat) như duyệt lại từ
+      // đầu — không tái dùng "Xác nhận lại" nhẹ, vì bản chất là hồ sơ VỪA BỊ PHÁT HIỆN CÓ VẤN
+      // ĐỀ ở khâu bàn giao, cần chắc chắn như duyệt lần đầu.
+      let trangThaiHoanTra = 0;
+      const trangThaiKhongTimHT = [];
+      if (daXoa.length > 0) {
+        try {
+          const TRUNGGIAN_ID = PropertiesService.getScriptProperties().getProperty('TRUNGGIAN_SHEET_ID');
+          const ssTrungGian = SpreadsheetApp.openById(TRUNGGIAN_ID);
+          const sheetTG = ssTrungGian.getSheets()[0];
+          const valuesTG = sheetTG.getDataRange().getValues();
+          const headersTG = valuesTG[0];
+          let cccdColTG = -1, nganhColTG = -1, statusColTG = -1;
+          for (let h = 0; h < headersTG.length; h++) {
+            const hName = String(headersTG[h]).toUpperCase().trim().replace(/\s+/g, ' ');
+            if (hName === "CĂN CƯỚC" || hName === "SỐ CCCD" || hName === "CCCD") cccdColTG = h;
+            if (hName === "NGÀNH ĐÀO TẠO" || hName === "NGÀNH") nganhColTG = h;
+            if (hName.indexOf("TRẠNG THÁI") !== -1) statusColTG = h;
+          }
+          if (cccdColTG !== -1 && nganhColTG !== -1 && statusColTG !== -1) {
+            daXoa.forEach(obj => {
+              const cccdHT = String(obj.cccd || "").replace(/^['"]+|['"]+$/g, '').trim();
+              const nganhHT = String(obj.nganh || "").trim().toLowerCase();
+              if (!cccdHT) return;
+              let foundTG = false;
+              for (let i = 1; i < valuesTG.length; i++) {
+                const sheetCccdTG = String(valuesTG[i][cccdColTG] || "").replace(/^['"]+|['"]+$/g, '').trim();
+                const sheetNganhTG = String(valuesTG[i][nganhColTG] || "").trim().toLowerCase();
+                if (sheetCccdTG === cccdHT && sheetNganhTG === nganhHT) {
+                  sheetTG.getRange(i + 1, statusColTG + 1).setValue("Hoàn trả");
+                  trangThaiHoanTra++;
+                  foundTG = true;
+                  break;
+                }
+              }
+              if (!foundTG) trangThaiKhongTimHT.push({ cccd: cccdHT, nganh: nganhHT });
+            });
+            SpreadsheetApp.flush();
+          }
+        } catch (errGhiNguocHT) {
+          // Không để lỗi ở bước ghi-ngược làm hỏng kết quả hoàn tác chính (đã xoá dòng Đào
+          // tạo thành công ở trên) — chỉ ghi log để cán bộ kiểm tra thủ công nếu cần.
+          Logger.log("Lỗi ghi ngược trạng thái 'Hoàn trả' vào Trung Gian: " + errGhiNguocHT.toString());
+        }
+      }
+      if (trangThaiKhongTimHT.length > 0) {
+        Logger.log("Hoàn tác thành công nhưng KHÔNG tìm thấy dòng Trung Gian tương ứng để ghi 'Hoàn trả' cho: " + JSON.stringify(trangThaiKhongTimHT));
+      }
+
+      if (daXoa.length === 0) {
+        return responseJSON(404, "Không tìm thấy hồ sơ nào trong danh sách đã bàn giao Đào tạo — có thể đã được hoàn tác từ trước.", null);
+      }
+      return responseJSON(200, "success", { hoanTac: daXoa.length, khongTimThay: khongTim.length, trangThaiHoanTra: trangThaiHoanTra, trangThaiKhongTim: trangThaiKhongTimHT.length });
     }
 
 function hdPost_scanDocument(e, ss) {

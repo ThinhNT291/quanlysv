@@ -385,6 +385,11 @@ function doPost(e) {
     // hdPost_xacNhanCapNhatDaDuyet (TuyenSinh.gs).
     if (action === 'xacNhanCapNhatDaDuyet') return hdPost_xacNhanCapNhatDaDuyet(e, ss);
 
+    // ĐÃ THÊM (redesign "Tái rà soát"): "Duyệt nhẹ" cho hồ sơ Tái rà soát (chưa từng qua Đã
+    // duyệt, không xuất PDF mới) — xem chú thích đầy đủ tại hdPost_duyetNhe (TuyenSinh.gs,
+    // ngay sau hdPost_xacNhanCapNhatDaDuyet).
+    if (action === 'duyetNhe') return hdPost_duyetNhe(e, ss);
+
     // 17. BÁO THIẾU HỒ SƠ -> XUẤT PDF (port từ yeucaubosung.gs)
     if (action === 'baoThieu') return hdPost_baoThieu(e, ss);
 
@@ -395,6 +400,10 @@ function doPost(e) {
     // vì getActiveSpreadsheet(), vì Quanlysv.gs là standalone script, không gắn liền
     // vào 1 file Sheet cụ thể nào để "active")
     if (action === 'capNhatDaoTao') return hdPost_capNhatDaoTao(e, ss);
+
+    // ĐÃ THÊM (tinh chỉnh UI/UX — "Hoàn tác bàn giao"): xem chú thích đầy đủ tại
+    // hdPost_huyBanGiao (TuyenSinh.gs, ngay sau hdPost_capNhatDaoTao).
+    if (action === 'huyBanGiao') return hdPost_huyBanGiao(e, ss);
 
     // =====================================
     // 12. QUÉT CCCD BẰNG AI GEMINI

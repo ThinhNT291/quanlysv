@@ -34,11 +34,15 @@ import './KhoSinhVien.css';
 // gốc" (2 khối KETQUA/Đào tạo nguyên trạng, dành cho đối chiếu nâng cao).
 // ===================================================================
 
+// ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): "Tái rà soát"/"Hoàn trả" — xem chú
+// thích đầy đủ tại KhoSinhVienPage.jsx (cùng nguồn suyRaTrangThaiVongDoi_() bên TuyenSinh.gs).
 const BADGE_MAU = {
   'Đang chờ duyệt': 'secondary',
+  'Tái rà soát': 'info',
   'Mới bổ sung': 'info',
   'Đã báo thiếu': 'warning',
   'Đã duyệt': 'primary',
+  'Hoàn trả': 'danger',
   'Đã trúng tuyển': 'success',
   'Đã trúng tuyển (chờ bàn giao)': 'success',
   'Đã bàn giao Đào tạo': 'dark',
@@ -158,7 +162,7 @@ const KHOA_LOAI_TRU_THONG_TIN_CANHAN = [
   // Goc01 lưu chi tiết điểm từng Lớp/Kỳ (xem TOM_TAT_BAN_GIAO.md) — trang Thẩm định cũng
   // loại cột này khi xuất (ThamDinhPage.jsx/CAC_COT_LOAI_BO_KHI_XUAT), không phải thứ người
   // xem hồ sơ cần thấy dạng chuỗi JSON thô.
-  'SV_KEY', 'LINK HỒ SƠ', 'TÀI KHOẢN NHẬP LIỆU', 'RAW_DIEM_HK', 'RAW_DIEM_KHAC_1', 'RAW_DIEM_KHAC_2',
+  'SV_KEY', 'LINK HỒ SƠ', 'TÀI KHOẢN NHẬP LIỆU', 'RAW_DIEM_HK',
   'TOÁN', 'VẬT LÍ', 'HÓA HỌC', 'SINH HỌC', 'NGỮ VĂN', 'LỊCH SỬ', 'ĐỊA LÝ',
   'TIẾNG ANH', 'TIẾNG TRUNG', 'TIN HỌC', 'GDKTPL',
   'ĐIỂM TB TOÀN KHÓA HỆ 4', 'ĐIỂM TB TOÀN KHÓA HỆ 10', 'ĐIỂM CỘNG', 'ĐIỂM PHỎNG VẤN',

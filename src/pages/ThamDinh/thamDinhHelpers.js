@@ -469,13 +469,32 @@ export function getMissingTienQuyet(row) {
 // (trang Nhập học, KÊNH NỘP = "Thu hồ sơ trực tiếp"), KHÔNG qua thẩm định/duyệt như Xét
 // tuyển. Trước đây giá trị này rơi vào default "Đang chờ duyệt" — khiến hồ sơ đã trúng
 // tuyển sẵn hiện lẫn trong hàng chờ duyệt như hồ sơ Xét tuyển mới, dễ bị thao tác nhầm.
+// ĐÃ SỬA (redesign "Tái rà soát"/"Hoàn trả"/"Đã bàn giao Đào tạo", 2026-09-14): thêm 3 trạng
+// thái mới ghi THẬT (không còn suy ra qua hậu tố/cờ rời) — xem bảng A/B đã chốt với người
+// dùng. "Mới bổ sung" vẫn PHẢI giữ lại nhánh đọc (dữ liệu cũ trên Sheet còn giá trị này) dù
+// không còn nơi nào GHI mới giá trị đó nữa (xem XetTuyenPage.jsx handleAddRow).
 export function getAppState(row) {
   const trangThai = getVal(row, ["TRẠNG THÁI THẨM ĐỊNH", "TRẠNG THÁI"]);
   if (trangThai.includes("Đã trúng tuyển")) return "Đã trúng tuyển";
+  if (trangThai.includes("Đã bàn giao Đào tạo")) return "Đã bàn giao Đào tạo";
+  if (trangThai.includes("Hoàn trả")) return "Hoàn trả";
   if (trangThai.includes("Đã duyệt")) return "Đã duyệt";
   if (trangThai.includes("Đã báo thiếu")) return "Đã báo thiếu";
-  if (trangThai.includes("Mới bổ sung")) return "Mới bổ sung";
+  if (trangThai.includes("Tái rà soát")) return "Tái rà soát";
+  if (trangThai.includes("Mới bổ sung")) return "Mới bổ sung"; // chỉ còn đọc dữ liệu cũ.
   return "Đang chờ duyệt";
+}
+
+// ĐÃ THÊM (redesign CẦN_XEM_LẠI, 2026-09-14): đọc cờ "vừa sửa, cần xem lại" — thay hẳn cách
+// cũ (regex dò hậu tố "(Có cập nhật: ...)" nhét trong TRẠNG THÁI THẨM ĐỊNH) bằng 2 cột riêng.
+// Cần Trung Gian có 2 cột CẦN_XEM_LẠI/CHI_TIẾT_THAY_ĐỔI (xem hdPost_importStudents,
+// TuyenSinh.gs) — nếu sheet chưa có cột này, luôn trả về false/rỗng (an toàn, không vỡ gì).
+export function getCanXemLai(row) {
+  const v = getVal(row, ["CẦN_XEM_LẠI"]);
+  return String(v || "").trim().toUpperCase() === "TRUE";
+}
+export function getChiTietThayDoi(row) {
+  return getVal(row, ["CHI_TIẾT_THAY_ĐỔI"]);
 }
 
 // ĐÃ THÊM: điểm chuẩn nhánh "Tốt nghiệp THPT" giờ KHÁC NHAU theo "PHƯƠNG THỨC XÉT

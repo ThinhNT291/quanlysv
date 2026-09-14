@@ -95,9 +95,15 @@ export const duyetTrungTuyen = (payloadArray) => postThamDinhAction('trungTuyen'
 // ĐÃ THÊM: "Xác nhận lại" 1 hồ sơ đã duyệt vừa được sửa/bổ sung — KHÔNG xuất biên nhận/
 // KHÔNG gửi Google Chat, chỉ ghi lại trạng thái "Đã duyệt" sạch (xem hdPost_xacNhanCapNhatDaDuyet).
 export const xacNhanCapNhatDaDuyet = (payloadArray) => postThamDinhAction('xacNhanCapNhatDaDuyet', payloadArray);
+// ĐÃ THÊM (redesign "Tái rà soát"): "Duyệt nhẹ" cho hồ sơ đang ở trạng thái "Tái rà soát" —
+// KHÔNG xuất PDF mới, chỉ ghi "Đã duyệt" + báo Gchat nhẹ (xem hdPost_duyetNhe).
+export const duyetNhe = (payloadArray) => postThamDinhAction('duyetNhe', payloadArray);
 export const baoThieuHoSo = (payloadArray) => postThamDinhAction('baoThieu', payloadArray);
 export const luuKetQuaThamDinh = (payloadArray) => postThamDinhAction('luuKetQua', payloadArray);
 export const banGiaoDaoTao = (payloadArray) => postThamDinhAction('capNhatDaoTao', payloadArray);
+// ĐÃ THÊM (tinh chỉnh UI/UX — "Hoàn tác bàn giao"): xem hdPost_huyBanGiao (TuyenSinh.gs).
+// payloadArray: mảng {cccd, nganh, hoTen?} — hoTen chỉ để tin nhắn Gchat dễ đọc hơn.
+export const huyBanGiaoDaoTao = (payloadArray) => postThamDinhAction('huyBanGiao', payloadArray);
 
 // ĐÃ THÊM (Pha 5): 3 action AI — CHÚ Ý các action này đọc idToken TỪ BÊN TRONG "data"
 // (JSON.parse(e.parameter.data).idToken) chứ không phải field idToken/sessionToken

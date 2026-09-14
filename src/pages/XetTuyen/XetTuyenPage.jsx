@@ -13,7 +13,10 @@ import { taiFileMauExcel } from '../../utils/excelTemplate';
 // getMissingDocs() đang là nguồn xác định "còn thiếu hồ sơ gì" cho trang Thẩm định, để
 // quyết định ô tick nào được phép mở khoá khi khoá form lại (xem isOldRecordApproved bên
 // dưới) — tránh viết lại 1 bản riêng dễ lệch với danh sách hồ sơ tiên quyết thật.
-import { getMissingDocs } from '../ThamDinh/thamDinhHelpers';
+import { getMissingDocs, getVal, generateMaSV } from '../ThamDinh/thamDinhHelpers';
+// ĐÃ THÊM (tinh chỉnh UI/UX — modal xem NHANH cho hồ sơ đã bàn giao): dùng lại nguyên
+// component đã viết cho mục đích này — xem chú thích đầy đủ ở đầu file đó.
+import HoSoDaBanGiaoModal from '../ThamDinh/HoSoDaBanGiaoModal';
 // ĐÃ THÊM: getMissingDocs() trả về TÊN giấy tờ theo DICT_HO_SO "chuẩn" (thamDinhConfig.js,
 // dùng cho trang Thẩm định) — trong khi file NÀY có 1 bản DICT_HO_SO RIÊNG (khai báo ngay
 // dưới đây) với vài tên hiển thị khác đôi chút (nổi bật nhất: doc_cccd = "Bản sao ID" ở
@@ -563,6 +566,11 @@ const XetTuyenPage = () => {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  // ĐÃ THÊM (tinh chỉnh UI/UX — modal xem NHANH cho hồ sơ đã bàn giao): giữ nguyên 1 "item"
+  // (đúng shape trong searchResults, xem hdPost_searchOldRecord) đang được xem chỉ-đọc —
+  // null = không mở. Tách RIÊNG khỏi searchResults/isSearchModalOpen vì đây là modal LỒNG
+  // bên trên modal "Tìm hồ sơ cũ" (không đóng modal tìm kiếm khi mở modal xem).
+  const [xemHoSoDaBanGiao, setXemHoSoDaBanGiao] = useState(null);
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -987,7 +995,15 @@ const XetTuyenPage = () => {
         "PHƯƠNG THỨC XÉT TUYỂN": (formData.loai_diem === 'HOC_BA' && (parseFloat(String(formData.diem_phong_van).replace(',', '.')) || 0) > 0)
           ? 'Phỏng vấn'
           : (formData.loai_diem === 'THI_THPT' ? 'Điểm thi THPT' : (formData.loai_diem === 'HOC_BA' ? 'Điểm học bạ' : (formData.loai_diem === 'HOC_BA_2025' ? 'Điểm học bạ (TBTS 2025)' : ''))),
-        "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "Mới bổ sung" : "Chưa thẩm định",
+        // ĐÃ SỬA (redesign "Tái rà soát"/CẦN_XEM_LẠI, 2026-09-14): hồ sơ MỚI (không edit) giờ
+        // phân biệt "Chưa thẩm định" (hoàn toàn mới) với "Tái rà soát" (đã tick "Hồ sơ cũ (có
+        // MSV)" — có MSV thật từ trước, cần Thẩm định xem lại nhưng không phải 1 quyết định
+        // trúng tuyển mới, xem A2 trong bảng đã chốt). Hồ sơ ĐANG SỬA (isEditMode) giờ gửi
+        // chuỗi RỖNG — backend (hdPost_importStudents, nhánh UPDATE) LUÔN tự đọc lại đúng
+        // trạng thái GỐC trước khi sửa rồi ghi đè lại y nguyên (giữ nguyên trạng thái gốc,
+        // KHÔNG còn ép về "Mới bổ sung" nữa), giá trị gửi ở đây không còn được dùng tới —
+        // xem chú thích đầy đủ tại khối "oldStatusRaw"/"canXemLaiMoi" trong TuyenSinh.gs.
+        "TRẠNG THÁI THẨM ĐỊNH": isEditMode ? "" : (laHoSoCu ? "Tái rà soát" : "Chưa thẩm định"),
         
         "TIME": isEditMode ? (formData.time_goc || currentTimestamp) : currentTimestamp,
         "NGÀY CẬP NHẬT HỒ SƠ": isEditMode ? currentTimestamp : "",
@@ -1284,15 +1300,18 @@ const XetTuyenPage = () => {
       };
   };
 
-  // ĐÃ THÊM (theo yêu cầu — rút gọn nhãn trạng thái trong modal "Tìm hồ sơ cũ"): backend
-  // (hdPost_importStudents, TuyenSinh.gs) trả nguyên chuỗi "Đã duyệt (Có cập nhật: <liệt kê
-  // MỌI cột vừa đổi>)" cho hồ sơ đã duyệt rồi còn bị sửa thêm — liệt kê dài dằng dặc, tràn cột
-  // hẹp trong bảng kết quả tìm kiếm. CHỈ rút gọn ở tầng HIỂN THỊ ngay tại đây, không đụng gì
-  // tới dữ liệu thật (item.trangThai) — nơi khác (nếu có dùng lại state này) vẫn nhận đúng
-  // chuỗi gốc đầy đủ.
-  const rutGonTrangThaiTimKiem = (trangThai) => {
+  // ĐÃ SỬA (redesign CẦN_XEM_LẠI, 2026-09-14): trước đây rút gọn dựa trên hậu tố "(Có cập
+  // nhật: ...)" nhét chung trong chuỗi trạng thái — giờ hậu tố đó không còn tồn tại nữa (đã
+  // tách thành cột CẦN_XEM_LẠI riêng), nên đổi hẳn sang đọc cờ đó từ item.fullData (mọi cột
+  // của dòng khớp đều đã có sẵn trong fullData, xem hdPost_searchOldRecord). Áp dụng cho CẢ
+  // "Đã duyệt" lẫn "Đã báo thiếu" (2 trạng thái duy nhất dùng cờ này).
+  const rutGonTrangThaiTimKiem = (trangThai, item) => {
     const t = String(trangThai || '');
-    return (t.indexOf('Đã duyệt') !== -1 && t.indexOf('Có cập nhật') !== -1) ? 'Đã duyệt (có bổ sung sau)' : t;
+    const canXemLaiItem = item && item.fullData && String(item.fullData['CẦN_XEM_LẠI'] || '').trim().toUpperCase() === 'TRUE';
+    if (!canXemLaiItem) return t;
+    if (t.indexOf('Đã duyệt') !== -1) return 'Đã duyệt (có bổ sung sau)';
+    if (t.indexOf('Đã báo thiếu') !== -1) return 'Đã báo thiếu (có bổ sung sau)';
+    return t;
   };
 
   const executeSearchCandidate = async () => {
@@ -1709,6 +1728,13 @@ const XetTuyenPage = () => {
 
                   {
                       const currentTimestamp = new Date().toLocaleString('vi-VN');
+                      // ĐÃ THÊM (redesign "Tái rà soát", 2026-09-14): đọc TRƯỚC giá trị MSV của
+                      // đúng dòng này (dùng lại ngay dưới cho cả 2 cột "MÃ SINH VIÊN" và "TRẠNG
+                      // THÁI THẨM ĐỊNH") — dòng CÓ điền MSV = hồ sơ cũ nhập lại → "Tái rà soát";
+                      // dòng để TRỐNG = hồ sơ hoàn toàn mới → "Chưa thẩm định" như trước giờ. Đây
+                      // chính là "cơ chế lọc theo từng dòng" đã thống nhất — chỉ 1 if, dùng lại
+                      // đúng giá trị vốn đã đọc sẵn cho cột MÃ SINH VIÊN, không phải logic mới.
+                      const msvExcelRow = getField(rowArr, ["MÃ SINH VIÊN", "MÃ SỐ NGƯỜI HỌC", "MASV", "MÃ SV"]);
                       const newRow = {
                           "STT": sttBase + importedCount + 1, "TRẠNG THÁI ĐẨY": "Waiting", "_Action": "INSERT",
                           "KẾT QUẢ SƠ TUYỂN": getField(rowArr, ["KẾT QUẢ SƠ TUYỂN", "KẾT QUẢ"]),
@@ -1718,7 +1744,7 @@ const XetTuyenPage = () => {
                           // importStudents dùng thẳng giá trị này thay vì tự sinh mã), dòng nào để
                           // trống thì vẫn là hồ sơ MỚI như trước giờ. Không cần tick riêng cho
                           // Excel như Form nhập tay vì 1 file có thể trộn cả 2 loại hồ sơ.
-                          "MÃ SINH VIÊN": getField(rowArr, ["MÃ SINH VIÊN", "MÃ SỐ NGƯỜI HỌC", "MASV", "MÃ SV"]),
+                          "MÃ SINH VIÊN": msvExcelRow,
                           // ĐÃ SỬA: chuẩn hoá về ISO (yyyy-MM-dd) ngay khi đọc file — cùng quy
                           // ước dd/MM/yyyy với ImportModal.jsx và backend (xem
                           // chuanHoaNgaySinhImport, utils/ngaySinh.js) — để "NGÀY SINH" hiện
@@ -1766,7 +1792,7 @@ const XetTuyenPage = () => {
                           // nhập tay mới thêm) — không bắt buộc, để trống nếu file không có cột này.
                           "ĐIỂM PHỎNG VẤN": getField(rowArr, ["ĐIỂM PHỎNG VẤN", "ĐIỂM PV"]),
                           
-                          "TRẠNG THÁI THẨM ĐỊNH": "Chưa thẩm định",
+                          "TRẠNG THÁI THẨM ĐỊNH": String(msvExcelRow || "").trim() ? "Tái rà soát" : "Chưa thẩm định",
                           "TIME": currentTimestamp,
                           "NGÀY CẬP NHẬT HỒ SƠ": "",
                           "TÀI KHOẢN NHẬP LIỆU": getUserEmail(),
@@ -2697,8 +2723,18 @@ const XetTuyenPage = () => {
                                       {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Danh sách trống</td></tr>) : (
                                           searchResults.map((item, index) => (
                                               <tr key={index}>
-                                                  <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td><td className="text-center"><span className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}>{rutGonTrangThaiTimKiem(item.trangThai)}</span></td>
-                                                  <td className="text-center"><button className="btn btn-sm btn-outline-primary fw-bold" onClick={() => loadOldCandidate(item)}>✏️ Sửa</button></td>
+                                                  <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td><td className="text-center"><span className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}>{rutGonTrangThaiTimKiem(item.trangThai, item)}</span></td>
+                                                  {/* ĐÃ THÊM (tinh chỉnh UI/UX — modal xem NHANH cho hồ sơ đã bàn giao): hồ sơ ĐÃ
+                                                      bàn giao Đào tạo/CTSV (item.daBanGiaoDaoTao, do backend cấp — xem
+                                                      hdPost_searchOldRecord, TuyenSinh.gs) không còn đẩy lên form sửa nữa —
+                                                      chỉ còn xem lại qua modal chỉ-đọc, tránh sửa nhầm 1 hồ sơ đã xử lý xong. */}
+                                                  <td className="text-center">
+                                                      {item.daBanGiaoDaoTao ? (
+                                                          <button className="btn btn-sm btn-outline-secondary fw-bold" onClick={() => setXemHoSoDaBanGiao(item)}>👁️ Xem</button>
+                                                      ) : (
+                                                          <button className="btn btn-sm btn-outline-primary fw-bold" onClick={() => loadOldCandidate(item)}>✏️ Sửa</button>
+                                                      )}
+                                                  </td>
                                               </tr>
                                           ))
                                       )}
@@ -2709,6 +2745,21 @@ const XetTuyenPage = () => {
                   </div>
               </div>
           </div>
+        )}
+
+        {/* ĐÃ THÊM (tinh chỉnh UI/UX — modal xem NHANH cho hồ sơ đã bàn giao): LỒNG bên
+            trên modal "Tìm hồ sơ cũ" (không đóng modal tìm kiếm khi mở modal xem, người
+            dùng đóng modal này xong vẫn còn nguyên kết quả tìm kiếm phía sau). item.fullData
+            = đúng shape "row" mà getVal/generateMaSV vẫn dùng (mọi header TrungGian nguyên
+            văn, xem hdPost_searchOldRecord); item.ketQuaLuuCSDL = dữ liệu Lưu CSDL nếu có. */}
+        {xemHoSoDaBanGiao && (
+          <HoSoDaBanGiaoModal
+            row={xemHoSoDaBanGiao.fullData}
+            ketQuaLuuCSDL={xemHoSoDaBanGiao.ketQuaLuuCSDL}
+            getVal={getVal}
+            generateMaSV={generateMaSV}
+            onClose={() => setXemHoSoDaBanGiao(null)}
+          />
         )}
 
         {/* MODAL TRA CỨU KHU VỰC ƯU TIÊN — ĐÃ THÊM LẠI (theo phản hồi), port từ repo Xét

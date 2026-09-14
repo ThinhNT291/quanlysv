@@ -18,29 +18,38 @@ import './KhoSinhVien.css';
 
 const PAGE_SIZE_DEFAULT = 20;
 
-// Đúng các giá trị mà suyRaTrangThaiVongDoi_() bên Quanlysv.gs có thể trả về.
+// Đúng các giá trị mà suyRaTrangThaiVongDoi_() bên TuyenSinh.gs có thể trả về.
+// ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): "Tái rà soát" (hồ sơ nộp lại có MSV
+// thật, chưa từng qua "Đã duyệt") và "Hoàn trả" (vừa bị hoàn tác bàn giao vì phát hiện vấn
+// đề) — 2 trạng thái MỚI thay cho hậu tố "(Có cập nhật: ...)" cũ đã bỏ hẳn.
 const TRANG_THAI_OPTIONS = [
-  'Đang chờ duyệt', 'Mới bổ sung', 'Đã báo thiếu', 'Đã duyệt',
+  'Đang chờ duyệt', 'Tái rà soát', 'Mới bổ sung', 'Đã báo thiếu', 'Đã duyệt', 'Hoàn trả',
   'Đã trúng tuyển', 'Đã trúng tuyển (chờ bàn giao)', 'Đã bàn giao Đào tạo',
 ];
 
 const BADGE_MAU = {
   'Đang chờ duyệt': 'secondary',
+  'Tái rà soát': 'info',
   'Mới bổ sung': 'info',
   'Đã báo thiếu': 'warning',
   'Đã duyệt': 'primary',
+  // "Hoàn trả" cố tình dùng màu ĐỎ (danger) — nổi bật hơn hẳn, khớp với stateBadge() ở
+  // ThamDinhPage.jsx (tránh bị bỏ sót, đúng lý do khi thiết kế trạng thái này).
+  'Hoàn trả': 'danger',
   'Đã trúng tuyển': 'success',
   'Đã trúng tuyển (chờ bàn giao)': 'success',
   'Đã bàn giao Đào tạo': 'dark',
 };
 
-// Cùng 7 trạng thái như BADGE_MAU nhưng đổi ra mã màu hex — dùng cho biểu đồ tròn (recharts
+// Cùng các trạng thái như BADGE_MAU nhưng đổi ra mã màu hex — dùng cho biểu đồ tròn (recharts
 // không nhận trực tiếp tên class Bootstrap như "success", phải tự quy đổi hex).
 const MAU_HEX = {
   'Đang chờ duyệt': '#6c757d',
+  'Tái rà soát': '#0dcaf0',
   'Mới bổ sung': '#0dcaf0',
   'Đã báo thiếu': '#ffc107',
   'Đã duyệt': '#0d6efd',
+  'Hoàn trả': '#dc3545',
   'Đã trúng tuyển': '#198754',
   'Đã trúng tuyển (chờ bàn giao)': '#20c997',
   'Đã bàn giao Đào tạo': '#212529',
