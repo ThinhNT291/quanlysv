@@ -1398,8 +1398,19 @@ function hdGet_layBangDiemDaoTao(e) {
         // tổng số tín chỉ toàn khoá (khác nhau tuỳ chương trình đào tạo của từng ngành) vào
         // CHUNG 1 object cấu hình/ngành, thay vì để riêng 1 bảng tra tên sheet như trước.
         const BANGDIEM_DAOTAO_ID = "1ZTjp9IL3Pfmw4Rv7DNgplgit3_y0T3lN6TOx0pIDHgU";
+        // ĐÃ SỬA (mở rộng thêm 5 ngành, 2026-09-14): 1 ngành giờ có thể ứng với NHIỀU sheet
+        // (mỗi sheet 1/nhóm khoá, VD "QTKD K1" riêng, "QTKD K2,3" gộp chung) — đổi "sheet"
+        // (1 chuỗi) thành "sheets" (mảng). Tên ngành "Quản trị dịch vụ du lịch và lữ hành"
+        // dùng đúng chữ "và" (không phải dấu "&") — khớp đúng bản DICT_TO_HOP CHUẨN trong
+        // thamDinhConfig.js (nơi trang Thẩm định đang tra tổ hợp/điểm ĐÚNG cho ngành này,
+        // xem TOM_TAT_BAN_GIAO.md — XetTuyenPage.jsx có 1 bản cục bộ dùng "&", đã xác nhận
+        // là bản LỆCH, không dùng làm chuẩn ở đây).
         const NGANH_CAU_HINH_DIEM = {
-          "Quản trị kinh doanh": { sheet: "QTKD K2,3", tongTinChiCanHoc: 126 },
+          "Quản trị kinh doanh": { sheets: ["QTKD K1", "QTKD K2,3"], tongTinChiCanHoc: 126 },
+          "CNTT - ĐHKTS": { sheets: ["CNTT K1", "CNTT - ĐHKTS K2,3"], tongTinChiCanHoc: 126 },
+          "Ngôn ngữ Anh": { sheets: ["NNA - K2,3"], tongTinChiCanHoc: 126 },
+          "Ngôn ngữ Trung Quốc": { sheets: ["NNTQ - K2,3"], tongTinChiCanHoc: 126 },
+          "Quản trị dịch vụ du lịch và lữ hành": { sheets: ["QTDVDLLH - K3"], tongTinChiCanHoc: 126 },
         };
         const capNhatDiem = NGANH_CAU_HINH_DIEM[nganh];
         // ĐÃ CHỌN trả code 200 kèm cờ "coDuLieu:false" (thay vì 404) cho MỌI trường hợp
@@ -1407,19 +1418,15 @@ function hdGet_layBangDiemDaoTao(e) {
         // viên chưa có điểm kỳ này...), KHÔNG phải lỗi, để tab "Điểm số" bên React hiện
         // thông báo nhẹ nhàng thay vì rơi vào nhánh isError của useQuery.
         if (!capNhatDiem) return responseJSON(200, "Ngành chưa được cấu hình liên kết dữ liệu điểm", { coDuLieu: false, lyDo: "CHUA_CAU_HINH_NGANH" });
-        const tenSheet = capNhatDiem.sheet;
 
         const ssDiem = SpreadsheetApp.openById(BANGDIEM_DAOTAO_ID);
-        const sheetDiem = ssDiem.getSheetByName(tenSheet);
-        if (!sheetDiem) return responseJSON(200, "Không tìm thấy sheet điểm cho ngành này (tên sheet có thể chưa khớp)", { coDuLieu: false, lyDo: "KHONG_THAY_SHEET" });
-
-        const duLieuDiem = sheetDiem.getDataRange().getValues();
         // Quy ước cấu trúc sheet điểm (đã chốt với người dùng): hàng 4 (index 3) = tiêu đề
         // môn học; hàng 5 (index 4, ngay dưới hàng tên môn) = số TÍN CHỈ của từng môn, cùng
         // cột với tên môn tương ứng — MỚI THÊM; cột A-E (index 0-4) = thông tin sinh viên
         // riêng, trong đó cột B (index 1) = Mã sinh viên (khoá đối chiếu); cột F->BF (index
         // 5->57, 53 môn) = điểm từng môn; cột BG (index 58, ngay sau cột môn cuối) = tổng số
-        // tín chỉ sinh viên ĐÃ hoàn thành tính tới thời điểm mirror — MỚI THÊM.
+        // tín chỉ sinh viên ĐÃ hoàn thành tính tới thời điểm mirror — MỚI THÊM. Giữ NGUYÊN
+        // quy ước này cho mọi sheet mới (đã xác nhận với người dùng).
         const IDX_HANG_TIEU_DE_MON = 3;
         const IDX_HANG_TIN_CHI_MON = 4;
         const IDX_COT_MA_SV = 1;
@@ -1427,18 +1434,34 @@ function hdGet_layBangDiemDaoTao(e) {
         const IDX_COT_MON_KET_THUC = 57;
         const IDX_COT_TONG_TIN_CHI_HOAN_THANH = 58;
 
-        if (duLieuDiem.length <= IDX_HANG_TIN_CHI_MON) {
-          return responseJSON(200, "Sheet điểm của ngành này chưa có dữ liệu", { coDuLieu: false, lyDo: "SHEET_RONG" });
+        // ĐÃ THÊM (mở rộng nhiều sheet/ngành): KHÔNG suy sheet nào từ cột KHÓA của sinh viên
+        // (không đảm bảo khớp CHÍNH XÁC quy ước đặt tên sheet, VD sinh viên khoá 4 nhưng
+        // sheet mới nhất vẫn đang tên "K2,3") — thử LẦN LƯỢT từng sheet trong mảng theo đúng
+        // thứ tự khai báo, sheet nào tìm thấy đúng mã sinh viên thì dừng luôn, không đọc tiếp
+        // các sheet còn lại (đỡ tốn lượt gọi Sheets). Sheet tên sai/chưa tồn tại trong mảng
+        // thì bỏ qua, thử sheet kế tiếp — chỉ báo "không thấy sheet" khi KHÔNG sheet nào
+        // trong mảng thật sự tồn tại.
+        let tenSheet = null, duLieuDiem = null, hangSV = null, coSheetNaoTonTai = false;
+        for (let si = 0; si < capNhatDiem.sheets.length && !hangSV; si++) {
+          const tenSheetThu = capNhatDiem.sheets[si];
+          const sheetThu = ssDiem.getSheetByName(tenSheetThu);
+          if (!sheetThu) continue;
+          coSheetNaoTonTai = true;
+          const duLieuThu = sheetThu.getDataRange().getValues();
+          if (duLieuThu.length <= IDX_HANG_TIN_CHI_MON) continue; // sheet rỗng -> thử sheet kế tiếp
+          for (let i = IDX_HANG_TIEU_DE_MON + 1; i < duLieuThu.length; i++) {
+            const maSVHang = String(duLieuThu[i][IDX_COT_MA_SV] || "").replace(/^['"]+|['"]+$/g, '').trim();
+            if (maSVHang && maSVHang.toLowerCase() === maSinhVien.toLowerCase()) {
+              tenSheet = tenSheetThu; duLieuDiem = duLieuThu; hangSV = duLieuThu[i];
+              break;
+            }
+          }
         }
+        if (!coSheetNaoTonTai) return responseJSON(200, "Không tìm thấy sheet điểm cho ngành này (tên sheet có thể chưa khớp)", { coDuLieu: false, lyDo: "KHONG_THAY_SHEET" });
+        if (!hangSV) return responseJSON(200, "Chưa tìm thấy dữ liệu điểm của sinh viên này bên Đào tạo", { coDuLieu: false, lyDo: "KHONG_THAY_SV" });
+
         const hangTieuDeMon = duLieuDiem[IDX_HANG_TIEU_DE_MON];
         const hangTinChiMon = duLieuDiem[IDX_HANG_TIN_CHI_MON];
-
-        let hangSV = null;
-        for (let i = IDX_HANG_TIEU_DE_MON + 1; i < duLieuDiem.length; i++) {
-          const maSVHang = String(duLieuDiem[i][IDX_COT_MA_SV] || "").replace(/^['"]+|['"]+$/g, '').trim();
-          if (maSVHang && maSVHang.toLowerCase() === maSinhVien.toLowerCase()) { hangSV = duLieuDiem[i]; break; }
-        }
-        if (!hangSV) return responseJSON(200, "Chưa tìm thấy dữ liệu điểm của sinh viên này bên Đào tạo", { coDuLieu: false, lyDo: "KHONG_THAY_SV" });
 
         const monHoc = [];
         for (let c = IDX_COT_MON_BAT_DAU; c <= IDX_COT_MON_KET_THUC && c < hangTieuDeMon.length; c++) {

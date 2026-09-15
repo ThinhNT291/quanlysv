@@ -3,6 +3,10 @@ import { GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from "jwt-decode";
 import { loginUser, GAS_URL } from '../../api/studentApi';
 import Swal from 'sweetalert2';
+// ĐÃ THÊM (2026-09-15 — bố cục màn đăng nhập 2 cột): ảnh nền cột trái. Giả định file
+// nằm ở src/assets/px.jpg (cùng thư mục assets đang chứa logo-phuxuan.png, xem
+// App.jsx) — nếu bạn đặt ảnh ở đường dẫn khác thì chỉ cần sửa đúng dòng import này.
+import bgPhuXuan from '../../assets/px.jpg';
 
 const LoginPage = ({ onLoginSuccess }) => {
   // ĐÃ THÊM: tự điền sẵn username lần đăng nhập nội bộ gần nhất — đỡ phải gõ lại khi bị
@@ -59,7 +63,7 @@ const handleGoogleSuccess = async (credentialResponse) => {
         alert("⛔ Từ chối truy cập: " + result.message);
     }
   } catch (error) {
-      alert("Lỗi kết nối đến máy chủ xác thực.");
+      alert("Lỗi kết nối.");
   }
 };
 
@@ -85,28 +89,82 @@ const handleGoogleSuccess = async (credentialResponse) => {
   };
 
   return (
-    <div className="d-flex align-items-center justify-content-center vh-100" style={{ backgroundColor: '#f4f6f9' }}>
+    // ĐÃ SỬA (2026-09-15 — theo yêu cầu bố cục lại màn đăng nhập): trước đây hộp thoại
+    // nằm CHÍNH GIỮA màn hình trên nền màu phẳng. Giờ tách 2 cột: trái là ảnh nền +
+    // giới thiệu hệ thống (chỉ hiện từ breakpoint lg/992px trở lên qua class
+    // "d-none d-lg-flex/d-lg-block" — ẩn hẳn trên điện thoại/tablet dọc để tránh chật
+    // chội, hộp đăng nhập trên màn hẹp sẽ tự chiếm toàn bộ chiều rộng như hành vi cũ),
+    // phải giữ NGUYÊN 100% hộp thoại + logic đăng nhập cũ, chỉ đổi khung bọc ngoài.
+    // ĐÃ SỬA (theo phản hồi — làm mờ ranh giới giữa 2 khối thay vì chia cứng): trước
+    // đây ảnh nền và khối đăng nhập là 2 flex-item cạnh nhau -> có 1 đường ranh giới
+    // thẳng, cứng. Giờ đổi cấu trúc: ảnh nền tách thành 1 lớp `position: absolute`
+    // riêng, PHỦ RỘNG HƠN (85% thay vì 58%) và dùng `mask-image`/`WebkitMaskImage`
+    // dạng gradient để tự mờ dần về phía phải (từ nét 100% xuống trong suốt 0%) —
+    // phần trong suốt sẽ lộ ra đúng màu nền `#f4f6f9` của khối cha bên dưới, tạo hiệu
+    // ứng ảnh tan dần vào nền thay vì bị cắt đường thẳng. Chữ giới thiệu và khối đăng
+    // nhập tách thành 2 phần tử riêng, đặt `position: relative` để luôn nổi TRÊN lớp
+    // ảnh (mặc định phần tử absolute không có z-index vẫn nằm dưới các phần tử
+    // position:relative đứng sau nó trong DOM).
+    <div style={{ position: 'relative', minHeight: '100vh', backgroundColor: '#f4f6f9', overflow: 'hidden' }} className="d-flex">
+      {/* LỚP ẢNH NỀN — phủ rộng hơn phần chữ giới thiệu bên dưới để có đủ khoảng
+          không gian mờ dần, không tự vẽ chữ ở đây (chữ tách riêng, xem khối kế tiếp) */}
+      <div
+        className="d-none d-lg-block"
+        style={{
+          position: 'absolute', top: 0, left: 0, bottom: 0,
+          width: '82%',
+          backgroundImage: `linear-gradient(180deg, rgba(3,20,30,0.25) 0%, rgba(3,20,30,0.8) 100%), url(${bgPhuXuan})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          WebkitMaskImage: 'linear-gradient(to right, black 0%, black 55%, transparent 92%)',
+          maskImage: 'linear-gradient(to right, black 0%, black 55%, transparent 92%)',
+        }}
+      />
+
+      {/* CỘT TRÁI: tên hệ thống — nổi trên lớp ảnh, KHÔNG bị mờ theo mask ở trên vì là
+          phần tử riêng. ĐÃ SỬA: bỏ thẻ <br/> cứng + tăng maxWidth (560px -> 640px) +
+          giảm cỡ chữ (2rem -> 1.75rem) vì dòng "QUẢN LÝ HỒ SƠ TUYỂN SINH - ĐÀO TẠO"
+          trước đây tự ngắt dòng ở giữa "ĐÀO" và "TẠO" (rớt lẻ 1 chữ "TẠO" xuống dòng
+          3) do không đủ chỗ hiển thị hết trên 1 dòng ở kích thước cũ — giờ để trình
+          duyệt TỰ ngắt dòng theo đúng chỗ còn trống, không ép cứng vị trí xuống dòng
+          nữa nên không còn rớt lẻ 1 chữ mồ côi như vậy. */}
+      <div
+        className="d-none d-lg-flex flex-column justify-content-end text-white p-5"
+        style={{ position: 'relative', flex: '1 1 58%' }}
+      >
+        <div style={{ maxWidth: '640px' }}>
+          <h1 className="fw-bold mb-3" style={{ fontSize: '1.75rem', lineHeight: 1.35 }}>
+            HỆ THỐNG THẨM ĐỊNH, QUẢN LÝ HỒ SƠ TUYỂN SINH - ĐÀO TẠO
+          </h1>
+          <p className="mb-0" style={{ opacity: 0.9 }}>Trường Đại học Phú Xuân</p>
+        </div>
+      </div>
+
+      {/* CỘT PHẢI: hộp thoại đăng nhập. ĐÃ SỬA (theo phản hồi): bỏ hẳn tiêu đề "HỆ
+          THỐNG" (đang đè ngay trên nút đăng nhập Google, thừa vì tên hệ thống đã ghi
+          rõ bên cột trái) + dịch toàn bộ chữ tĩnh trong khối này sang tiếng Anh. LƯU
+          Ý: thông báo lỗi lấy trực tiếp từ backend (result.message / error.message)
+          vẫn giữ nguyên tiếng Việt vì đó là chuỗi do GAS trả về — muốn dịch nốt phần
+          này phải sửa ở phía backend (Quanlysv.gs), ngoài phạm vi file frontend này. */}
+      <div className="d-flex align-items-center justify-content-center flex-grow-1 p-4" style={{ position: 'relative' }}>
       <div className="card shadow-lg border-0" style={{ maxWidth: '400px', width: '100%', borderRadius: '15px' }}>
         <div className="card-body p-5">
           <div className="text-center mb-4">
-            <h2 className="fw-bold" style={{ color: '#037683' }}>
-              <i className="bi bi-shield-lock-fill me-2"></i>HỆ THỐNG
-            </h2>
-            <p className="text-muted small">Vui lòng đăng nhập để tiếp tục</p>
+            <p className="text-muted small mb-0">Please sign in to continue</p>
           </div>
 
           {/* NÚT ĐĂNG NHẬP GOOGLE */}
           <div className="d-flex justify-content-center mb-4">
             <GoogleLogin
               onSuccess={handleGoogleSuccess}
-              onError={() => Swal.fire('Lỗi', 'Không thể kết nối với Google', 'error')}
+              onError={() => Swal.fire('Error', 'Unable to connect to Google', 'error')}
               useOneTap
             />
           </div>
 
           <div className="d-flex align-items-center my-4">
             <hr className="flex-grow-1" />
-            <span className="mx-3 text-muted small">Hoặc tài khoản nội bộ</span>
+            <span className="mx-3 text-muted small">Or use an internal account</span>
             <hr className="flex-grow-1" />
           </div>
 
@@ -116,7 +174,7 @@ const handleGoogleSuccess = async (credentialResponse) => {
               <input 
                 type="text" 
                 className="form-control form-control-lg bg-light" 
-                placeholder="Tên đăng nhập" 
+                placeholder="Username" 
                 value={credentials.username}
                 onChange={e => setCredentials({...credentials, username: e.target.value})}
                 required
@@ -126,18 +184,19 @@ const handleGoogleSuccess = async (credentialResponse) => {
               <input 
                 type="password" 
                 className="form-control form-control-lg bg-light" 
-                placeholder="Mật khẩu" 
+                placeholder="Password" 
                 value={credentials.password}
                 onChange={e => setCredentials({...credentials, password: e.target.value})}
                 required
               />
             </div>
             <button className="btn btn-primary w-100 btn-lg fw-bold" type="submit" disabled={isLoading}>
-              {isLoading ? 'Đang kiểm tra...' : 'ĐĂNG NHẬP'}
+              {isLoading ? 'Signing in...' : 'SIGN IN'}
             </button>
           </form>
 
         </div>
+      </div>
       </div>
     </div>
   );

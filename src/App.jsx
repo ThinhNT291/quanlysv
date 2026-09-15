@@ -163,6 +163,32 @@ const App = () => {
     return savedUser ? normalizeUserInfo(JSON.parse(savedUser)) : null;
   });
 
+  // ĐÃ THÊM (2026-09-15 — sửa hiện tượng "vào thẳng trang chủ rồi mới báo hết phiên"):
+  // trước đây currentUser CHỈ đọc từ localStorage lúc mount, không có bước xác minh
+  // sessionToken còn sống thật trên server hay không -> nếu sessionToken đã hết hạn (vd
+  // quá 8 tiếng) nhưng localStorage còn lưu, app vẫn render THẲNG trang chủ 1 nhịp, chỉ
+  // phát hiện được khi trang chủ tự gọi API đầu tiên và dính lỗi 401 (xem sự kiện
+  // 'app:session-expired' bên dưới) -> trải nghiệm "nhảy vào rồi mới văng ra".
+  // Giờ nếu có currentUser từ localStorage, chặn render bằng màn hình "Đang xác thực..."
+  // ngắn, chủ động gọi thử 1 API nhẹ đã có sẵn (laySoLuongChoToiKy — không giới hạn theo
+  // Role, backend tự lọc theo g.userInfo.email, xem chú thích route /ho-so-cho-ky) để ép
+  // phát hiện phiên hết hạn NGAY trước khi quyết định render trang nào. KHÔNG tạo action
+  // GAS mới riêng cho việc này — dùng lại 1 nguồn action sẵn có (nguyên tắc #6).
+  const [dangXacThucPhien, setDangXacThucPhien] = useState(() => !!currentUser);
+  useEffect(() => {
+    if (!currentUser) { setDangXacThucPhien(false); return; }
+    let daHuy = false;
+    laySoLuongChoToiKy()
+      // Lỗi 401 (hết phiên thật) đã có interceptor của axios lo sẵn (bắn sự kiện
+      // 'app:session-expired' -> handleLogout ở dưới) -> không cần xử lý gì thêm ở đây.
+      // Lỗi khác (mất mạng, GAS đang chậm, timeout...) thì BỎ QUA, không ép đăng xuất
+      // oan chỉ vì 1 lần gọi mạng trục trặc.
+      .catch(() => {})
+      .finally(() => { if (!daHuy) setDangXacThucPhien(false); });
+    return () => { daHuy = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): badge số lượng "Hồ sơ chờ ký" trên menu tài
   // khoản — chỉ gọi khi đã đăng nhập (enabled), tự làm mới mỗi 60s (đủ nhanh để không
   // cảm giác "cũ", không tốn quota gọi liên tục như polling ngắn hơn).
@@ -309,6 +335,18 @@ const App = () => {
       Swal.fire({ icon: 'error', title: 'Gửi thất bại', text: err.message });
     }
   };
+
+  // ĐÃ THÊM: xem chú thích tại chỗ khai báo dangXacThucPhien ở trên — chặn render trang
+  // chủ/LoginPage cho tới khi có kết quả xác minh phiên (thường chỉ vài trăm ms).
+  if (dangXacThucPhien) {
+    return (
+      <div className="d-flex align-items-center justify-content-center vh-100" style={{ backgroundColor: '#f4f6f9' }}>
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Đang xác thực phiên đăng nhập...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
