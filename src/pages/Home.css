@@ -22,9 +22,16 @@
 
 .home-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 20px;
-  /* ĐÃ THÊM: giữ lưới thẻ nổi trên ảnh nền (.home-page-backdrop ở z-index thấp hơn). */
+  /* ĐÃ SỬA (theo yêu cầu — fix cứng kích thước thẻ, thu gọn chiều cao): trước đây
+     dùng `minmax(240px, 1fr)` — `1fr` khiến thẻ tự giãn nở theo bề ngang màn hình
+     còn trống (vừa gây "phình to" khi thu hẹp cửa sổ, vừa không phải kích thước cố
+     định như yêu cầu). Đổi `1fr` -> 190px (giới hạn trên cố định): thẻ luôn giữ đúng
+     150-190px bất kể màn hình rộng/hẹp thế nào, hết chỗ thì tự xuống hàng thay vì bị
+     kéo giãn. Chỉ đổi theo browser zoom (vì đơn vị px vốn tự co giãn theo zoom),
+     không đổi theo việc kéo/thu cửa sổ nữa. */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 190px));
+  gap: 16px;
+  /* ĐÃ THÊM: giữ lưới thẻ nổi trên texture nền (.home-page-backdrop ở z-index thấp hơn). */
   position: relative;
   z-index: 1;
 }
@@ -35,14 +42,13 @@
 .home-card {
   position: relative;
   overflow: hidden;
-  border-radius: 16px;
-  /* ĐÃ SỬA: trước đây chỉ có min-height: 170px cố định còn chiều rộng co giãn tự do
-     theo lưới (auto-fit) -> tỉ lệ khung hình của thẻ đổi liên tục theo bề ngang màn
-     hình (màn rộng thì thẻ vừa rộng vừa lùn, ảnh chỉ lộ 1 dải mỏng ở giữa). Giờ khoá
-     cứng tỉ lệ 3:2 (rộng:cao) — mọi kích thước màn hình đều cùng 1 tỉ lệ, ông cứ crop
-     ảnh nguồn theo đúng 3:2, cắt vào giữa khung sẽ khớp thật (xem hướng dẫn cụ thể). */
-  aspect-ratio: 3 / 2;
-  padding: 22px;
+  border-radius: 14px;
+  /* ĐÃ SỬA (theo yêu cầu — thu nhỏ chiều cao, fix cứng thay vì tỉ lệ theo chiều
+     rộng): trước đây `aspect-ratio: 3/2` khiến chiều cao PHỤ THUỘC vào chiều rộng
+     (rộng 190px -> cao ~127px). Giờ đặt `height` CỐ ĐỊNH, không phụ thuộc chiều rộng
+     -> thẻ luôn thấp/gọn (96px) dù rộng 150px hay 190px. */
+  height: 96px;
+  padding: 14px;
   color: #fff;
   cursor: pointer;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
@@ -82,9 +88,9 @@
 
 .home-card-icon-bg {
   position: absolute;
-  right: -14px;
-  bottom: -20px;
-  font-size: 7.5rem;
+  right: -10px;
+  bottom: -14px;
+  font-size: 4.5rem;
   opacity: 0.16;
   pointer-events: none;
   line-height: 1;
@@ -97,39 +103,46 @@
 
 .home-card-title {
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+  font-size: 0.95rem;
+  line-height: 1.2;
 }
 
 .home-card-desc {
-  font-size: 0.85rem;
+  font-size: 0.72rem;
   opacity: 0.92;
   margin-bottom: 0;
-  line-height: 1.4;
+  line-height: 1.3;
+  /* ĐÃ THÊM: thẻ giờ chỉ cao 96px, mô tả dài 2 dòng như trước dễ tràn khỏi khung ->
+     giới hạn đúng 1 dòng, thừa chữ thì tự "…" (hỗ trợ tốt trên các trình duyệt hiện
+     đại qua -webkit-line-clamp, kể cả Chrome/Edge/Safari đều đã hỗ trợ). */
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-@media (max-width: 576px) {
-  .home-card-grid { grid-template-columns: 1fr; }
-}
+/* ĐÃ BỎ: media query cũ ép "1 cột full-width" dưới 576px — đây là dạng khác của
+   chính lỗi "thẻ phình to" đã sửa ở trên (kéo giãn 1 thẻ duy nhất chiếm hết bề
+   ngang màn hình). Lưới giờ dùng minmax(150px, 190px) cố định cho MỌI kích thước
+   màn hình nên không cần override riêng cho mobile nữa — điện thoại tự xếp 2 cột
+   gọn gàng thay vì 1 cột khổng lồ. */
 
 /* ========================================================
-   ĐÃ SỬA (lần 4): ẢNH NỀN THẬT — position: fixed, LUÔN khớp CHÍNH XÁC khung nhìn
-   (viewport) của trình duyệt, không cần đo/đoán chiều cao Header + Navbar bằng
-   px nữa (mấy lần trước ước lượng sai gây hụt/dư, kéo dư tay lại gây thanh cuộn
-   thừa). Vì position: fixed lấy mốc là VIEWPORT (không phải .home-wrapper hay
-   bất kỳ khối cha nào), nên:
-   - top/left: 0, width/height: 100vw/100vh -> phủ kín TOÀN BỘ màn hình, kể cả
-     phần "đè" lên Header + Navbar phía trên — nhưng KHÔNG thấy được đoạn đó vì
-     Header (nền trắng) và Navbar (nền xanh #037683) đều vẽ nền ĐẶC che kín ở
-     trên, nên nhìn ảnh NHƯ THỂ chỉ nằm gọn trong khoảng trống giữa topbar và
-     đáy màn hình — đúng ý muốn "fill vào khoảng trống ở giữa", không cần biết
-     Header/Navbar cao bao nhiêu px.
-   - z-index: -1 -> luôn nằm SAU cả Header/Navbar lẫn nội dung trang, không cần
-     z-index: 1 thủ công cho từng khối nội dung (dù vẫn giữ ở trên cho chắc).
-   - pointer-events: none -> không chặn click/thao tác gì trên trang.
-   - Không tạo thanh cuộn: phần tử fixed bị loại khỏi luồng tài liệu (document
-     flow) hoàn toàn nên không cộng thêm vào chiều cao cuộn của trang, khác hẳn
-     kiểu position: absolute kéo dư ra ngoài khung cha ở bản trước.
-   Độ trắng/rõ của ảnh theo chiều dọc do HOME_BG_FADE (Home.jsx) quyết định.
+   ĐÃ SỬA (theo lựa chọn — đổi caro chéo sang vignette + hạt nhiễu mịn, "có chiều
+   sâu" hơn): 2 lớp chồng nhau —
+   1) radial-gradient sáng ở giữa (chỗ đặt nội dung), tối nhẹ dần ra 4 góc — tạo
+      cảm giác ánh sáng loang, chiều sâu.
+   2) 1 tấm SVG nhiễu (feTurbulence) rất nhỏ (180x180px) LẶP LẠI (tile) phủ lên trên
+      — hạt nhiễu siêu mịn kiểu chất liệu giấy/vải, không phải hoạ tiết lặp có quy
+      luật như caro nên nhìn tự nhiên hơn.
+   Vẫn CSS/SVG thuần, không cần file ảnh, không nặng (SVG nhiễu chỉ 180x180px, lặp
+   lại chứ không vẽ full màn hình). Vẫn giữ position:fixed + z-index:0 như cũ.
+   MUỐN CHỈNH:
+   - Độ tối góc: đổi "#dbe3e3" (đang là xám nhạt) — càng tối màu góc càng rõ rệt.
+   - Độ rõ hạt nhiễu: đổi số cuối "0.05" trong feColorMatrix — càng lớn càng rõ hạt.
+   - Độ mịn/thô hạt: đổi "baseFrequency=0.85" — số nhỏ hơn (vd 0.4) hạt to/thô hơn,
+     số lớn hơn (vd 1.2) hạt mịn/nhuyễn hơn.
    ======================================================== */
 .home-page-backdrop {
   position: fixed;
@@ -137,18 +150,118 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-size: cover;
-  background-position: center;
-  /* ĐÃ SỬA: z-index: -1 -> 0. App.jsx bọc CẢ APP trong 1 div có màu nền riêng
-     (backgroundColor: '#f4f6f9') nhưng KHÔNG có position — mà theo quy tắc xếp
-     lớp CSS, nền của 1 khối không định vị luôn được vẽ ĐÈ LÊN các phần tử con có
-     z-index ÂM, bất kể lồng sâu cỡ nào -> đó là lý do ảnh bị nền xám đó che kín
-     hoàn toàn dù vẫn tải thành công. Đổi thành 0 (không âm) để ảnh thắng được
-     lớp nền xám kia. Vẫn an toàn với phần còn lại của trang: thanh điều hướng
-     dùng sticky-top và footer dùng zIndex: 1020 (Bootstrap/inline trong
-     App.jsx) nên vẫn ăn đứt z-index: 0, không bị ảnh đè lên; câu chào + lưới
-     thẻ trong chính trang này đã có z-index: 1 (xem bên trên) nên vẫn nổi trên
-     ảnh bình thường. */
   z-index: 0;
   pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 50% 42%, #ffffff 0%, #dbe3e3 100%),
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0 0 0 0 0.01 0 0 0 0 0.46 0 0 0 0 0.51 0 0 0 0.05 0"/></filter><rect width="180" height="180" filter="url(%23n)"/></svg>');
+  background-size: cover, 180px 180px;
+  background-repeat: no-repeat, repeat;
+}
+
+/* ========================================================
+   ĐÃ THÊM: khối overview bên dưới lưới thẻ (Việc cần xử lý + Hoạt động gần đây).
+   ======================================================== */
+.home-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.home-overview-panel {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.home-todo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7e6;
+  color: #212529;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 1px solid #ffe8b3;
+}
+
+.home-todo-item:hover {
+  background: #ffefc9;
+}
+
+.home-todo-item svg {
+  flex-shrink: 0;
+  color: #b45309;
+}
+
+/* ĐÃ THÊM: khối "Hồ sơ cần bổ sung" — khác 2 mục trên (không phải 1 dòng đơn có thể
+   bấm thẳng, mà là 1 danh sách nhiều hồ sơ) nên dùng khung riêng, không tô vàng như
+   .home-todo-item để tránh nhầm là 1 nút bấm duy nhất. */
+.home-bosung-box {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fdf2f2;
+  border: 1px solid #f5c6c6;
+  color: #212529;
+  font-size: 0.85rem;
+}
+
+.home-bosung-box svg {
+  flex-shrink: 0;
+  color: #b42318;
+}
+
+.home-bosung-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.home-bosung-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.8rem;
+  color: #495057;
+}
+
+.home-bosung-date {
+  flex-shrink: 0;
+  color: #adb5bd;
+  font-size: 0.75rem;
+}
+
+.home-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.home-activity-list li {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.82rem;
+}
+
+.home-activity-list li:last-child {
+  border-bottom: none;
+}
+
+.home-activity-time {
+  flex-shrink: 0;
+  color: #adb5bd;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.home-activity-desc {
+  color: #495057;
 }

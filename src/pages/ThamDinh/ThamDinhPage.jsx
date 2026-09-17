@@ -21,7 +21,7 @@ import {
   getRawScoreNumber, getRawDateNumber, getMissingDocs, getMissingTienQuyet, getAppState,
   // ĐÃ THÊM (redesign trạng thái thẩm định, 2026-09-14): đọc 2 cột MỚI CẦN_XEM_LẠI/
   // CHI_TIẾT_THAY_ĐỔI thay cho hậu tố "(Có cập nhật: ...)" cũ — xem thamDinhHelpers.js.
-  getCanXemLai, getChiTietThayDoi,
+  getCanXemLai, getChiTietThayDoi, formatTrangThaiHienThi,
   calculateScores, isSafeDriveUrl, getCandidateScanKey,
   // ĐÃ THÊM (Công nhận KQHT & chuyển đổi tín chỉ — Nguồn 2 "miễn theo văn bằng cũ",
   // 2026-09-09): xem chú thích đầy đủ tại nơi định nghĩa trong thamDinhHelpers.js.
@@ -592,8 +592,8 @@ const ThamDinhPage = () => {
       return { text: "Đã duyệt", cls: "btn-success" };
     }
     if (state === "Đã báo thiếu") {
-      if (getCanXemLai(row)) return { text: "Đã yêu cầu BS *", cls: "btn-warning text-dark" };
-      return { text: "Đã yêu cầu BS", cls: "btn-warning" };
+      if (getCanXemLai(row)) return { text: "Đã báo thiếu *", cls: "btn-warning text-dark" };
+      return { text: "Đã báo thiếu", cls: "btn-warning" };
     }
     if (state === "Tái rà soát") return { text: "Tái rà soát", cls: "btn-info" };
     if (state === "Mới bổ sung") return { text: "Mới bổ sung", cls: "btn-info" };
@@ -1834,9 +1834,12 @@ const ThamDinhPage = () => {
         // ĐÃ SỬA: thêm nhánh hiển thị ngắn gọn cho "Đã báo thiếu (vừa bổ sung)" — cùng tinh
         // thần "Đã duyệt (có cập nhật)" cũ, tránh hiện thẳng chuỗi rawTrangThai (giờ chỉ còn
         // "Đã báo thiếu" sạch, không tự nói lên được là ĐÃ có bổ sung mới hay chưa).
-        const trangThaiHienThi = coCapNhatSauDuyet ? 'Đã duyệt (có cập nhật)'
-          : baoThieuCanXemLai ? 'Đã báo thiếu (vừa bổ sung)'
-          : rawTrangThai;
+        const chiTietThayDoiHienThi = getChiTietThayDoi(row);
+        const trangThaiHienThi = formatTrangThaiHienThi(
+          state,
+          coCapNhatSauDuyet || baoThieuCanXemLai,
+          chiTietThayDoiHienThi
+        );
         const scores = calculateScores(row, targetNganh);
         const scanKey = getCandidateScanKey(row);
         const scanEntry = scanCache[scanKey] || {};
@@ -1908,7 +1911,7 @@ const ThamDinhPage = () => {
                       caro kẻ chéo 45 độ) để tách khối này khỏi phần khảo sát ngành/điểm số
                       bên dưới — hoạ tiết CHỈ áp dụng trong khung này, không lan ra cả modal. */}
                   <div className="thamdinh-info-box">
-                    <table className="table table-sm table-borderless mb-0 thamdinh-info-table">
+                    <table className="table table-sm table-borderless mb-0 thamdinh-info-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                       <tbody>
                         <tr>
                           <th style={{ width: 230 }}>Mã sinh viên</th>
@@ -1945,12 +1948,12 @@ const ThamDinhPage = () => {
                             đạt chuẩn tương phản WCAG AA). */}
                         <tr>
                           <th>Hồ sơ</th>
-                          <td className={missing.length > 0 ? 'hoso-thieu-cell' : 'text-success'}>
+                          <td className={missing.length > 0 ? 'hoso-thieu-cell' : 'text-success'} style={{ wordBreak: 'break-word' }}>
                             {missing.length > 0 ? `⚠️ Thiếu: ${missing.join(', ')}` : '✅ Đã nộp đủ hồ sơ hợp lệ'}
                           </td>
                         </tr>
                         {missingTQ.length > 0 && (
-                          <tr><th className="text-danger">Thiếu hồ sơ TIÊN QUYẾT</th><td className="hoso-thieu-cell">{missingTQ.join(', ')}</td></tr>
+                          <tr><th className="text-danger">Thiếu hồ sơ TIÊN QUYẾT</th><td className="hoso-thieu-cell" style={{ wordBreak: 'break-word' }}>{missingTQ.join(', ')}</td></tr>
                         )}
                         <tr className="link-row" title={linkOk ? linkHoSo : 'Không có link hợp lệ'}>
                           <th>Link hồ sơ</th>
@@ -2429,7 +2432,7 @@ const ThamDinhPage = () => {
                             <td className="text-center">{i + 1}</td>
                             <td>{getVal(row, ["TÊN SINH VIÊN", "HỌ VÀ TÊN"])}</td>
                             <td className="text-center">{score.empty ? score.message : `${score.value} (${score.combo || score.unit})`}</td>
-                            <td>{missing.length > 0 ? <span className="badge bg-warning text-dark">Thiếu: {missing.join(', ')}</span> : <span className="badge bg-success">Đủ hồ sơ</span>}</td>
+                            <td>{missing.length > 0 ? <span className="badge bg-warning text-dark" style={{ whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}>Thiếu: {missing.join(', ')}</span> : <span className="badge bg-success">Đủ hồ sơ</span>}</td>
                             {batchPreview.type === 'luucsdl' && <td>{getEffectiveState(row)}</td>}
                           </tr>
                         );

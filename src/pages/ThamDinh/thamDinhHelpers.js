@@ -497,6 +497,22 @@ export function getChiTietThayDoi(row) {
   return getVal(row, ["CHI_TIẾT_THAY_ĐỔI"]);
 }
 
+// ĐÃ THÊM (2026-09-16 — gộp về 1 chỗ theo yêu cầu): trước đây ThamDinhPage.jsx
+// (trangThaiHienThi) và XetTuyenPage.jsx (rutGonTrangThaiTimKiem) MỖI NƠI TỰ VIẾT
+// 1 bản logic ghép câu hiển thị giống hệt nhau — sửa 1 nơi (vd đổi chữ, thêm nhánh
+// trạng thái mới) rất dễ quên sửa nơi còn lại, 2 nơi lệch nhau mà không ai biết.
+// Giờ CHỈ CÒN 1 nơi định nghĩa cách ghép câu — cả 2 trang gọi chung hàm này, mỗi
+// trang chỉ còn việc tự lấy đúng 3 tham số đầu vào theo cách riêng của mình (đọc
+// thẳng cột, hay qua override state...).
+export function formatTrangThaiHienThi(rawTrangThai, canXemLai, chiTietThayDoi) {
+  const t = String(rawTrangThai || "");
+  if (!canXemLai) return t;
+  const chiTiet = String(chiTietThayDoi || "").trim();
+  if (t.indexOf("Đã duyệt") !== -1) return `Đã duyệt (đã sửa: ${chiTiet || "..."})`;
+  if (t.indexOf("Đã báo thiếu") !== -1) return `Đã báo thiếu (đã bổ sung: ${chiTiet || "..."})`;
+  return t;
+}
+
 // ĐÃ THÊM: điểm chuẩn nhánh "Tốt nghiệp THPT" giờ KHÁC NHAU theo "PHƯƠNG THỨC XÉT
 // TUYỂN" (trước đây hardcode chung 1 mức 15.0 cho cả 3 phương thức — SAI, theo yêu cầu
 // thực tế: Điểm thi THPT = 15, Điểm học bạ (thường) = 16, Điểm học bạ (TBTS 2025) = 15).

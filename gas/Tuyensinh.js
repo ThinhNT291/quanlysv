@@ -91,6 +91,20 @@ const XETTUYEN_TEMPLATE_HEADERS = [
   "ĐIỂM TB TOÀN KHÓA HỆ 4", "ĐIỂM TB TOÀN KHÓA HỆ 10", "ĐIỂM CỘNG", "ĐIỂM PHỎNG VẤN", "LINK HỒ SƠ"
 ];
 
+// ĐÃ THÊM (2026-09-16 — sửa bug cột "NGÀY BÁO THIẾU" luôn trống dù đã thêm cột đúng
+// tên): so khớp CHÍNH XÁC từng byte Unicode tên cột rất dễ trật khi tiêu đề được gõ
+// tay thủ công — 2 chuỗi NHÌN GIỐNG HỆT NHAU (cùng hiển thị "NGÀY BÁO THIẾU") vẫn có
+// thể KHÁC NHAU ở tầng byte nếu dấu được tổ hợp khác cách (Unicode có nhiều cách mã
+// hoá cho cùng 1 ký tự có dấu) — so sánh "===" trực tiếp sẽ luôn ra false dù mắt
+// thường không phân biệt được. Hàm này bỏ hết dấu + viết hoa trước khi so sánh, tránh
+// hẳn lớp lỗi này — "NGÀY BÁO THIẾU" và "Ngày Báo Thiếu " (thừa dấu cách) đều khớp.
+function boDauTiengViet_(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .toUpperCase().trim().replace(/\s+/g, ' ');
+}
+
 // Mở tab đầu tiên (theo VỊ TRÍ, không theo tên) của sheet Trung Gian — đồng bộ với mọi
 // action khác trong file này (searchOldRecord/importStudents/getThamDinhData...).
 function moTrunggianSheet() {
@@ -2082,11 +2096,15 @@ function hdPost_importStudents(e, ss) {
       // dạng TRUE/FALSE (giữ nguyên so sánh CHÍNH XÁC — có phân biệt hoa/thường — cho mọi giá
       // trị khác, vì với các cột chữ bình thường đổi hoa/thường VẪN là 1 lần sửa thật sự, VD
       // cán bộ gõ lại đúng chính tả họ tên).
+      const chuanHoaBool_ = (s) => {
+        const su = s.toUpperCase();
+        if (su === '' || su === 'FALSE') return 'FALSE';
+        if (su === 'TRUE') return 'TRUE';
+        return null;
+      };
       const giaTriGiongNhau_ = (a, b) => {
-        const aUp = a.toUpperCase(), bUp = b.toUpperCase();
-        const aIsBool = aUp === "TRUE" || aUp === "FALSE";
-        const bIsBool = bUp === "TRUE" || bUp === "FALSE";
-        if (aIsBool && bIsBool) return aUp === bUp;
+        const aBool = chuanHoaBool_(a), bBool = chuanHoaBool_(b);
+        if (aBool !== null && bBool !== null) return aBool === bBool;
         return a === b;
       };
       // ĐÃ THÊM (chặn "phá khoá" hồ sơ đã duyệt — theo phản hồi 2026-09-10: "hồ sơ đã duyệt
@@ -2290,7 +2308,8 @@ function hdPost_importStudents(e, ss) {
                       }
                       if (!giaTriGiongNhau_(oldValStr, newValStr)) {
                         changeLines.push(h + ": \"" + truncateForChat(oldValStr) + "\" → \"" + truncateForChat(newValStr) + "\"");
-                        if (CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT.indexOf(h) === -1) changedHeaderNames.push(h);
+                        const laCotTick = chuanHoaBool_(oldValStr) !== null && chuanHoaBool_(newValStr) !== null;
+                        if (laCotTick && CAC_COT_BO_QUA_KHI_BAO_CAP_NHAT.indexOf(h) === -1) changedHeaderNames.push(h);
                       }
                       // ĐÃ THÊM: cột NGÀY SINH luôn ghi xuống dưới dạng Date object thật (xem
                       // chuanHoaNgaySinhThanhDate_ ở DinhDanh.gs) — dòng log thay đổi ở trên vẫn
@@ -2811,6 +2830,61 @@ function hdPost_duyetNhe(e, ss) {
       }
     }
 
+// ĐÃ THÊM (2026-09-15 — khối "Việc cần xử lý" ở trang chủ Home.jsx): action ĐỌC
+// riêng, nhẹ, liệt kê các hồ sơ đang ở trạng thái "Đã báo thiếu" — khác với
+// 'getThamDinhData' (trả TOÀN BỘ sheet, mọi cột, nhưng CHỈ cho phép ThamDinh/Admin
+// gọi — TuyenSinh gọi sẽ bị requireAuth() chặn 403) và khác 'searchOldRecord' (bắt
+// buộc phải có từ khoá, không liệt kê hàng loạt được). Hàm này cho TuyenSinh gọi
+// được, và chỉ trả về ĐÚNG vài trường cần cho panel (không kéo cả sheet nặng về).
+// LƯU Ý: KHÔNG trả về nội dung cụ thể "thiếu giấy tờ gì" — dữ liệu đó chưa từng
+// được lưu lại vào sheet (chỉ có trong PDF biên nhận tạo lúc báo thiếu, xem
+// hdPost_baoThieu), nằm ngoài phạm vi thay đổi lần này.
+function hdGet_layDanhSachBaoThieu(e) {
+  const g = requireAuth(e.parameter, ['TuyenSinh', 'ThamDinh', 'CanBo', 'Admin']);
+  if (!g.ok) return g.resp;
+
+  const sheet = moTrunggianSheet();
+  const values = sheet.getDataRange().getValues();
+  const rawHeaders = values[0];
+  const cleanHeaders = rawHeaders.map(h => String(h).trim().toUpperCase().replace(/\s+/g, ' '));
+
+  // Dò cột linh hoạt theo TÊN — giống nguyên tắc đang dùng ở searchOldRecord/
+  // hdPost_baoThieu, KHÔNG hardcode chỉ số cột (sheet có thể thêm/bớt cột khác mà
+  // không cần sửa code này).
+  const idxCccd = cleanHeaders.indexOf("CĂN CƯỚC") !== -1 ? cleanHeaders.indexOf("CĂN CƯỚC") : cleanHeaders.indexOf("CCCD");
+  const idxName = cleanHeaders.indexOf("TÊN SINH VIÊN") !== -1 ? cleanHeaders.indexOf("TÊN SINH VIÊN") : cleanHeaders.indexOf("HỌ VÀ TÊN");
+  let idxNgayBaoThieu = -1;
+  // ĐÃ SỬA (nghi vấn bug "Việc cần xử lý" không lên dữ liệu dù đã "Đã báo thiếu"):
+  // trước đây vòng lặp lấy CỘT CUỐI CÙNG có chứa chữ "TRẠNG THÁI" trong tên (không
+  // dừng lại ở lần khớp đầu) — nếu sheet có hơn 1 cột chứa chữ này, dễ đọc nhầm sang
+  // cột khác không phải trạng thái thẩm định thật. Giờ ưu tiên khớp CHÍNH XÁC tên
+  // "TRẠNG THÁI THẨM ĐỊNH" trước, chỉ dò lỏng (chứa chữ "TRẠNG THÁI") khi không thấy
+  // tên chính xác — cùng nguyên tắc "tên chính xác trước, dò lỏng sau" đã dùng cho
+  // CĂN CƯỚC/TÊN SINH VIÊN ở trên.
+  let idxStatus = cleanHeaders.indexOf("TRẠNG THÁI THẨM ĐỊNH");
+  for (let h = 0; h < cleanHeaders.length; h++) {
+    if (idxStatus === -1 && cleanHeaders[h].indexOf("TRẠNG THÁI") !== -1) idxStatus = h;
+    if (cleanHeaders[h] === "NGÀY BÁO THIẾU" || boDauTiengViet_(cleanHeaders[h]) === boDauTiengViet_("NGÀY BÁO THIẾU")) idxNgayBaoThieu = h;
+  }
+  if (idxStatus === -1) return responseJSON(200, "success", { tongSo: 0, danhSach: [] });
+
+  const danhSach = [];
+  for (let i = 1; i < values.length; i++) {
+    const trangThai = String(values[i][idxStatus] || "");
+    if (trangThai.indexOf("Đã báo thiếu") === -1) continue;
+    danhSach.push({
+      hoTen: idxName !== -1 ? String(values[i][idxName] || "").trim() : "",
+      cccd: idxCccd !== -1 ? String(values[i][idxCccd] || "").trim() : "",
+      // ĐÃ THÊM: rỗng nếu sheet CHƯA có cột "NGÀY BÁO THIẾU" (xem chú thích ở
+      // hdPost_baoThieu) — Home.jsx tự hiện "Không rõ ngày" khi gặp chuỗi rỗng,
+      // không throw lỗi.
+      ngayBaoThieu: idxNgayBaoThieu !== -1 ? String(values[i][idxNgayBaoThieu] || "").trim() : "",
+    });
+  }
+
+  return responseJSON(200, "success", { tongSo: danhSach.length, danhSach: danhSach });
+}
+
 function hdPost_baoThieu(e, ss) {
       const g = requireAuth(e.parameter, ['ThamDinh', 'Admin']);
       if (!g.ok) return g.resp;
@@ -2911,7 +2985,15 @@ function hdPost_baoThieu(e, ss) {
             // ĐÃ THÊM (rà soát an toàn 2 luồng chung 1 sheet): dò thêm cột KÊNH NỘP, cùng
             // lý do đã sửa ở action 'trungTuyen' — tránh ghi đè nhầm trạng thái "Đã trúng
             // tuyển" (Thu hồ sơ trực tiếp) thành "Đã báo thiếu" khi trùng CCCD+Ngành.
-            let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1, canXemLaiCol = -1, chiTietCol = -1;
+            // ĐÃ THÊM (2026-09-15 — khối "Việc cần xử lý" ở trang chủ, theo yêu cầu hiện
+            // "ngày tháng yêu cầu" bổ sung): trước đây hàm này KHÔNG lưu lại thời điểm báo
+            // thiếu vào đâu cả (chỉ có trong PDF, không tra lại được). Dò thêm cột
+            // "NGÀY BÁO THIẾU" — CỘT NÀY CẦN ĐƯỢC TỰ THÊM THỦ CÔNG vào sheet Trung Gian
+            // (tiêu đề đúng chữ "NGÀY BÁO THIẾU"), nếu sheet chưa có cột này thì code vẫn
+            // chạy bình thường (không lỗi), chỉ đơn giản là không ghi được ngày (giống hệt
+            // cách chiTietCol/canXemLaiCol đang được xử lý — dò thấy mới ghi, không thấy thì
+            // bỏ qua, không tự ý tạo cột mới để tránh xáo trộn cấu trúc sheet ngoài ý muốn).
+            let cccdCol = -1, nganhCol = -1, statusCol = -1, kenhCol = -1, canXemLaiCol = -1, chiTietCol = -1, ngayBaoThieuCol = -1;
             for (let h = 0; h < headers.length; h++) {
               const hName = String(headers[h]).toUpperCase().trim().replace(/\s+/g, ' ');
               if (hName === "CĂN CƯỚC" || hName === "SỐ CCCD" || hName === "CCCD") cccdCol = h;
@@ -2925,8 +3007,13 @@ function hdPost_baoThieu(e, ss) {
               // hành động thẩm định xử lý xong tình huống "cần xem lại" đó.
               if (hName === "CẦN_XEM_LẠI") canXemLaiCol = h;
               if (hName === "CHI_TIẾT_THAY_ĐỔI") chiTietCol = h;
+              if (hName === "NGÀY BÁO THIẾU" || boDauTiengViet_(hName) === boDauTiengViet_("NGÀY BÁO THIẾU")) ngayBaoThieuCol = h;
             }
             if (cccdCol !== -1 && nganhCol !== -1 && statusCol !== -1) {
+              // ĐÃ THÊM: tính 1 LẦN cho cả lượt báo thiếu (không tính lại mỗi dòng) — dùng
+              // đúng định dạng "dd/MM/yyyy" đã dùng nhất quán cho các cột ngày khác trong
+              // cùng sheet này (xem NGÀY CẬP NHẬT HỒ SƠ).
+              const ngayBaoThieuHomNay = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
               data.forEach((sv, idx) => {
                 try {
                   const payloadCccd = String(sv.soCCCD).replace(/\D/g, '');
@@ -2941,6 +3028,7 @@ function hdPost_baoThieu(e, ss) {
                       sheet2.getRange(i + 1, statusCol + 1).setValue("Đã báo thiếu");
                       if (canXemLaiCol !== -1) sheet2.getRange(i + 1, canXemLaiCol + 1).setValue("FALSE");
                       if (chiTietCol !== -1) sheet2.getRange(i + 1, chiTietCol + 1).setValue("");
+                      if (ngayBaoThieuCol !== -1) sheet2.getRange(i + 1, ngayBaoThieuCol + 1).setValue(ngayBaoThieuHomNay);
                       found = true; break;
                     }
                   }

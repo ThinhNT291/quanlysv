@@ -166,9 +166,10 @@ export const scanChungChiImage = (loaiChungChi, imageBase64, mimeType) =>
 // trang Xét tuyển TỪ SERVER (action getXetTuyenHeaders, nguồn XETTUYEN_TEMPLATE_HEADERS
 // trong Quanlysv.gs) — thay cho mảng "headers" hardcode trước đây nằm ngay trong
 // XetTuyenPage.jsx, để đồng bộ cách làm với trang Thu hồ sơ (fetchAdmissionsHeaders).
-export const fetchXetTuyenHeaders = async () => {
+export const fetchXetTuyenHeaders = async (phuongThuc) => {
   const auth = getAuthParams();
-  const response = await axios.get(`${GAS_URL}?action=getXetTuyenHeaders&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  const ptParam = phuongThuc ? `&phuongThuc=${encodeURIComponent(phuongThuc)}` : '';
+  const response = await axios.get(`${GAS_URL}?action=getXetTuyenHeaders${ptParam}&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
   if (response.data && response.data.code === 200) {
     return response.data.data;
   }
@@ -779,6 +780,38 @@ export const taoYeuCauKy = ({ loaiTaiLieu, tieuDe, noiDung, thongTinLienQuan, ng
 //     không giới hạn định dạng như file để ký (không bắt buộc PDF).
 export const taoYeuCauKyTuFile = ({ tieuDe, fileBase64, mimeType, tenFile, nguoiKy, viTriKyJson, thongTinLienQuan, cheDoKy, taiLieuThamKhao }) =>
   postKySoAction('taoYeuCauKyTuFile', { tieuDe, fileBase64, mimeType, tenFile, nguoiKy, viTriKyJson, thongTinLienQuan, cheDoKy, taiLieuThamKhao });
+
+// ĐÃ THÊM (2026-09-15 — khối "Việc cần xử lý" ở Home.jsx): danh sách hồ sơ đang
+// "Đã báo thiếu" — action riêng cho TuyenSinh gọi được (khác getThamDinhData chỉ
+// dành cho ThamDinh/Admin). Trả về { tongSo, danhSach: [{hoTen, cccd, ngayBaoThieu}] } —
+// ngayBaoThieu có thể rỗng nếu sheet Trung Gian chưa có cột "NGÀY BÁO THIẾU" (xem
+// chú thích ở hdPost_baoThieu/Tuyensinh.gs).
+export const fetchDanhSachBaoThieu = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layDanhSachBaoThieu&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải danh sách hồ sơ cần bổ sung');
+};
+
+export const fetchThongKeTrangThaiThamDinh = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layThongKeTrangThaiThamDinh&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải thống kê trạng thái thẩm định');
+};
+
+export const fetchHoatDong24h = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layHoatDong24h&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải hoạt động 24h');
+};
 
 // Danh sách yêu cầu ký đang chờ người đang đăng nhập ký — cho trang "Hồ sơ chờ ký".
 export const fetchDanhSachChoToiKy = async () => {

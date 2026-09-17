@@ -4,126 +4,38 @@
    trỏ tới file này), nên toàn bộ nội dung cũ chỉ là code chết, không ảnh hưởng
    gì tới giao diện đang chạy. Đã dọn sạch và thay bằng CSS thật cho App.jsx,
    đồng thời thêm `import './App.css';` vào đầu App.jsx để file này thực sự
-   được nạp. */
+   được nạp.
+
+   ĐÃ DỌN (2026-09-15 — chuyển menu ngang navbar-dark sang sidebar trái +
+   topbar sáng): App.jsx không còn khối <nav className="navbar..."> cũ nữa, nên
+   3 khối CSS từng phục vụ nó (.app-nav-collapse, .app-submenu +
+   @keyframes appSubmenuXo, .app-menu-chevron) đã bị BỎ HẲN khỏi file này — các
+   class đó không còn xuất hiện ở đâu trong App.jsx để mà áp dụng. Sidebar mới
+   dùng accordion (state openGroups, JSX/style viết trực tiếp trong App.jsx,
+   không cần CSS riêng) và mũi tên xoay bằng inline style trên chính thẻ SVG,
+   không qua class CSS nữa. Những gì VẪN CÒN DÙNG, giữ nguyên không đổi:
+   .app-logo (logo trong topbar mới), .swal2-* (toàn cục, không liên quan
+   navbar), .user-account-menu (menu tài khoản, vẫn y hệt vị trí cũ). */
 
 /* ========================================================
-   MENU ĐIỀU HƯỚNG TRÊN DI ĐỘNG (nút navbar-toggler ☰) — cho menu nổi đè lên
-   phần nội dung bên dưới thay vì đẩy cả trang xuống khi mở, chỉ áp dụng dưới
-   breakpoint lg (< 992px, đúng lúc navbar-expand-lg chuyển sang dạng menu xổ).
-
-   ĐÃ SỬA (theo phản hồi — lần trước tôi hiểu lầm ý: không phải "chiếm hết chiều ngang" mới
-   đúng, mà NGƯỢC LẠI — cần bảng menu gọn hẹp cỡ ~5cm, kiểu dropdown nhỏ xổ ra từ nút ☰, không
-   phải drawer toàn màn hình): bỏ hẳn cách neo theo viewport (left:50%/translateX/100vw) của
-   lần sửa trước, quay về neo theo góc phải (right:0) — vì nút ☰ nằm ở góc phải navbar trên di
-   động (đứng sau cụm tài khoản có ms-auto, xem App.jsx) — giống hệt cách menu tài khoản
-   (.user-account-menu) đang neo, để bảng menu trông như "xổ ra" đúng từ nút bấm. width dùng
-   luôn đơn vị cm (đơn vị CSS hợp lệ, trình duyệt tự quy đổi theo mật độ điểm ảnh giả định
-   96px/inch — có thể lệch chút ít tuỳ máy nhưng đúng tinh thần "khoảng 5cm" đã yêu cầu), kèm
-   max-width theo vw để không bị tràn/quá hẹp trên các màn quá nhỏ.
+   MENU ĐIỀU HƯỚNG TRÊN DI ĐỘNG — ĐÃ BỎ (2026-09-15): khối .app-nav-collapse từng
+   định kiểu cho panel menu ☰ ngang kiểu navbar-dark cũ, đã bị thay bằng sidebar
+   trái — class .app-nav-collapse không còn xuất hiện ở App.jsx nữa.
    ======================================================== */
-@media (max-width: 991.98px) {
-  .app-nav-collapse:not(.collapse) {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    left: auto;
-    width: 5cm;
-    max-width: 85vw; /* phòng máy siêu nhỏ (dưới ~150px bề ngang khả dụng) khiến 5cm bị tràn ra ngoài màn hình */
-    box-sizing: border-box;
-    background-color: #212529; /* trùng màu bg-dark của navbar, tránh lộ nội dung phía sau */
-    z-index: 1030;
-    padding: 0.75rem 1rem 1.25rem;
-    border-radius: 0 0 0 12px;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
-    max-height: calc(100vh - 64px);
-    overflow-y: auto;
-  }
-}
 
 /* ========================================================
-   ĐÃ THÊM (theo phản hồi — tối ưu menu ☰ trên di động, rồi ĐỒNG BỘ luôn giao diện qua
-   desktop theo phản hồi tiếp theo): 3 nhóm submenu (Tuyển sinh/Thẩm định/Hệ thống, xem
-   App.jsx) trước đây dùng NGUYÊN kiểu dropdown Bootstrap mặc định — panel TRẮNG, chữ tối
-   màu, không khớp tông tối (#212529) của navbar — và trên di động còn "nổi đè" lên nội dung
-   phía dưới (position:absolute) khiến bảng menu ☰ (.app-nav-collapse ở trên) không "dài ra"
-   theo đúng nội dung đang mở (submenu nổi đè không cộng thêm chiều cao vào panel cha vì nằm
-   ngoài dòng chảy trang), nhóm mở sau có thể bị submenu nhóm trước che khuất.
-
-   Class "app-submenu" gắn thêm vào mỗi <ul> submenu — khối MÀU SẮC ngay dưới đây (không bọc
-   trong media query) áp dụng CHUNG cho cả desktop lẫn di động: panel tối cùng tông navbar,
-   chữ sáng, hover/active có icon mũi tên đã thêm ở App.jsx đồng bộ 2 nơi. Khối BỐ CỤC bọc
-   trong @media dưới breakpoint lg mới là phần CHỈ áp dụng cho di động (đúng lúc
-   navbar-expand-lg chuyển sang dạng ☰): bỏ position:absolute, cho submenu xổ THỤT VÀO (viền
-   trái mảnh) ngay trong dòng chảy trang, panel ☰ nhờ vậy tự cao lên/thấp xuống đúng theo
-   đang mở nhóm nào (rồi mới bị chặn bởi max-height/overflow-y ở trên nếu quá dài). Desktop
-   (>=992px) KHÔNG đổi bố cục — vẫn nổi đè (position:absolute) như dropdown thường thấy ở
-   mọi trang web, chỉ đổi màu sắc cho khớp giao diện tối.
+   SUBMENU 3 NHÓM (Tuyển sinh/Thẩm định/Hệ thống) — ĐÃ BỎ (2026-09-15): khối
+   .app-submenu + @keyframes appSubmenuXo từng định kiểu cho dropdown nổi đè
+   kiểu navbar cũ, đã thay bằng accordion thụt vào trong sidebar trái (style
+   viết trực tiếp trong App.jsx, không qua class CSS riêng nữa).
    ======================================================== */
-.app-submenu {
-  background-color: #2b3035 !important; /* tối hơn 1 chút so với bg-dark #212529 của navbar, để phân biệt panel với nền sau nó */
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-}
-.app-submenu .dropdown-item {
-  color: #dee2e6;
-  font-size: 0.92rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 4px;
-}
-.app-submenu .dropdown-item:hover,
-.app-submenu .dropdown-item:focus {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-.app-submenu .dropdown-item.active {
-  background-color: rgba(13, 202, 240, 0.18);
-  color: #0dcaf0;
-}
-
-@media (max-width: 991.98px) {
-  .app-nav-collapse .app-submenu {
-    position: static !important;
-    float: none !important;
-    display: none;
-    width: 100% !important;
-    margin: 0.15rem 0 0.5rem 0.9rem !important;
-    /* ĐÃ SỬA: width:100% + margin-left:0.9rem cùng lúc khiến tổng bề ngang chiếm dụng (margin
-       + width) VƯỢT QUÁ 100% bề ngang phần tử cha 0.9rem -> submenu tràn nhẹ ra ngoài mép phải
-       panel ☰ (dễ bị hiểu nhầm là panel "không chiếm hết chiều ngang" vì nhìn lệch/tràn không
-       đều). Trừ đúng phần margin-left ra khỏi width để tổng luôn khớp 100% cha. */
-    width: calc(100% - 0.9rem) !important;
-    padding: 0.15rem 0 !important;
-    border: none !important;
-    border-left: 2px solid rgba(255, 255, 255, 0.15) !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-  }
-  .app-nav-collapse .app-submenu.show {
-    display: block !important;
-    animation: appSubmenuXo 0.16s ease;
-  }
-}
-
-@keyframes appSubmenuXo {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
 
 /* ========================================================
-   ĐÃ THÊM (theo phản hồi): icon mũi tên báo đóng/mở của 3 nhóm menu chính (Tuyển sinh/Thẩm
-   định/Hệ thống, xem App.jsx) — trước đây ĐỔI HẲN icon (bi-chevron-down <-> bi-chevron-up)
-   mỗi lần đóng/mở, không có hiệu ứng chuyển động. Giờ dùng ĐÚNG 1 icon cố định
-   (bi-chevron-right — mũi tên chỉ ra ngoài/sang phải lúc đóng) rồi XOAY 90 độ bằng CSS khi
-   nhóm đang mở (chỉ xuống dưới), có transition mượt thay vì đổi icon đột ngột — đúng ý "ban
-   đầu chỉ ra ngoài, khi xổ ra thì xoay xuống dưới để phân biệt".
+   MŨI TÊN ĐÓNG/MỞ NHÓM MENU — ĐÃ BỎ (2026-09-15): khối .app-menu-chevron /
+   .app-menu-chevron-open từng xoay icon bi-chevron-right bằng class CSS, giờ
+   mũi tên là SVG vẽ tay, tự xoay qua inline style transform ngay trong
+   App.jsx (không cần class CSS riêng nữa).
    ======================================================== */
-.app-menu-chevron {
-  display: inline-block;
-  transition: transform 0.2s ease;
-}
-.app-menu-chevron.app-menu-chevron-open {
-  transform: rotate(90deg);
-}
 
 /* ========================================================
    LOGO TRƯỜNG TRONG NAVBAR — thu nhỏ dần ở màn hình hẹp để cụm logo + tên hệ
@@ -138,10 +50,6 @@
 @media (max-width: 575.98px) {
   .app-logo {
     height: 24px;
-  }
-  /* Tên hệ thống cũng nhỏ lại một chút cùng lúc, đỡ chiếm chỗ trên màn hẹp. */
-  .navbar-brand {
-    font-size: 0.95rem;
   }
 }
 

@@ -88,12 +88,21 @@ const BangKV = ({ tieuDe, data, loaiTru }) => {
       <div className="card-body py-2">
         <div className="small fw-bold text-muted mb-2">{tieuDe}</div>
         <div className="table-responsive">
-          <table className="table table-sm mb-0">
+          <table className="table table-sm mb-0" style={{ tableLayout: 'fixed', width: '100%' }}>
             <tbody>
               {entries.map(([k, v]) => (
                 <tr key={k}>
-                  <td className="text-muted" style={{ width: '35%', whiteSpace: 'nowrap' }}>{k}</td>
-                  <td className="fw-medium">{String(v)}</td>
+                  <td className="text-muted" style={{ width: '35%', whiteSpace: 'nowrap' }}>{String(k).replace(/_/g, ' ')}</td>
+                  {/* ĐÃ SỬA (bug "con rắn chữ" — giá trị dài kéo giãn cả bảng thay vì xuống
+                      dòng): bảng trước đây KHÔNG có table-layout: fixed, nên khi gặp giá trị
+                      dài (không có khoảng trắng để tự ngắt, hoặc chuỗi dài nói chung), trình
+                      duyệt chọn GIÃN RỘNG cột thay vì cho chữ xuống dòng — vì bảng nằm trong
+                      .table-responsive (overflow-x: auto) nên phần giãn dư không báo lỗi gì,
+                      chỉ lặng lẽ tràn ngang, đúng hiện tượng "con rắn chữ" chạy dài 1 hàng.
+                      Giờ table-layout: fixed buộc cột nhãn giữ đúng 35%, cột giá trị nhận
+                      đúng phần còn lại — wordBreak: 'break-word' xử lý thêm trường hợp 1
+                      chuỗi dài không có khoảng trắng nào để tự ngắt (vd 1 dãy số/link dài). */}
+                  <td className="fw-medium" style={{ wordBreak: 'break-word' }}>{String(v)}</td>
                 </tr>
               ))}
             </tbody>
@@ -168,15 +177,10 @@ const HO_SO_TIEN_QUYET = {
 // hồ sơ/giấy tờ đã hiện riêng ở card "Hồ sơ đã nộp" (HoSoDaNop) ngay phía trên, bỏ khỏi đây
 // để khỏi lặp lại 2 lần.
 const KHOA_LOAI_TRU_THONG_TIN_CANHAN = [
-  // ĐÃ THÊM "RAW_DIEM_HK" (theo phản hồi — còn sót dòng raw điểm): cột JSON nội bộ trên
-  // Goc01 lưu chi tiết điểm từng Lớp/Kỳ (xem TOM_TAT_BAN_GIAO.md) — trang Thẩm định cũng
-  // loại cột này khi xuất (ThamDinhPage.jsx/CAC_COT_LOAI_BO_KHI_XUAT), không phải thứ người
-  // xem hồ sơ cần thấy dạng chuỗi JSON thô.
-  // ĐÃ THÊM "RAW_DIEM_KHAC_1"/"RAW_DIEM_KHAC_2" (theo phản hồi 2026-09-14 — vẫn còn sót 2
-  // dòng raw điểm khác): cùng vai trò RAW_DIEM_HK nhưng lưu raw của 2 phương thức xét tuyển
-  // KHÔNG đang chọn (xem chú thích tại ThamDinhPage.jsx/CAC_COT_LOAI_BO_KHI_XUAT và
-  // HoSoDaBanGiaoModal.jsx — 2 chỗ đó đã loại từ trước, chỉ riêng bảng này ở tab "Thông tin
-  // cá nhân" bị sót khi thêm 2 cột này).
+  // ĐÃ THÊM 'CẦN_XEM_LẠI' (theo phản hồi): cờ nội bộ (true/false) phục vụ luồng tái rà
+  // soát bên Thẩm định — không có ý nghĩa gì với người xem hồ sơ ở tab này, ẩn hẳn dòng
+  // này thay vì chỉ đổi tên nhãn.
+  'CẦN_XEM_LẠI',
   'SV_KEY', 'LINK HỒ SƠ', 'TÀI KHOẢN NHẬP LIỆU', 'RAW_DIEM_HK', 'RAW_DIEM_KHAC_1', 'RAW_DIEM_KHAC_2',
   'TOÁN', 'VẬT LÍ', 'HÓA HỌC', 'SINH HỌC', 'NGỮ VĂN', 'LỊCH SỬ', 'ĐỊA LÝ',
   'TIẾNG ANH', 'TIẾNG TRUNG', 'TIN HỌC', 'GDKTPL',

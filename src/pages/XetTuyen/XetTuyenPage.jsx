@@ -13,7 +13,7 @@ import { taiFileMauExcel } from '../../utils/excelTemplate';
 // getMissingDocs() đang là nguồn xác định "còn thiếu hồ sơ gì" cho trang Thẩm định, để
 // quyết định ô tick nào được phép mở khoá khi khoá form lại (xem isOldRecordApproved bên
 // dưới) — tránh viết lại 1 bản riêng dễ lệch với danh sách hồ sơ tiên quyết thật.
-import { getMissingDocs, getVal, generateMaSV } from '../ThamDinh/thamDinhHelpers';
+import { getMissingDocs, getVal, generateMaSV, formatTrangThaiHienThi, calculateScores } from '../ThamDinh/thamDinhHelpers';
 // ĐÃ THÊM (tinh chỉnh UI/UX — modal xem NHANH cho hồ sơ đã bàn giao): dùng lại nguyên
 // component đã viết cho mục đích này — xem chú thích đầy đủ ở đầu file đó.
 import HoSoDaBanGiaoModal from '../ThamDinh/HoSoDaBanGiaoModal';
@@ -358,6 +358,51 @@ const dongGoiRawTheoPhuongThuc_ = (loaiDiem, src) => {
     return rawObj;
 };
 
+// ĐÃ THÊM (2026-09-16 — import file mẫu theo phương thức xét điểm): "rawObj" (đóng gói
+// bởi dongGoiRawTheoPhuongThuc_ ở trên, hoặc tachBoDiemDayDu_ bên dưới) có key KHÔNG kèm
+// tiền tố "diem_" — đúng shape để JSON.stringify() thẳng vào RAW_DIEM_HK/KHAC. Nhưng
+// getSubjectAverage()/tinhToHopCaoNhat() lại cần 1 object CÓ tiền tố "diem_" (đúng shape
+// formData thật trên form nhập tay) mới đọc ra số đúng. Hàm này bọc rawObj thành 1
+// "formData giả" — dùng để TÁI DÙNG 2 hàm tính điểm đó cho dữ liệu vừa đọc từ Excel, thay
+// vì viết lại công thức TB/so tổ hợp lần thứ 2 (tránh 2 nơi tính lệch nhau).
+const layFormDataGia_ = (loaiDiem, rawObj) => {
+    const fd = { loai_diem: loaiDiem };
+    Object.keys(rawObj).forEach(k => { fd[`diem_${k}`] = rawObj[k]; });
+    return fd;
+};
+
+// ĐÃ THÊM (2026-09-16 — file mẫu "Học bạ đầy đủ", nhập đủ 6 học kỳ/môn): từ 6 giá trị thô
+// (chuỗi đọc trực tiếp từ Excel) của 1 môn, tính ra ĐÚNG 2 bộ rawObj tương ứng "Điểm học
+// bạ" (TB từng năm) và "Điểm học bạ (TBTS 2025)" (lấy thẳng 3 kỳ cuối) — gọi lặp lại cho
+// cả 11 môn ở nơi gọi (executeImport). Theo đúng nguyên tắc đã chốt: thiếu 1 trong 2 học
+// kỳ của 1 năm -> để TRỐNG HOÀN TOÀN năm đó (không suy diễn, không ghi 0) — KHÔNG dùng
+// lamTronDiem() ở đây vì hàm đó trả 0 cho giá trị rỗng/không hợp lệ, không phân biệt được
+// với "trống thật sự".
+const tachBoDiemDayDu_ = (raw6ThoTheoMon) => {
+    const soHopLe_ = (s) => {
+        if (s === undefined || s === null || String(s).trim() === '') return null;
+        const n = parseFloat(String(s).trim().replace(',', '.'));
+        return isNaN(n) ? null : n;
+    };
+    const tbNam_ = (hk1, hk2) => {
+        const n1 = soHopLe_(hk1), n2 = soHopLe_(hk2);
+        return (n1 === null || n2 === null) ? "" : Math.round(((n1 + n2) / 2) * 100) / 100;
+    };
+    const giuNguyenHopLe_ = (v) => { const n = soHopLe_(v); return n === null ? "" : n; };
+
+    const hocBa = {}; const hocBa2025 = {};
+    SUBJECTS_UI.forEach(subj => {
+        const c = raw6ThoTheoMon[subj.id] || {};
+        hocBa[`${subj.id}_lop10`] = tbNam_(c.lop10hk1, c.lop10hk2);
+        hocBa[`${subj.id}_lop11`] = tbNam_(c.lop11hk1, c.lop11hk2);
+        hocBa[`${subj.id}_lop12`] = tbNam_(c.lop12hk1, c.lop12hk2);
+        hocBa2025[`${subj.id}_hk2_11`] = giuNguyenHopLe_(c.lop11hk2);
+        hocBa2025[`${subj.id}_hk1_12`] = giuNguyenHopLe_(c.lop12hk1);
+        hocBa2025[`${subj.id}_hk2_12`] = giuNguyenHopLe_(c.lop12hk2);
+    });
+    return { hocBa, hocBa2025 };
+};
+
 // Đọc ngược 2 cột RAW_DIEM_KHAC_1/2 (mỗi cột 1 JSON gắn nhãn {loaiDiem, raw}) thành map
 // { [loaiDiem]: rawObj } — dùng chung cho cả 2 nơi tải hồ sơ cũ lên Form (handleEditRowLocal
 // và "Tìm hồ sơ cũ") để khôi phục lại đủ dữ liệu của CẢ 2 phương thức KHÔNG active, y hệt như
@@ -574,6 +619,16 @@ const XetTuyenPage = () => {
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
+  // ĐÃ THÊM (2026-09-16 — tách file mẫu import theo phương thức xét điểm): quyết định
+  // file mẫu tải về có bộ cột nào (handleDownloadTemplate) VÀ cách đọc/tính điểm khi
+  // import (executeImport) — 4 lựa chọn: THI_THPT (giữ nguyên như cũ) / HOC_BA /
+  // HOC_BA_2025 / HOC_BA_DAY_DU (nhập đủ 6 học kỳ, hệ thống tự so 2 phương thức Học bạ/
+  // TBTS 2025 rồi tự chọn bộ có lợi hơn — xem tinhDiemImportTheoPhuongThuc_ trong
+  // executeImport).
+  const [importPhuongThuc, setImportPhuongThuc] = useState('THI_THPT');
+  // ĐÃ THÊM (theo phản hồi — chặn bấm nhiều lần lúc file đang tạo dở): true trong suốt
+  // thời gian handleDownloadTemplate chạy, dùng để disable nút "Tải file mẫu".
+  const [dangTaiFileMau, setDangTaiFileMau] = useState(false);
   const [importStatus, setImportStatus] = useState("");
 
   // ĐÃ THÊM LẠI (theo phản hồi): modal "Tra cứu khu vực ưu tiên" — port từ repo Xét tuyển cũ
@@ -655,14 +710,22 @@ const XetTuyenPage = () => {
   useEffect(() => {
     const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
-            if (isImportModalOpen) { setIsImportModalOpen(false); setImportFile(null); setImportStatus(""); }
+            // ĐÃ SỬA (bug: Esc đóng nhầm modal tìm kiếm phía sau thay vì modal xem hồ sơ
+            // đã bàn giao đang mở TRÊN nó): trước đây handler này không hề biết tới
+            // "xemHoSoDaBanGiao" — HoSoDaBanGiaoModal lồng bên trong modal tìm kiếm
+            // (isSearchModalOpen vẫn true khi nó đang mở), nên nhánh isSearchModalOpen
+            // luôn thắng, đóng nhầm modal ở DƯỚI. Giờ kiểm tra modal lồng trong cùng
+            // (nếu có, luôn đang là modal ở TRÊN CÙNG) trước tiên, ưu tiên đóng nó, các
+            // nhánh còn lại giữ nguyên thứ tự cũ.
+            if (xemHoSoDaBanGiao) { setXemHoSoDaBanGiao(null); }
+            else if (isImportModalOpen) { setIsImportModalOpen(false); setImportFile(null); setImportStatus(""); }
             else if (isSearchModalOpen) { closeSearchModal(); }
             else if (isLookupModalOpen) { closeLookupModal(); }
         }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isImportModalOpen, isSearchModalOpen, isLookupModalOpen]);
+  }, [isImportModalOpen, isSearchModalOpen, isLookupModalOpen, xemHoSoDaBanGiao]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -780,54 +843,29 @@ const XetTuyenPage = () => {
         if (!formData.loai_diem) {
             diemMsg = `Vui lòng tick chọn Phương thức xét điểm.`;
         } else {
-            // ĐÃ SỬA: gọi qua hàm dùng chung tinhToHopCaoNhat() (xem chú thích tại khai báo
-            // hàm, phía trên component) thay vì lặp lại logic tìm tổ hợp ngay tại đây — để
-            // chỗ quyết định hiện ô "Điểm phỏng vấn" (trong renderHocBaTableHalf) tính ra
-            // đúng CÙNG 1 con số maxScore này, không lệch nhau.
-            const { maxScore } = tinhToHopCaoNhat(nganh, formData);
+            // ĐÃ SỬA (2026-09-16 — theo phản hồi, gọi chung 1 công cụ với bên Thẩm định): trước
+            // đây tự tính lại toàn bộ công thức (tổ hợp/ưu tiên/gate PV 15-16) ngay tại đây,
+            // SONG SONG với calculateScores() bên thamDinhHelpers.js — 2 công thức dễ lệch
+            // nhau nếu sau này chỉ sửa 1 chỗ. Giờ gọi thẳng calculateScores() (CÙNG hàm
+            // ThamDinh dùng cho modal chi tiết, và import Excel cũng đã dùng) — dựng 1 "row"
+            // tối thiểu từ formData rồi đọc kết quả, không còn công thức thứ 2 nào tồn tại.
+            const phuongThucLabel = { THI_THPT: 'Điểm thi THPT', HOC_BA: 'Điểm học bạ', HOC_BA_2025: 'Điểm học bạ (TBTS 2025)' }[formData.loai_diem] || '';
+            const rowForCalc = {
+                "NGÀNH": nganh, "ĐỐI TƯỢNG ĐẦU VÀO": doituongdauvao, "PHƯƠNG THỨC XÉT TUYỂN": phuongThucLabel,
+                "ĐIỂM CỘNG": formData.diem_cong, "KHU VỰC ƯU TIÊN": khuvucuutien, "ĐỐI TƯỢNG ƯU TIÊN": doituonguutien,
+                "NĂM TỐT NGHIỆP THPT": namtotnghiepthpt, "ĐIỂM PHỎNG VẤN": formData.diem_phong_van,
+            };
+            SUBJECTS_UI.forEach(subj => { rowForCalc[subj.label] = getSubjectAverage(subj.id, formData) || ""; });
+            const kq = calculateScores(rowForCalc, nganh);
 
-            if (maxScore === 0) diemMsg = `Chưa nhập đủ điểm để xét tổ hợp.`;
-            else {
-                // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): ép
-                // phần đóng góp của DICT_KHU_VUC về 0 khi hồ sơ khớp mốc "Trước..." (xem
-                // biChanKhuVucUTTheoNamTN phía trên component) — Đối tượng ưu tiên (DICT_DOI_TUONG)
-                // KHÔNG bị ảnh hưởng, Thông tư mới chỉ giới hạn khu vực ưu tiên.
-                let uTienBanDau = (biChanKhuVucUTTheoNamTN(namtotnghiepthpt) ? 0 : (DICT_KHU_VUC[khuvucuutien] || 0)) + (DICT_DOI_TUONG[doituonguutien] || 0);
-                let uTienChinhThuc = uTienBanDau;
-
-                if (formData.loai_diem === 'THI_THPT' && maxScore >= 22.5) {
-                    uTienChinhThuc = ((30 - maxScore) / 7.5) * uTienBanDau;
-                }
-
-                // ĐÃ SỬA (theo phản hồi — CHỐT LẠI CÔNG THỨC ĐÚNG): điểm phỏng vấn — CHỈ áp
-                // dụng cho phương thức "Điểm học bạ" (HOC_BA), và CHỈ cộng vào điểm xét
-                // tuyển khi (điểm TỔ HỢP CAO NHẤT + ĐIỂM CỘNG + ĐIỂM ƯU TIÊN) BẰNG 15 ĐẾN
-                // DƯỚI 16 (>= 15 và < 16) — bản trước đó THIẾU hẳn Điểm ưu tiên (uTienChinhThuc)
-                // trong tổng này, chỉ cộng Tổ hợp + Điểm cộng, SAI theo đúng yêu cầu gốc.
-                // DÙNG ĐÚNG 1 NGƯỠNG DUY NHẤT này cho cả việc HIỆN Ô NHẬP (xem
-                // renderHocBaTableHalf, đã sửa lại dùng cùng công thức) lẫn việc ÁP DỤNG vào
-                // công thức — không còn lệch nhau giữa 2 chỗ nữa. Dùng uTienChinhThuc (đã
-                // tính ở trên) chứ không phải uTienBanDau — với HOC_BA thì 2 giá trị này
-                // luôn bằng nhau (công thức giảm trừ theo maxScore>=22.5 chỉ áp dụng cho
-                // THI_THPT), nhưng dùng đúng biến "chính thức" để phòng hờ sau này đổi quy
-                // tắc thì chỗ này tự động khớp theo, không cần sửa lại thêm lần nữa.
-                let diemPhongVan = 0;
-                if (formData.loai_diem === 'HOC_BA') {
-                    const tongDiemXetPV = maxScore + diemCong + uTienChinhThuc;
-                    if (tongDiemXetPV >= 15 && tongDiemXetPV < 16) {
-                        diemPhongVan = Math.min(lamTronDiem(formData.diem_phong_van), 2);
-                    }
-                }
-
-                let finalScore = Math.round((maxScore + uTienChinhThuc + diemCong + diemPhongVan) * 100) / 100;
-                // ĐÃ SỬA: điểm chuẩn giờ tra theo Phương thức xét tuyển thay vì hardcode
-                // 15.0 chung cho cả 3 phương thức — GIỮ ĐỒNG BỘ với DIEM_CHUAN_THPT bên
-                // thamDinhHelpers.js (đổi mức điểm chuẩn thì phải đổi ở CẢ 2 nơi).
-                const diemChuanThpt = DIEM_CHUAN_THPT[formData.loai_diem] ?? 15;
-
+            if (!kq.hasScore) {
+                diemMsg = `Chưa nhập đủ điểm để xét tổ hợp.`;
+            } else {
+                const finalScore = parseFloat(kq.finalTotalScore);
+                const diemChuanThpt = kq.diemChuan ?? 15;
                 if (finalScore >= diemChuanThpt) {
                     diemStatus = "PASS";
-                    diemMsg = `Tổng: <strong>${finalScore}đ</strong> (Tổ hợp: ${maxScore.toFixed(2)} + ƯT: ${uTienChinhThuc.toFixed(2)}${diemCong > 0 ? ` + Cộng: ${diemCong}` : ''}${diemPhongVan > 0 ? ` + PV: ${diemPhongVan}` : ''}). Chuẩn: ${diemChuanThpt.toFixed(1)}đ.`;
+                    diemMsg = `Tổng: <strong>${finalScore}đ</strong> (Tổ hợp: ${kq.maxScore.toFixed(2)} + ƯT: ${kq.uuTien.toFixed(2)}${kq.diemCong > 0 ? ` + Cộng: ${kq.diemCong}` : ''}${kq.diemPhongVan > 0 ? ` + PV: ${kq.diemPhongVan}` : ''}). Chuẩn: ${diemChuanThpt.toFixed(1)}đ.`;
                 } else {
                     diemMsg = `Tổng điểm: ${finalScore}đ. Thiếu ${(diemChuanThpt - finalScore).toFixed(2)}đ (chuẩn ${diemChuanThpt.toFixed(1)}đ).`;
                 }
@@ -1306,12 +1344,9 @@ const XetTuyenPage = () => {
   // của dòng khớp đều đã có sẵn trong fullData, xem hdPost_searchOldRecord). Áp dụng cho CẢ
   // "Đã duyệt" lẫn "Đã báo thiếu" (2 trạng thái duy nhất dùng cờ này).
   const rutGonTrangThaiTimKiem = (trangThai, item) => {
-    const t = String(trangThai || '');
     const canXemLaiItem = item && item.fullData && String(item.fullData['CẦN_XEM_LẠI'] || '').trim().toUpperCase() === 'TRUE';
-    if (!canXemLaiItem) return t;
-    if (t.indexOf('Đã duyệt') !== -1) return 'Đã duyệt (có bổ sung sau)';
-    if (t.indexOf('Đã báo thiếu') !== -1) return 'Đã báo thiếu (có bổ sung sau)';
-    return t;
+    const chiTiet = item && item.fullData ? item.fullData['CHI_TIẾT_THAY_ĐỔI'] : '';
+    return formatTrangThaiHienThi(trangThai, canXemLaiItem, chiTiet);
   };
 
   const executeSearchCandidate = async () => {
@@ -1501,9 +1536,10 @@ const XetTuyenPage = () => {
   // vào (giấy tờ chung 1 màu, giấy tờ riêng của mỗi loại "Tốt nghiệp..." 1 màu khác) — chỉ
   // để dễ nhìn khi cuộn ngang, KHÔNG ảnh hưởng gì tới việc đọc file lúc import.
   const handleDownloadTemplate = async () => {
+      setDangTaiFileMau(true);
       setImportStatus("⏳ Đang tạo file mẫu...");
       try {
-          const headers = await fetchXetTuyenHeaders();
+          const headers = await fetchXetTuyenHeaders(importPhuongThuc);
           // Lấy danh sách hợp lệ từ CauHinh — nếu gọi lỗi thì vẫn tạo được file mẫu bình
           // thường, chỉ là không có dropdown, không chặn hẳn việc tải file mẫu.
           let config = {};
@@ -1533,21 +1569,19 @@ const XetTuyenPage = () => {
           // Dòng mô tả (dòng 2) — đúng nội dung đã chốt cho từng cột/nhóm cột.
           // ĐÃ THÊM (2026-09-10) mô tả cột "MÃ SINH VIÊN" — cột TUỲ CHỌN, để trống với hồ sơ
           // MỚI (xem chú thích tại XETTUYEN_TEMPLATE_HEADERS, Quanlysv.gs).
-          const descRow = { 'STT': '0', 'CĂN CƯỚC': 'Số CCCD', 'NGÀY SINH': 'dd/mm/yyyy', 'MÃ SINH VIÊN': 'Để trống nếu hồ sơ MỚI — chỉ điền nếu là hồ sơ CŨ đã có MSV thật' };
+          const descRow = { 'STT': '0', 'CĂN CƯỚC': 'Số CCCD', 'NGÀY SINH': 'dd/mm/yyyy', 'MÃ SINH VIÊN': 'Chỉ điền nếu đã có thật', 'NƠI SINH': 'Tên tỉnh/TP trên VNeID' };
           Object.keys(dropdownColumns).forEach((c) => { descRow[c] = 'chọn dropdown'; });
           ALL_HO_SO_DOCS.forEach((doc) => { descRow[doc.name.toUpperCase()] = 'ghi x hoặc "true"'; });
+          // ĐÃ SỬA (theo phản hồi): "Giấy chuyển NVQS" không bắt buộc (chỉ áp dụng nam,
+          // không phải hồ sơ nào cũng cần) — ghi rõ thay vì dùng chung mô tả "ghi x" như
+          // các giấy tờ khác ở trên.
+          descRow['GIẤY CHUYỂN NVQS (VỚI NAM)'] = 'Không bắt buộc';
           descRow['ĐIỂM TB TOÀN KHÓA HỆ 4'] = 'Điền 1 trong 2 hệ';
           descRow['ĐIỂM TB TOÀN KHÓA HỆ 10'] = 'Điền 1 trong 2 hệ';
-          // "PHƯƠNG THỨC XÉT TUYỂN" được GIỮ LẠI trong file mẫu (xác nhận có chức năng
-          // thật — xem chú thích tại chỗ ghi "PHƯƠNG THỨC XÉT TUYỂN" ở handleAddRow) —
-          // thêm mô tả ngắn để người nhập liệu hiểu ô này không bắt buộc lúc import.
-          descRow['PHƯƠNG THỨC XÉT TUYỂN'] = 'Điểm thi THPT / Điểm học bạ / Điểm học bạ (TBTS 2025) — có thể để trống';
-          // ĐÃ THÊM (theo phản hồi — đã bổ sung cột "ĐIỂM PHỎNG VẤN" thật trên Goc01): chú
-          // thích ngắn để người nhập liệu hiểu đúng cột này chỉ áp dụng phương thức Học bạ.
-          // ĐÃ SỬA (theo phản hồi): ghi rõ luôn việc điền cột này sẽ tự đổi "PHƯƠNG THỨC
-          // XÉT TUYỂN" của dòng đó thành "Phỏng vấn" (thay vì "Điểm học bạ") sau khi đẩy
-          // lên hệ thống — xem laHocBaThuongTuChuoi() ở phần import Excel.
-          descRow['ĐIỂM PHỎNG VẤN'] = 'Chỉ áp dụng PT Điểm học bạ, tối đa 2 — có thể để trống. Có điền là Phương thức tự đổi thành "Phỏng vấn"';
+          // ĐÃ BỎ (2026-09-16): mô tả "PHƯƠNG THỨC XÉT TUYỂN"/"ĐIỂM PHỎNG VẤN" — cột
+          // PHƯƠNG THỨC đã bỏ hẳn khỏi file mẫu (hệ thống tự tính từ phương thức chọn ở
+          // dropdown modal Import, xem tinhDiemImportTheoPhuongThuc_), và cột ĐIỂM PHỎNG
+          // VẤN không cần mô tả gì thêm theo yêu cầu.
 
           // Tô màu nhóm cho dòng tiêu đề: "chung" (luôn áp dụng, gồm cả "Phiếu đăng ký dự
           // tuyển" vì cột này lặp lại y hệt ở MỌI nhóm tiên quyết) + 1 màu riêng cho từng
@@ -1569,6 +1603,12 @@ const XetTuyenPage = () => {
             });
           });
 
+          const TEN_FILE_THEO_PT = {
+            THI_THPT: 'FileMau_NhapLieu_TuyenSinh_DiemThiTHPT.xlsx',
+            HOC_BA: 'FileMau_NhapLieu_TuyenSinh_DiemHocBa.xlsx',
+            HOC_BA_2025: 'FileMau_NhapLieu_TuyenSinh_DiemHocBaTBTS2025.xlsx',
+            HOC_BA_DAY_DU: 'FileMau_NhapLieu_TuyenSinh_DiemHocBaDayDu.xlsx',
+          };
           await taiFileMauExcel({
             headers,
             descRow,
@@ -1576,10 +1616,11 @@ const XetTuyenPage = () => {
             dropdownColumns,
             headerColorGroups,
             sheetName: 'Mau_Nhap_Lieu',
-            fileName: 'FileMau_NhapLieu_TuyenSinh.xlsx',
+            fileName: TEN_FILE_THEO_PT[importPhuongThuc] || TEN_FILE_THEO_PT.THI_THPT,
           });
           setImportStatus("");
       } catch (e) { setImportStatus("❌ Lỗi tạo file: " + e.message); }
+      finally { setDangTaiFileMau(false); }
   };
 
   const executeImport = () => {
@@ -1642,6 +1683,118 @@ const XetTuyenPage = () => {
                   { ten: 'GDKTPL', aliases: ['GDKTPL', 'GIÁO DỤC KINH TẾ'] },
               ];
 
+              // ĐÃ THÊM (2026-09-16 — tách file mẫu theo phương thức xét điểm): thay cho khối
+              // validate "chỉ hiểu 1 kiểu THI_THPT" trước đây — nhánh theo đúng importPhuongThuc
+              // đang chọn lúc bấm Import. Trả về { flatScores, phuongThucGhi, rawHK, rawKhac1,
+              // errs } — errs gộp thẳng vào rowErrors của từng dòng (dòng lỗi số liệu vẫn bị
+              // loại y hệt cơ chế cũ). flatScores dùng để ghi vào các cột phẳng TOÁN/VẬT LÍ/...
+              // (nơi mọi trang khác — datalist, TB xét tuyển — vẫn đọc trực tiếp), rawHK/
+              // rawKhac1 dùng để ghi RAW_DIEM_HK/RAW_DIEM_KHAC_1 (chi tiết Lớp/Kỳ, phục vụ mở
+              // lại sửa sau này).
+              // ĐÃ THÊM (theo phản hồi — thiếu gate 15-16 khi tự đổi Phương thức thành "Phỏng
+              // vấn" lúc import): dùng lại ĐÚNG công thức đang áp cho form nhập tay (xem effect
+              // tính finalScore phía trên component: uTienChinhThuc/tongDiemXetPV) — chỉ cho
+              // phép coi là "Phỏng vấn" (và ngầm cho phép cộng điểm PV sau này khi mở lại sửa)
+              // khi (điểm tổ hợp cao nhất + Điểm cộng + Điểm ưu tiên) nằm trong [15, 16). Ngoài
+              // khoảng này thì GIỮ NGUYÊN "Điểm học bạ", dù cột ĐIỂM PHỎNG VẤN có số — không cần
+              // báo lỗi/cảnh báo gì (theo đúng yêu cầu).
+              // ĐÃ SỬA (2026-09-16 — theo phản hồi, dùng chung 1 nguồn với ThamDinh): trước đây
+              // tự viết lại công thức gate 15-16 ở đây (trùng lặp) — giờ gọi thẳng
+              // calculateScores() (thamDinhHelpers.js, dùng chung với modal thẩm định chi
+              // tiết) — dựng 1 "row" tối thiểu (đủ field calculateScores/getVal cần đọc:
+              // NGÀNH + 11 môn + ĐIỂM CỘNG + KHU VỰC/ĐỐI TƯỢNG ƯU TIÊN + NĂM TỐT NGHIỆP THPT
+              // + ĐIỂM PHỎNG VẤN + PHƯƠNG THỨC XÉT TUYỂN tạm — nhánh Học bạ mới) rồi đọc lại
+              // .diemPhongVan (0 nếu gate không đạt, đúng bằng số PV thật sự được cộng nếu
+              // đạt) — không còn công thức thứ 2 nào tồn tại song song để lệch nhau nữa.
+              const coTheCongPhongVan_ = (rowArr, nganhValRow, flatScores) => {
+                  const rowForCalc = { "NGÀNH": nganhValRow, "PHƯƠNG THỨC XÉT TUYỂN": "Điểm học bạ" };
+                  SUBJECTS_UI.forEach(subj => { rowForCalc[subj.label] = flatScores[subj.label] || ""; });
+                  ["ĐIỂM CỘNG", "KHU VỰC ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN", "NĂM TỐT NGHIỆP THPT", "ĐIỂM PHỎNG VẤN"].forEach(k => {
+                      rowForCalc[k] = getField(rowArr, [k]);
+                  });
+                  const kq = calculateScores(rowForCalc, nganhValRow);
+                  return !!(kq && kq.diemPhongVan > 0);
+              };
+
+              const tinhDiemImportTheoPhuongThuc_ = (rowArr, nganhValRow) => {
+                  const flatScores = {}; const errs = [];
+
+                  if (importPhuongThuc === 'THI_THPT') {
+                      SCORE_FIELDS.forEach(({ ten, aliases }) => {
+                          const raw = getField(rowArr, aliases);
+                          const kq = validateDiem(raw, 10);
+                          if (!kq.ok) errs.push(`${ten}: ${kq.err}`);
+                          flatScores[ten] = raw;
+                      });
+                      // ĐÃ SỬA (2026-09-16 — bỏ cột "PHƯƠNG THỨC XÉT TUYỂN" khỏi file mẫu): trước
+                      // đây đọc từ ô Excel tự do; giờ TỰ BIẾT luôn vì đã chọn đúng phương thức ở
+                      // dropdown modal Import — không có PV cho THI_THPT nên coTheCongPV luôn false.
+                      return { flatScores, phuongThucGhi: "Điểm thi THPT", coTheCongPV: false, rawHK: "", rawKhac1: "", errs };
+                  }
+
+                  if (importPhuongThuc === 'HOC_BA' || importPhuongThuc === 'HOC_BA_2025') {
+                      const laHocBa = importPhuongThuc === 'HOC_BA';
+                      const hauToCot = laHocBa ? [' 10', ' 11', ' 12'] : [' HK2/11', ' HK1/12', ' HK2/12'];
+                      const hauToField = laHocBa ? ['_lop10', '_lop11', '_lop12'] : ['_hk2_11', '_hk1_12', '_hk2_12'];
+                      const rawObj = {};
+                      SUBJECTS_UI.forEach(subj => {
+                          hauToCot.forEach((h, idx) => {
+                              const raw = getField(rowArr, [subj.label + h]);
+                              const kq = validateDiem(raw, 10);
+                              if (!kq.ok) errs.push(`${subj.label}${h}: ${kq.err}`);
+                              rawObj[`${subj.id}${hauToField[idx]}`] = raw;
+                          });
+                      });
+                      const dataGia = layFormDataGia_(importPhuongThuc, rawObj);
+                      SUBJECTS_UI.forEach(subj => { flatScores[subj.label] = getSubjectAverage(subj.id, dataGia) || ""; });
+                      // Gate 15-16 CHỈ áp dụng cho "Điểm học bạ" (đúng y hệt điều kiện
+                      // `formData.loai_diem === 'HOC_BA'` ở effect tính điểm nhập tay — TBTS 2025
+                      // KHÔNG có khái niệm cộng điểm phỏng vấn).
+                      const maxScoreHB = laHocBa ? tinhToHopCaoNhat(nganhValRow, dataGia).maxScore : 0;
+                      return {
+                          flatScores, phuongThucGhi: laHocBa ? 'Điểm học bạ' : 'Điểm học bạ (TBTS 2025)',
+                          coTheCongPV: laHocBa && maxScoreHB > 0 && coTheCongPhongVan_(rowArr, nganhValRow, flatScores),
+                          rawHK: JSON.stringify(rawObj), rawKhac1: "", errs
+                      };
+                  }
+
+                  if (importPhuongThuc === 'HOC_BA_DAY_DU') {
+                      const raw6ThoTheoMon = {};
+                      SUBJECTS_UI.forEach(subj => {
+                          const c = {
+                              lop10hk1: getField(rowArr, [subj.label + ' 10/HK1']), lop10hk2: getField(rowArr, [subj.label + ' 10/HK2']),
+                              lop11hk1: getField(rowArr, [subj.label + ' 11/HK1']), lop11hk2: getField(rowArr, [subj.label + ' 11/HK2']),
+                              lop12hk1: getField(rowArr, [subj.label + ' 12/HK1']), lop12hk2: getField(rowArr, [subj.label + ' 12/HK2']),
+                          };
+                          Object.entries(c).forEach(([cotTen, raw]) => {
+                              const kq = validateDiem(raw, 10);
+                              if (!kq.ok) errs.push(`${subj.label} ${cotTen}: ${kq.err}`);
+                          });
+                          raw6ThoTheoMon[subj.id] = c;
+                      });
+                      const { hocBa, hocBa2025 } = tachBoDiemDayDu_(raw6ThoTheoMon);
+                      const diemHocBa = tinhToHopCaoNhat(nganhValRow, layFormDataGia_('HOC_BA', hocBa)).maxScore;
+                      const diemHocBa2025 = tinhToHopCaoNhat(nganhValRow, layFormDataGia_('HOC_BA_2025', hocBa2025)).maxScore;
+                      const hocBaThang = diemHocBa >= diemHocBa2025;
+                      const rawThang = hocBaThang ? hocBa : hocBa2025;
+                      const rawThua = hocBaThang ? hocBa2025 : hocBa;
+                      const loaiThua = hocBaThang ? 'HOC_BA_2025' : 'HOC_BA';
+                      const dataThang = layFormDataGia_(hocBaThang ? 'HOC_BA' : 'HOC_BA_2025', rawThang);
+                      SUBJECTS_UI.forEach(subj => { flatScores[subj.label] = getSubjectAverage(subj.id, dataThang) || ""; });
+                      // Gate 15-16 chỉ có ý nghĩa nếu bộ THẮNG là "Điểm học bạ" (TBTS 2025 không
+                      // có khái niệm cộng điểm phỏng vấn, dù nó thắng thì cũng không áp dụng).
+                      return {
+                          flatScores, phuongThucGhi: hocBaThang ? 'Điểm học bạ' : 'Điểm học bạ (TBTS 2025)',
+                          coTheCongPV: hocBaThang && diemHocBa > 0 && coTheCongPhongVan_(rowArr, nganhValRow, flatScores),
+                          rawHK: JSON.stringify(rawThang),
+                          rawKhac1: JSON.stringify({ loaiDiem: loaiThua, raw: rawThua }),
+                          errs
+                      };
+                  }
+
+                  return { flatScores, phuongThucGhi: "", coTheCongPV: false, rawHK: "", rawKhac1: "", errs };
+              };
+
               let importedCount = 0; let dupCount = 0; let dupInFileCount = 0; let dupOnSheetCount = 0;
               const newItems = [];
               // ĐÃ THÊM: hồ sơ bị LOẠI do điểm không hợp lệ (rejectedRows, xem SCORE_FIELDS ở
@@ -1683,10 +1836,8 @@ const XetTuyenPage = () => {
                   // các hồ sơ đã nạp thành công lần trước tự bị loại vì trùng CCCD+Ngành (isDupOnList
                   // ở trên), không bị nạp đúp — không cần tự tay xoá bớt file trước khi import lại.
                   const rowErrors = [];
-                  SCORE_FIELDS.forEach(({ ten, aliases }) => {
-                      const kq = validateDiem(getField(rowArr, aliases), 10);
-                      if (!kq.ok) rowErrors.push(`${ten}: ${kq.err}`);
-                  });
+                  const diemKQ = tinhDiemImportTheoPhuongThuc_(rowArr, nganhVal);
+                  diemKQ.errs.forEach(err => rowErrors.push(err));
 
                   const he4Raw = getField(rowArr, ["HỆ 4", "ĐIỂM TB TOÀN KHÓA HỆ 4"]);
                   const he10Raw = getField(rowArr, ["HỆ 10", "ĐIỂM TB TOÀN KHÓA HỆ 10"]);
@@ -1772,14 +1923,19 @@ const XetTuyenPage = () => {
                           // dùng laHocBaThuongTuChuoi() vì đây là ô gõ tay tự do) VÀ ô "ĐIỂM PHỎNG
                           // VẤN" cùng dòng có dữ liệu > 0 thì tự đổi thành "Phỏng vấn".
                           "PHƯƠNG THỨC XÉT TUYỂN": (() => {
-                              const ptRaw = getField(rowArr, ["PHƯƠNG THỨC XÉT TUYỂN", "LOẠI ĐIỂM"]);
-                              const pvRaw = parseFloat(String(getField(rowArr, ["ĐIỂM PHỎNG VẤN", "ĐIỂM PV"])).replace(',', '.')) || 0;
-                              return (laHocBaThuongTuChuoi(ptRaw) && pvRaw > 0) ? 'Phỏng vấn' : ptRaw;
+                              // ĐÃ SỬA (2026-09-16): cột "PHƯƠNG THỨC XÉT TUYỂN" đã bỏ khỏi file mẫu —
+                              // giá trị này giờ LUÔN do diemKQ tính ra (biết chắc từ dropdown chọn ở
+                              // modal Import), không đọc ô Excel nào nữa, kể cả THI_THPT. Chỉ đổi thành
+                              // "Phỏng vấn" khi diemKQ.coTheCongPV = true (đã qua gate 15-16, xem
+                              // coTheCongPhongVan_/calculateScores) VÀ cột ĐIỂM PHỎNG VẤN thật sự có
+                              // số > 0.
+                              const pvRawImport = parseFloat(String(getField(rowArr, ["ĐIỂM PHỎNG VẤN", "ĐIỂM PV"])).replace(',', '.')) || 0;
+                              return (diemKQ.coTheCongPV && pvRawImport > 0) ? 'Phỏng vấn' : diemKQ.phuongThucGhi;
                           })(),
-                          "TOÁN": getField(rowArr, ["TOÁN"]), "VẬT LÍ": getField(rowArr, ["VẬT LÍ", "VẬT LÝ"]), "HÓA HỌC": getField(rowArr, ["HÓA HỌC"]), 
-                          "SINH HỌC": getField(rowArr, ["SINH HỌC"]), "NGỮ VĂN": getField(rowArr, ["NGỮ VĂN"]), "LỊCH SỬ": getField(rowArr, ["LỊCH SỬ"]), 
-                          "ĐỊA LÝ": getField(rowArr, ["ĐỊA LÝ", "ĐỊA LÍ"]), "TIẾNG ANH": getField(rowArr, ["TIẾNG ANH"]), "TIẾNG TRUNG": getField(rowArr, ["TIẾNG TRUNG"]), 
-                          "TIN HỌC": getField(rowArr, ["TIN HỌC"]), "GDKTPL": getField(rowArr, ["GDKTPL", "GIÁO DỤC KINH TẾ"]),
+                          "TOÁN": diemKQ.flatScores['TOÁN'] ?? "", "VẬT LÍ": diemKQ.flatScores['VẬT LÍ'] ?? "", "HÓA HỌC": diemKQ.flatScores['HÓA HỌC'] ?? "",
+                          "SINH HỌC": diemKQ.flatScores['SINH HỌC'] ?? "", "NGỮ VĂN": diemKQ.flatScores['NGỮ VĂN'] ?? "", "LỊCH SỬ": diemKQ.flatScores['LỊCH SỬ'] ?? "",
+                          "ĐỊA LÝ": diemKQ.flatScores['ĐỊA LÝ'] ?? "", "TIẾNG ANH": diemKQ.flatScores['TIẾNG ANH'] ?? "", "TIẾNG TRUNG": diemKQ.flatScores['TIẾNG TRUNG'] ?? "",
+                          "TIN HỌC": diemKQ.flatScores['TIN HỌC'] ?? "", "GDKTPL": diemKQ.flatScores['GDKTPL'] ?? "",
                           // ĐÃ VÁ BUG THẬT (cùng nguyên nhân với chỗ nhập tay — xem chú thích tại
                           // handleAddRow phía trên): ghi vào ĐÚNG tên cột thật "ĐIỂM TB TOÀN KHÓA
                           // HỆ 4/10" thay vì tên rút gọn cũ, để dữ liệu import Excel không còn bị
@@ -1796,11 +1952,15 @@ const XetTuyenPage = () => {
                           "TIME": currentTimestamp,
                           "NGÀY CẬP NHẬT HỒ SƠ": "",
                           "TÀI KHOẢN NHẬP LIỆU": getUserEmail(),
-                          "RAW_DIEM_HK": "",
-                          // ĐÃ THÊM: cùng lý do như RAW_DIEM_HK ở trên — file mẫu Excel chỉ có 1
-                          // phương thức/cột điểm, không có gì để đóng gói cho 2 phương thức "còn
-                          // lại" cả (khái niệm "phương thức khác" không tồn tại ở luồng import).
-                          "RAW_DIEM_KHAC_1": "",
+                          "RAW_DIEM_HK": diemKQ.rawHK,
+                          // ĐÃ SỬA (2026-09-16): trước đây LUÔN để trống vì file mẫu cũ chỉ có 1
+                          // phương thức/cột điểm, không có "phương thức khác" nào để đóng gói. Giờ
+                          // với "Học bạ đầy đủ", hệ thống tự tính CẢ 2 bộ (Học bạ/TBTS 2025) rồi
+                          // chọn bộ điểm cao hơn ghi vào RAW_DIEM_HK — bộ còn lại (thua) ghi vào
+                          // đây, kèm nhãn {loaiDiem, raw} đúng format cũ, để mở lại sửa vẫn thấy đủ
+                          // cả 2 tab (xem docRawDiemKhac_). Với 3 phương thức còn lại (THI_THPT/
+                          // HOC_BA/HOC_BA_2025), diemKQ.rawKhac1 luôn rỗng — không có gì để đóng gói.
+                          "RAW_DIEM_KHAC_1": diemKQ.rawKhac1,
                           "RAW_DIEM_KHAC_2": ""
                       };
                       
@@ -2675,7 +2835,21 @@ const XetTuyenPage = () => {
                           <button type="button" className="btn-close btn-close-white" onClick={() => {setIsImportModalOpen(false); setImportFile(null); setImportStatus("");}}></button>
                       </div>
                       <div className="modal-body p-4">
-                          <button className="btn btn-outline-primary w-100 mb-3 fw-bold" onClick={handleDownloadTemplate}>⬇️ Tải file mẫu</button>
+                          {/* ĐÃ THÊM (2026-09-16 — tách file mẫu theo phương thức xét điểm): chọn
+                              TRƯỚC khi tải file mẫu — quyết định luôn cả bộ cột điểm trong file mẫu
+                              lẫn cách executeImport() đọc/tính điểm khi import lại chính file đó. */}
+                          <div className="mb-3">
+                              <label className="form-label fw-bold small mb-1">Phương thức xét điểm của file này</label>
+                              <select className="form-select form-select-sm" value={importPhuongThuc} onChange={(e) => setImportPhuongThuc(e.target.value)}>
+                                  <option value="THI_THPT">Điểm thi THPT (11 cột, mỗi môn 1 điểm)</option>
+                                  <option value="HOC_BA">Điểm học bạ (mỗi môn 3 cột: Lớp 10/11/12)</option>
+                                  <option value="HOC_BA_2025">Điểm học bạ (TBTS 2025) (mỗi môn 3 cột: HK2/11, HK1/12, HK2/12)</option>
+                                  <option value="HOC_BA_DAY_DU">Điểm học bạ đầy đủ (mỗi môn 6 cột — hệ thống tự so & chọn phương án Học bạ/TBTS 2025 có lợi hơn)</option>
+                              </select>
+                          </div>
+                          <button className="btn btn-outline-primary w-100 mb-3 fw-bold" onClick={handleDownloadTemplate} disabled={dangTaiFileMau}>
+                              {dangTaiFileMau ? '⏳ Đang tạo file...' : '⬇️ Tải file mẫu'}
+                          </button>
                           <div className="d-flex align-items-center gap-2 p-2 border rounded bg-light mb-3">
                               <div className="flex-grow-1 text-truncate text-muted small">{importFile ? importFile.name : "Chọn file dữ liệu..."}</div>
                               <button className="btn btn-primary btn-sm fw-bold" onClick={() => importFileRef.current.click()}>📁 Chọn file</button>
@@ -2718,12 +2892,25 @@ const XetTuyenPage = () => {
                           
                           <div className="table-responsive border rounded" style={{ maxHeight: '300px' }}>
                               <table className="table table-hover mb-0 align-middle" style={{fontSize: '12px'}}>
-                                  <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center">TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
+                                  <thead className="table-light"><tr><th>STT</th><th>HỌ TÊN</th><th className="text-center">CĂN CƯỚC</th><th>NGÀNH</th><th className="text-center" style={{ width: '110px' }}>TRẠNG THÁI</th><th className="text-center">THAO TÁC</th></tr></thead>
                                   <tbody>
                                       {searchResults.length === 0 ? (<tr><td colSpan={6} className="text-center py-3 text-muted">Danh sách trống</td></tr>) : (
                                           searchResults.map((item, index) => (
                                               <tr key={index}>
-                                                  <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td><td className="text-center"><span className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}>{rutGonTrangThaiTimKiem(item.trangThai, item)}</span></td>
+                                                  <td className="text-center">{index + 1}</td><td className="fw-bold">{item.hoTen}</td><td className="text-center fw-bold text-danger">{item.cccd}</td><td>{item.nganh}</td>
+                                                  {/* ĐÃ SỬA (bug: dòng trạng thái dài ngoằng kéo giãn cả bảng — chuỗi kiểu "Đã
+                                                      báo thiếu (có bổ sung sau)" quá dài để nằm gọn 1 dòng trong badge mặc định):
+                                                      ép badge tự xuống dòng (whiteSpace: normal, mặc định badge Bootstrap là
+                                                      nowrap) + giới hạn chiều rộng khớp đúng cột TRẠNG THÁI (110px) ở trên —
+                                                      chữ dài giờ tự ngắt thành 2 dòng gọn trong khung, không kéo giãn bảng nữa. */}
+                                                  <td className="text-center">
+                                                      <span
+                                                        className={`badge ${item.trangThai.includes('bổ sung') ? 'bg-warning text-dark' : 'bg-secondary'}`}
+                                                        style={{ whiteSpace: 'normal', display: 'inline-block', maxWidth: '100px', lineHeight: 1.25 }}
+                                                      >
+                                                        {rutGonTrangThaiTimKiem(item.trangThai, item)}
+                                                      </span>
+                                                  </td>
                                                   {/* ĐÃ THÊM (tinh chỉnh UI/UX — modal xem NHANH cho hồ sơ đã bàn giao): hồ sơ ĐÃ
                                                       bàn giao Đào tạo/CTSV (item.daBanGiaoDaoTao, do backend cấp — xem
                                                       hdPost_searchOldRecord, TuyenSinh.gs) không còn đẩy lên form sửa nữa —

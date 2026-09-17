@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query'; // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): badge số lượng "Hồ sơ chờ ký"
 import Swal from 'sweetalert2';
-import { sendFeedback, laySoLuongChoToiKy } from './api/studentApi';
+import { sendFeedback, laySoLuongChoToiKy, fetchSoLuongCanXacNhanDinhDanhCuaToi, fetchDanhSachChoToiKy } from './api/studentApi';
 import './App.css';
 import logoPhuXuan from './assets/logo-phuxuan.png'; // ĐÃ THÊM: logo trường, đặt góc trên-trái navbar
 import Home from './pages/Home'; // ĐÃ THÊM: trang chủ dạng thẻ chức năng sau đăng nhập
@@ -37,7 +37,7 @@ const ProtectedRoute = ({ userRoles, allowedRoles, children }) => {
   // Nếu không -> Hiện màn hình Khóa
   return (
     <div className="d-flex flex-column align-items-center justify-content-center mt-5 pt-5 text-center">
-      <h1 className="text-danger display-1"><i className="bi bi-shield-lock-fill"></i></h1>
+      <h1 className="text-danger"><svg width="64" height="64" viewBox="0 0 18 18" fill="none"><path d="M9 2L15 4V8.5C15 12 12.5 14.5 9 16C5.5 14.5 3 12 3 8.5V4L9 2Z" stroke="currentColor" strokeWidth="1.3" /><rect x="6.5" y="8" width="5" height="4" rx="0.8" stroke="currentColor" strokeWidth="1.2" /><path d="M7.3 8V6.8C7.3 5.8 8 5 9 5C10 5 10.7 5.8 10.7 6.8V8" stroke="currentColor" strokeWidth="1.2" /></svg></h1>
       <h3 className="text-muted mt-3 fw-bold">KHÔNG CÓ QUYỀN TRUY CẬP</h3>
       <p className="text-secondary">Tài khoản của bạn không có quyền sử dụng chức năng này.</p>
     </div>
@@ -55,12 +55,31 @@ const normalizeUserInfo = (userInfo) => {
 };
 
 const App = () => {
-  // State quản lý menu dọc trên điện thoại
-  const [isNavCollapsed, setIsNavCollapsed] = useState(true);
-  
+  // ĐÃ SỬA (2026-09-15 — chuyển menu ngang navbar-dark sang sidebar trái sáng màu):
+  // trước đây "isNavCollapsed" điều khiển ẩn/hiện khối navbar-collapse (menu ☰ đổ
+  // xuống dưới navbar trên di động). Giờ thay bằng "isSidebarOpen" — điều khiển
+  // ẩn/hiện SIDEBAR TRÁI, dùng chung cho cả desktop lẫn di động (nút 3 gạch trên
+  // topbar bấm vào đổi state này). Mặc định: desktop mở sẵn (isSidebarOpen=true),
+  // di động ẩn sẵn (xem cách khởi tạo dưới, dùng matchMedia y hệt isMobileNav đã có
+  // sẵn) — bấm nút 3 gạch trên di động sẽ mở sidebar dạng overlay đè lên nội dung
+  // (xem phần render), không đẩy nội dung sang bên.
+  // ĐÃ SỬA: giá trị khởi tạo giờ tính LUÔN cả route ban đầu (không chỉ desktop/mobile
+  // như trước) — khớp với effect đặt lại theo route ngay bên dưới (currentHashPath),
+  // tránh nháy sai 1 khung hình lúc mới tải trang trước khi effect kịp chạy.
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    const isDesktop = !window.matchMedia('(max-width: 991.98px)').matches;
+    const isHome = (window.location.hash.replace(/^#/, '') || '/') === '/';
+    return isDesktop && isHome;
+  });
+
   // State quản lý Đóng/Mở menu tài khoản
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const userDropdownRef = useRef(null);
+
+  // ĐÃ THÊM: state + ref cho bảng thông báo (chuông) trên topbar mới — cùng kiểu
+  // click-ra-ngoài/Esc-để-đóng như menu tài khoản bên trên (xem effect riêng bên dưới).
+  const [isNotiOpen, setIsNotiOpen] = useState(false);
+  const notiRef = useRef(null);
 
   // ĐÃ THÊM (theo phản hồi — mục "Xuất Excel" trong menu tài khoản, CHỈ hiện khi đang ở
   // trang Thẩm định): App.jsx là component TẠO RA <HashRouter>, nên bản thân nó không nằm
@@ -95,6 +114,26 @@ const App = () => {
     };
   }, [isUserDropdownOpen]);
 
+  // ĐÃ THÊM: tự đóng bảng thông báo khi bấm ra ngoài hoặc nhấn Esc — giống hệt cơ chế
+  // của menu tài khoản ở effect ngay trên, tách riêng vì 2 khối đóng/mở độc lập nhau.
+  useEffect(() => {
+    if (!isNotiOpen) return;
+    const handleClickOutside = (e) => {
+      if (notiRef.current && !notiRef.current.contains(e.target)) {
+        setIsNotiOpen(false);
+      }
+    };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setIsNotiOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isNotiOpen]);
+
   // ĐÃ THÊM: gom menu chính thành 3 nhóm xổ xuống (Tuyển sinh / Thẩm định / Hệ thống) cho
   // hàng menu đỡ dài.
   // ĐÃ SỬA (theo phản hồi — mobile KHÔNG được tự đóng nhóm khác khi mở 1 nhóm mới, desktop
@@ -112,6 +151,20 @@ const App = () => {
   const thamDinhRef = useRef(null);
   const heThongRef = useRef(null);
 
+  // ĐÃ THÊM (2026-09-15 — theo yêu cầu "sidebar mặc định mở ở Trang chủ, ẩn ở các
+  // router con"): dùng lại đúng currentHashPath đã có sẵn (khai báo ở trên, cùng lý
+  // do không gọi được useLocation() trực tiếp trong App.jsx). Mỗi khi ĐIỀU HƯỚNG
+  // sang trang khác (hash đổi), đặt lại isSidebarOpen theo trang ĐÍCH: Trang chủ
+  // ("/") -> mở, mọi route con khác -> ẩn (trên mobile luôn ẩn bất kể route, giữ
+  // đúng hành vi overlay đã chốt trước đó). Đây là giá trị MẶC ĐỊNH mỗi lần chuyển
+  // trang, không khoá cứng — người dùng vẫn bấm nút 3 gạch để tự mở/ẩn thêm bất cứ
+  // lúc nào trong lúc đang đứng yên ở 1 trang, chỉ bị tính lại khi thật sự chuyển
+  // sang trang khác (không chạy lại khi resize cửa sổ).
+  useEffect(() => {
+    setIsSidebarOpen(!isMobileNav && currentHashPath === '/');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentHashPath]);
+
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 991.98px)');
     const onChange = (e) => setIsMobileNav(e.matches);
@@ -120,43 +173,19 @@ const App = () => {
   }, []);
 
   // Bấm vào 1 nhóm cha: di động -> chỉ đổi đúng nhóm đó, giữ nguyên các nhóm khác đang mở.
-  // Desktop -> bấm nhóm đang mở thì đóng, bấm nhóm khác thì tự đóng nhóm cũ (chỉ 1 nhóm mở).
+  // ĐÃ SỬA (2026-09-15 — theo yêu cầu "danh sách sidebar không bao giờ tự động
+  // collapse, chỉ collapse khi bấm đúng vào mũi tên"): trước đây có 1 effect riêng
+  // tự đóng nhóm khi bấm ra ngoài HOẶC nhấn phím Esc — hành vi đó hợp lý cho DROPDOWN
+  // nổi tạm thời (kiểu navbar cũ), nhưng sai với SIDEBAR cố định thường trực: người
+  // dùng bấm vào vùng nội dung chính để làm việc (điền form, đọc bảng...) không nên
+  // vô tình làm sập nhóm đang mở trong sidebar. Đã BỎ HẲN effect đó (click-outside +
+  // Escape) và hàm closeAllNavGroups() (không còn ai gọi tới) — giờ CHỈ CÓ MỘT nơi
+  // duy nhất thay đổi openGroups: toggleNavGroup(), gọi khi bấm thẳng vào tiêu đề/mũi
+  // tên của nhóm (xem JSX bên dưới). tuyenSinhRef/thamDinhRef/heThongRef vẫn giữ
+  // nguyên gắn trên JSX (vô hại), dù không còn effect nào đọc tới nữa.
   const toggleNavGroup = (name) => {
-    setOpenGroups(prev => {
-      const dangMo = !!prev[name];
-      if (isMobileNav) return { ...prev, [name]: !dangMo };
-      return dangMo ? {} : { [name]: true };
-    });
+    setOpenGroups(prev => ({ ...prev, [name]: !prev[name] }));
   };
-  const closeAllNavGroups = () => setOpenGroups({});
-
-  useEffect(() => {
-    const cacNhomDangMo = Object.keys(openGroups).filter(k => openGroups[k]);
-    if (cacNhomDangMo.length === 0) return;
-    const refTheoNhom = { tuyensinh: tuyenSinhRef, thamdinh: thamDinhRef, hethong: heThongRef };
-    // Bấm ra ngoài 1 nhóm cụ thể -> chỉ đóng ĐÚNG nhóm đó, không đóng luôn các nhóm khác đang
-    // mở cùng lúc trên di động.
-    const handleClickOutside = (e) => {
-      setOpenGroups(prev => {
-        let changed = false;
-        const next = { ...prev };
-        cacNhomDangMo.forEach(name => {
-          const ref = refTheoNhom[name];
-          if (ref && ref.current && !ref.current.contains(e.target)) { next[name] = false; changed = true; }
-        });
-        return changed ? next : prev;
-      });
-    };
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') closeAllNavGroups();
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [openGroups]);
 
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = localStorage.getItem('tuyensinh_user');
@@ -198,6 +227,31 @@ const App = () => {
     enabled: !!currentUser,
     refetchInterval: 60000,
   });
+
+  // ĐÃ THÊM: nguồn dữ liệu thứ 2 cho bảng thông báo — số hồ sơ chờ xác nhận định danh
+  // "của tôi" (hàm này đã tự nuốt lỗi/không có quyền, luôn trả về số, kể cả 0 — dùng
+  // lại đúng action có sẵn, không tạo action GAS mới).
+  const { data: soLuongChoXacNhan } = useQuery({
+    queryKey: ['soLuongChoXacNhanDinhDanh'],
+    queryFn: fetchSoLuongCanXacNhanDinhDanhCuaToi,
+    enabled: !!currentUser,
+    refetchInterval: 60000,
+  });
+
+  // ĐÃ THÊM: danh sách CHI TIẾT hồ sơ chờ ký cho bảng thông báo — chỉ gọi khi bảng
+  // thực sự đang mở (enabled: isNotiOpen), tránh tải dữ liệu người dùng chưa chắc đã
+  // xem. LƯU Ý: tên field bên dưới lúc render (tieuDe/ngayTao...) là DỰ ĐOÁN, chưa có
+  // mẫu response thật để đối chiếu — xem chú thích tại chỗ render.
+  const { data: danhSachChoKy } = useQuery({
+    queryKey: ['danhSachChoToiKy'],
+    queryFn: fetchDanhSachChoToiKy,
+    enabled: !!currentUser && isNotiOpen,
+  });
+
+  // ĐÃ THÊM: tổng số thông báo chưa đọc hiện trên chấm đỏ của chuông — cộng dồn tất cả
+  // nguồn "chờ xử lý" đang có. Sau này bổ sung thêm loại thông báo mới (hồ sơ yêu cầu bổ
+  // sung, hồ sơ hoàn tác, hồ sơ được duyệt...) chỉ cần cộng thêm vào đây.
+  const tongSoThongBao = (soLuongChoKy?.soLuong || 0) + (soLuongChoXacNhan || 0);
 
   // ĐÃ THÊM (theo phản hồi — tiêu đề tab trình duyệt hiện đúng tên trang đang xem, thay vì
   // luôn cố định "Quản lý sinh viên" như trong index.html): dùng chung currentHashPath đã
@@ -356,92 +410,143 @@ const App = () => {
 
   return (
     <HashRouter>
-      {/* ĐÃ SỬA: khung ngoài giờ dùng flex column + minHeight:100vh — để footer "Phản hồi/
-          Cập nhật lần cuối" bên dưới có thể nằm ĐÚNG CUỐI TRANG theo dòng chảy bình thường
-          (không còn position:fixed đè lên nội dung nữa, xem chú thích tại chính footer đó)
-          mà vẫn tự đẩy xuống sát đáy màn hình khi nội dung trang ngắn (nhờ khối nội dung ở
-          giữa có flex:1, xem className="p-2 p-md-3" bên dưới) — đây là kiểu "sticky footer"
-          bằng flexbox, khác hẳn position:sticky/fixed. */}
+      {/* ĐÃ SỬA (2026-09-15 — đổi cấu trúc menu: navbar-dark ngang -> sidebar trái sáng
+          màu + topbar sáng riêng, theo yêu cầu "dọn nhà" menu cho đỡ phèn, dễ mở rộng
+          route sau này chỉ bằng cách thêm 1 mục trong sidebar). Khung ngoài vẫn flex
+          column + minHeight:100vh để footer "Phản hồi/Cập nhật lần cuối" nằm đúng cuối
+          trang theo dòng chảy bình thường, y hệt trước (xem chú thích tại chính footer
+          đó, không đổi gì cả). Bên dưới topbar giờ là 1 hàng flex gồm sidebar trái (ẩn/
+          hiện qua isSidebarOpen, nút 3 gạch trên topbar điều khiển) + cột nội dung
+          chính bên phải (chứa Routes + footer, không đổi logic bên trong). */}
       <div style={{ minHeight: '100vh', backgroundColor: '#f4f6f9', display: 'flex', flexDirection: 'column' }}>
-        
-        <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top">
-          <div className="container-fluid px-4">
-            {/* ĐÃ THÊM: logo trường ở góc trên-trái, đứng cùng dòng với tên hệ thống — logo
-                tự thu nhỏ ở màn hình hẹp (xem .app-logo trong App.css) để cụm thương hiệu
-                không bị vỡ dòng, tránh phải xuống 2 dòng hay tách cột trên di động.
-                ĐÃ SỬA: bỏ mục "Trang chủ" khỏi menu chính -> gắn lối về trang chủ ngay vào
-                đây (cả logo lẫn chữ đều bấm được), đổi tên "HỆ THỐNG TUYỂN SINH" 1 dòng
-                thành "HỆ THỐNG / QUẢN LÝ SINH VIÊN" 2 dòng, chữ nhỏ lại, căn giữa. */}
-            <NavLink
-              to="/"
-              end
-              onClick={() => setIsNavCollapsed(true)}
-              className="navbar-brand fw-bold d-flex align-items-center text-decoration-none"
-              style={{ color: '#5edcf6', letterSpacing: '0.5px' }}
-            >
-              <img src={logoPhuXuan} alt="Phú Xuan University" className="app-logo me-2" />
-              <i className="bi bi-mortarboard-fill me-2"></i>
-              <span className="d-flex flex-column text-center lh-1" style={{ fontSize: '0.9rem' }}>
-                <span>HỆ THỐNG</span>
-                <span>QUẢN LÝ SINH VIÊN</span>
-              </span>
-            </NavLink>
 
-            {/* CỤM TÀI KHOẢN — ĐÃ KÉO RA KHỎI navbar-collapse: trước đây nằm chung trong menu
-                ☰ nên trên di động phải mở hẳn menu mới thấy đang đăng nhập là ai / mới đăng
-                xuất được. Giờ luôn hiển thị ngang hàng ngay cạnh thương hiệu, nhờ ms-auto +
-                flex-wrap sẵn có của .navbar nên màn quá hẹp sẽ tự xuống dòng chứ không tràn. */}
-            <div className="nav-item dropdown d-flex align-items-center flex-shrink-0 position-relative ms-auto me-2 me-lg-3 mt-2 mt-lg-0 order-lg-2" ref={userDropdownRef}>
-              {/* ĐÃ SỬA: ẩn username + vai trò khỏi nút bấm — giờ chỉ còn avatar, gọn hơn. Tên
-                  tài khoản (displayName) chuyển vào bên trong menu xổ xuống, xem bên dưới.
-                  ĐÃ BỎ class "dropdown-toggle" (theo yêu cầu — bỏ mũi tên xổ xuống): class này
-                  của Bootstrap chỉ dùng để VẼ mũi tên (::after) + chỉnh padding cho chỗ mũi
-                  tên đó, không liên quan gì tới việc mở/đóng menu — menu này tự quản lý bằng
-                  state isUserDropdownOpen + onClick thủ công bên dưới, không dùng JS dropdown
-                  gốc của Bootstrap, nên bỏ class đi không ảnh hưởng chức năng gì cả. */}
+        {/* TOPBAR — ĐÃ SỬA: đổi nền từ navbar-dark bg-dark sang trắng sáng, thêm nút 3
+            gạch (điều khiển isSidebarOpen) bên trái cạnh logo + chuông thông báo (MỚI)
+            bên phải. Menu tài khoản giữ NGUYÊN logic cũ (chỉ đổi text-light -> mặc định
+            tối vì nền giờ sáng). */}
+        <div className="d-flex align-items-center shadow-sm sticky-top bg-white px-3" style={{ height: '56px', flexShrink: 0, zIndex: 1040, borderBottom: '1px solid #e9ecef' }}>
+          <button
+            className="btn btn-sm btn-light border-0 me-2"
+            type="button"
+            aria-label={isSidebarOpen ? 'Ẩn menu' : 'Hiện menu'}
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          >
+            {/* ĐÃ SỬA (theo phản hồi — icon 3 gạch không hiện): trước đây dùng class
+                "bi bi-list" (phụ thuộc webfont bootstrap-icons — nếu font này không
+                được nạp đúng ở trang, icon vô hình dù nút vẫn bấm được, dễ gây cảm giác
+                "bấm không có gì xảy ra"). Đổi sang SVG vẽ tay nội tuyến — luôn hiện,
+                không phụ thuộc font nào cả. */}
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 6H19M3 11H19M3 16H19" stroke="#212529" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+
+          <NavLink to="/" end className="d-flex align-items-center text-decoration-none flex-shrink-0" style={{ color: '#037683' }}>
+            <img src={logoPhuXuan} alt="Phú Xuan University" className="app-logo me-2" />
+            <span className="fw-bold d-none d-sm-inline" style={{ fontSize: '0.95rem' }}>HỆ THỐNG QUẢN LÝ SINH VIÊN</span>
+          </NavLink>
+
+          <div className="ms-auto d-flex align-items-center gap-3">
+            {/* CHUÔNG THÔNG BÁO — ĐÃ THÊM. Nội dung tạm lấy 2 nguồn có sẵn: hồ sơ chờ ký
+                (danh sách thật) + số hồ sơ chờ xác nhận định danh (chỉ có số, chưa có
+                API danh sách "của riêng tôi" để liệt kê từng hồ sơ — xem chú thích tại
+                chỗ khai báo danhSachChoKy phía trên). Các loại thông báo khác (yêu cầu
+                bổ sung hồ sơ, hoàn tác, được duyệt...) sau này thêm vào đúng chỗ cộng
+                tongSoThongBao + thêm 1 khối hiển thị tương tự bên dưới. */}
+            <div className="position-relative" ref={notiRef}>
+              <button
+                className="btn btn-sm btn-light border-0 position-relative"
+                type="button"
+                aria-label="Thông báo"
+                onClick={() => setIsNotiOpen(!isNotiOpen)}
+              >
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M10 2C7.5 2 5.5 4 5.5 6.5V9.5L4 13H16L14.5 9.5V6.5C14.5 4 12.5 2 10 2Z" stroke="#212529" strokeWidth="1.4" strokeLinejoin="round" />
+                  <path d="M8 15.5C8 16.6 8.9 17.5 10 17.5C11.1 17.5 12 16.6 12 15.5" stroke="#212529" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+                {tongSoThongBao > 0 && (
+                  <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style={{ fontSize: '0.6rem' }}>
+                    {tongSoThongBao > 99 ? '99+' : tongSoThongBao}
+                  </span>
+                )}
+              </button>
+
+              {isNotiOpen && (
+                <div className="shadow bg-white" style={{ position: 'absolute', right: 0, top: '100%', marginTop: '8px', width: '320px', maxHeight: '420px', overflowY: 'auto', borderRadius: '10px', zIndex: 1050 }}>
+                  <div className="px-3 py-2 border-bottom fw-bold small">Thông báo</div>
+
+                  {tongSoThongBao === 0 ? (
+                    <div className="px-3 py-4 text-center text-muted small">Không có thông báo mới.</div>
+                  ) : (
+                    <>
+                      {soLuongChoKy?.soLuong > 0 && (
+                        <div>
+                          <div className="px-3 pt-2 pb-1 text-muted" style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>Hồ sơ chờ ký</div>
+                          {/* LƯU Ý: tên field (tieuDe/tenFile/hoTen) bên dưới là DỰ ĐOÁN,
+                              chưa có mẫu response thật của fetchDanhSachChoToiKy để đối
+                              chiếu — nếu hiện sai/trống, gửi 1 đoạn console.log mẫu để
+                              sửa đúng tên field. */}
+                          {!danhSachChoKy && (
+                            <div className="px-3 py-2 text-muted small">Đang tải...</div>
+                          )}
+                          {(danhSachChoKy || []).slice(0, 5).map((item, idx) => (
+                            <NavLink
+                              key={idx}
+                              to="/ho-so-cho-ky"
+                              className="dropdown-item py-2 px-3 small text-wrap"
+                              onClick={() => setIsNotiOpen(false)}
+                            >
+                              {item.tieuDe || item.tenFile || item.hoTen || `Hồ sơ #${idx + 1}`}
+                            </NavLink>
+                          ))}
+                          <NavLink to="/ho-so-cho-ky" className="dropdown-item py-2 px-3 small text-primary" onClick={() => setIsNotiOpen(false)}>
+                            Xem tất cả ({soLuongChoKy.soLuong}) →
+                          </NavLink>
+                        </div>
+                      )}
+                      {soLuongChoXacNhan > 0 && (
+                        <div className="border-top">
+                          <NavLink to="/xac-nhan-dinh-danh" className="dropdown-item py-2 px-3 small" onClick={() => setIsNotiOpen(false)}>
+                            <svg width="15" height="15" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px', color: '#d97706' }}><path d="M9 3L16 15H2L9 3Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M9 7.5V10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /><circle cx="9" cy="12.7" r="0.9" fill="currentColor" /></svg>
+                            {soLuongChoXacNhan} hồ sơ cần xác nhận định danh
+                          </NavLink>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* MENU TÀI KHOẢN — logic y hệt bản cũ 100%, chỉ đổi màu chữ vì topbar sáng. */}
+            <div className="position-relative" ref={userDropdownRef}>
               <a
-                className="nav-link text-light d-flex align-items-center p-0"
+                className="d-flex align-items-center p-0"
                 href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setIsUserDropdownOpen(!isUserDropdownOpen);
-                }}
+                onClick={(e) => { e.preventDefault(); setIsUserDropdownOpen(!isUserDropdownOpen); }}
                 style={{ cursor: 'pointer' }}
               >
                 {currentUser.avatar ? (
-                  <img src={currentUser.avatar} alt="avatar" className="rounded-circle me-2" width="32" height="32" />
+                  <img src={currentUser.avatar} alt="avatar" className="rounded-circle" width="32" height="32" />
                 ) : (
-                  <i className="bi bi-person-circle fs-4 me-2"></i>
+                  <svg width="26" height="26" viewBox="0 0 18 18" fill="none" style={{ color: '#6c757d' }}><circle cx="9" cy="9" r="8" stroke="currentColor" strokeWidth="1.3" /><circle cx="9" cy="7" r="2.3" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 14.2C5.2 12 7 10.8 9 10.8C11 10.8 12.8 12 13.5 14.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
                 )}
               </a>
 
-              {/* ĐÃ THÊM class "user-account-menu" (theo phản hồi): chữ trong menu này đang to
-                  hơn hẳn chữ trong các trang — vì dùng thẳng class Bootstrap .dropdown-menu/
-                  .dropdown-item (đơn vị rem), ăn theo font-size GỐC 18px của :root
-                  (index.css), trong khi các trang (.xettuyen-wrapper, .thamdinh-page...) đều
-                  tự override xuống 15px. Ép font-size 15px cho khớp cỡ chữ chung — xem CSS
-                  tại App.css. */}
               <ul
                 className={`dropdown-menu dropdown-menu-end shadow border-0 mt-2 user-account-menu ${isUserDropdownOpen ? 'show' : ''}`}
                 style={{ position: 'absolute', right: 0, top: '100%' }}
               >
-                {/* ĐÃ THÊM: dòng username + avatar đầu menu — bấm vào sẽ mở trang hồ sơ cá
-                    nhân của tài khoản đang đăng nhập. Trang đó làm sau (hiện là placeholder
-                    "đang xây dựng", xem route /ho-so-ca-nhan trong Routes bên dưới) nên
-                    KHÔNG hiện lỗi/trắng trang khi bấm vào trước khi trang thật xong. */}
                 <li>
                   <NavLink
                     to="/ho-so-ca-nhan"
                     className="dropdown-item py-2 d-flex align-items-center gap-2"
-                    onClick={() => {
-                      setIsNavCollapsed(true);
-                      setIsUserDropdownOpen(false);
-                    }}
+                    onClick={() => setIsUserDropdownOpen(false)}
                   >
                     {currentUser.avatar ? (
                       <img src={currentUser.avatar} alt="avatar" className="rounded-circle" width="28" height="28" />
                     ) : (
-                      <i className="bi bi-person-circle fs-5"></i>
+                      <svg width="22" height="22" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" stroke="currentColor" strokeWidth="1.3" /><circle cx="9" cy="7" r="2.3" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 14.2C5.2 12 7 10.8 9 10.8C11 10.8 12.8 12 13.5 14.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
                     )}
                     <span className="fw-bold">{displayName}</span>
                   </NavLink>
@@ -451,41 +556,11 @@ const App = () => {
                   <NavLink
                     to="/user-stats"
                     className="dropdown-item py-2"
-                    onClick={() => {
-                      setIsNavCollapsed(true);
-                      setIsUserDropdownOpen(false);
-                    }}
+                    onClick={() => setIsUserDropdownOpen(false)}
                   >
-                    <i className="bi bi-graph-up-arrow me-2 text-primary"></i> Thống kê cá nhân
+                    <svg width="15" height="15" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><path d="M3 15V3M3 15H15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /><path d="M6 12V8M9.5 12V5M13 12V9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg> Thống kê cá nhân
                   </NavLink>
                 </li>
-                {/* ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): mục "Hồ sơ chờ ký" — kèm badge số
-                    lượng đang chờ (soLuongChoKy, xem useQuery khai báo cùng currentUser ở
-                    trên). Hiện cho MỌI tài khoản đã đăng nhập, không riêng vai trò nào —
-                    cùng lý do với route /ho-so-cho-ky (xem chú thích tại Routes bên dưới). */}
-                <li>
-                  <NavLink
-                    to="/ho-so-cho-ky"
-                    className="dropdown-item py-2 d-flex align-items-center justify-content-between"
-                    onClick={() => {
-                      setIsNavCollapsed(true);
-                      setIsUserDropdownOpen(false);
-                    }}
-                  >
-                    <span><i className="bi bi-vector-pen me-2 text-primary"></i> Hồ sơ chờ ký</span>
-                    {soLuongChoKy?.soLuong > 0 && (
-                      <span className="badge bg-danger rounded-pill">{soLuongChoKy.soLuong}</span>
-                    )}
-                  </NavLink>
-                </li>
-                {/* ĐÃ THÊM (theo phản hồi): mục "Xuất Excel" — CHỈ hiện khi đang ở trang Thẩm
-                    định (isThamDinhPage, xem khai báo ở đầu component). Bấm vào chỉ BẮN sự
-                    kiện DOM "thamdinh:export-excel" — App.jsx không tự có dữ liệu bảng Thẩm
-                    định (state đó sống trong ThamDinhPage.jsx), nên dùng đúng cơ chế
-                    window.dispatchEvent/addEventListener đã có sẵn trong dự án (xem
-                    "app:session-expired" ở studentApi.js/App.jsx) để "gọi" hàm xuất file thật
-                    sự đang nằm bên ThamDinhPage.jsx, không cần nâng state/props lằng nhằng.
-                    Ẩn hẳn (không disable) ở các trang khác vì nút bấm sẽ không làm gì cả. */}
                 {isThamDinhPage && (
                   <>
                     <li><hr className="dropdown-divider" /></li>
@@ -497,12 +572,9 @@ const App = () => {
                           setIsUserDropdownOpen(false);
                         }}
                       >
-                        <i className="bi bi-file-earmark-excel me-2 text-success"></i> Export (All Columns)
+                        <svg width="15" height="15" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><rect x="3" y="3" width="12" height="12" rx="1.2" stroke="currentColor" strokeWidth="1.4" /><path d="M3 8H15M9 3V15" stroke="currentColor" strokeWidth="1.4" /></svg> Export (All Columns)
                       </button>
                     </li>
-                    {/* ĐÃ THÊM (theo phản hồi — "Xuất DS tuỳ chọn"): giống hệt cơ chế bắn sự
-                        kiện DOM của "Xuất Excel" ở trên — mở dialog chọn cột bên ThamDinhPage.jsx
-                        thay vì xuất cứng 1 bộ cột cố định. */}
                     <li>
                       <button
                         className="dropdown-item py-2"
@@ -511,7 +583,7 @@ const App = () => {
                           setIsUserDropdownOpen(false);
                         }}
                       >
-                        <i className="bi bi-ui-checks-grid me-2 text-primary"></i> Export (Customized)
+                        <svg width="15" height="15" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><rect x="3" y="3" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" /><rect x="10" y="3" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" /><rect x="3" y="10" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.3" /><path d="M11 12L12 13L14.5 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg> Export (Customized)
                       </button>
                     </li>
                   </>
@@ -519,186 +591,154 @@ const App = () => {
                 <li><hr className="dropdown-divider" /></li>
                 <li>
                   <button className="dropdown-item text-danger py-2" onClick={handleLogoutClick}>
-                    <i className="bi bi-box-arrow-right me-2"></i> Đăng xuất
+                    <svg width="15" height="15" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><path d="M7 3H4C3.4 3 3 3.4 3 4V14C3 14.6 3.4 15 4 15H7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /><path d="M11 12L15 9L11 6M15 9H6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg> Đăng xuất
                   </button>
                 </li>
               </ul>
             </div>
+          </div>
+        </div>
 
-            <button className="navbar-toggler border-0 shadow-none" type="button" onClick={() => setIsNavCollapsed(!isNavCollapsed)}>
-              <span className="navbar-toggler-icon"></span>
-            </button>
+        {/* HÀNG DƯỚI TOPBAR: sidebar trái + cột nội dung chính bên phải. */}
+        <div style={{ display: 'flex', flex: '1 1 auto', minHeight: 0 }}>
 
-            <div className={`${isNavCollapsed ? 'collapse' : ''} navbar-collapse app-nav-collapse order-lg-1`} id="navbarNav">
+          {/* BACKDROP — ĐÃ THÊM: chỉ hiện trên di động khi sidebar đang mở dạng overlay
+              (theo lựa chọn của bạn — ẩn mặc định, bấm menu trượt ra đè lên), bấm vào để
+              đóng lại mà không đẩy nội dung. */}
+          {isMobileNav && isSidebarOpen && (
+            <div
+              onClick={() => setIsSidebarOpen(false)}
+              style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 1039 }}
+            />
+          )}
 
-              {/* MENU CHÍNH: ĐÃ SỬA — gom lại còn đúng 3 nhóm xổ xuống (Tuyển sinh/Thẩm định/
-                  Hệ thống) cho hàng menu đỡ dài, thay vì liệt kê phẳng từng trang như trước.
-                  "Trang chủ" đã bỏ khỏi đây (chuyển sang gắn vào logo/chữ header, xem phía
-                  trên). Mỗi nhóm chỉ hiện nếu tài khoản có quyền với ÍT NHẤT 1 trang bên
-                  trong nhóm đó; từng mục con bên trong vẫn tự kiểm tra quyền riêng như cũ,
-                  phòng trường hợp 1 tài khoản chỉ có quyền 1/2 mục trong nhóm.
+          {/* SIDEBAR TRÁI — ĐÃ THÊM: thay cho 3 nhóm dropdown ngang cũ. Desktop: nằm
+              trong dòng chảy (mở thì đẩy nội dung sang phải, tắt thì content full-width).
+              Di động: overlay cố định đè lên nội dung, tự đóng khi bấm 1 link bên trong
+              (isMobileNav check trong mỗi onClick bên dưới). Logic phân quyền từng nhóm/
+              mục GIỮ NGUYÊN 100% y hệt bản navbar cũ (hasAnyRole), chỉ đổi vỏ hiển thị
+              từ dropdown ngang sang accordion dọc. */}
+          {isSidebarOpen && (
+            <div
+              className="bg-white"
+              style={{
+                width: '230px',
+                flexShrink: 0,
+                borderRight: '1px solid #e9ecef',
+                padding: '14px 10px',
+                overflowY: 'auto',
+                ...(isMobileNav
+                  ? { position: 'fixed', top: '56px', left: 0, bottom: 0, zIndex: 1040, boxShadow: '2px 0 8px rgba(0,0,0,0.15)' }
+                  : { position: 'sticky', top: '56px', height: 'calc(100vh - 56px)', zIndex: 1038 }),
+              }}
+            >
+              <NavLink
+                to="/"
+                end
+                onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }}
+                className={({ isActive }) => `d-flex align-items-center gap-2 px-2 py-2 rounded text-decoration-none mb-2 ${isActive ? 'bg-light fw-bold' : ''}`}
+                style={{ color: '#212529' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', flexShrink: 0 }}><path d="M3 9L9 3L15 9M5 8V15H13V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> Trang chủ
+              </NavLink>
 
-                  ĐÃ SỬA (theo phản hồi — tối ưu menu trên di động): trước đây submenu của cả
-                  3 nhóm dùng kiểu dropdown Bootstrap "nổi đè" (position:absolute) NGAY CẢ khi
-                  đang ở menu ☰ trên di động — khiến bảng menu ☰ trông như bị "khóa chết kích
-                  thước" (submenu nổi đè lên nhóm kế tiếp thay vì đẩy nó xuống, panel ngoài
-                  cùng không "dài ra" theo nội dung thực tế đang mở). Class "app-submenu" thêm
-                  vào mỗi <ul> submenu bên dưới CHỈ đổi hành vi này trên di động (xem media
-                  query trong App.css): submenu chuyển thành khối xổ THỤT VÀO nằm ngay trong
-                  dòng chảy trang (không còn absolute), nên bảng menu ☰ tự cao lên/thấp xuống
-                  đúng theo đang mở nhóm nào. Trên desktop (>=992px) giữ nguyên kiểu dropdown
-                  nổi đè như cũ, không đổi gì. Mỗi nhóm cũng có thêm icon mũi tên xoay chiều
-                  (bi-chevron-down/up) báo hiệu đang đóng/mở. */}
-              <ul className="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-4 gap-2">
-
-                {/* NHÓM 1 — TUYỂN SINH: Quản lý hồ sơ (Nhập học) + Nhập liệu Xét tuyển. */}
-                {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
-                  <li className="nav-item dropdown position-relative" ref={tuyenSinhRef}>
-                    <a
-                      className="nav-link px-3 rounded dropdown-toggle text-light"
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); toggleNavGroup('tuyensinh'); }}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <i className="bi bi-mortarboard-fill me-1"></i> Tuyển sinh
-                      <i className={`bi bi-chevron-right ms-2 small app-menu-chevron ${openGroups.tuyensinh ? 'app-menu-chevron-open' : ''}`}></i>
-                    </a>
-                    <ul
-                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroups.tuyensinh ? 'show' : ''}`}
-                      style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
-                    >
+              {/* NHÓM 1 — TUYỂN SINH */}
+              {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'Admin']) && (
+                <div className="mb-1" ref={tuyenSinhRef}>
+                  <button
+                    type="button"
+                    className="btn w-100 d-flex align-items-center justify-content-between px-2 py-2 border-0"
+                    onClick={() => toggleNavGroup('tuyensinh')}
+                    style={{ color: '#212529', background: openGroups.tuyensinh ? '#f1f3f5' : 'transparent' }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}><svg width="16" height="16" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px' }}><path d="M9 3L16 6.5L9 10L2 6.5L9 3Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M5 8V12C5 12 6.5 14 9 14C11.5 14 13 12 13 12V8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>Tuyển sinh</span>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ transform: openGroups.tuyensinh ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s ease', flexShrink: 0 }}><path d="M4 2L8 6L4 10" stroke="#6c757d" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
+                  {openGroups.tuyensinh && (
+                    <div className="ps-4">
                       {hasAnyRole(currentUser.roles, ['CanBo', 'ThamDinh', 'Admin']) && (
-                        <li>
-                          <NavLink
-                            to="/thu-ho-so-nhap-hoc"
-                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
-                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
-                          >
-                            <i className="bi bi-people-fill me-2"></i>Thu hồ sơ trực tiếp
-                          </NavLink>
-                        </li>
+                        <NavLink to="/thu-ho-so-nhap-hoc" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><circle cx="6" cy="6" r="2" stroke="currentColor" strokeWidth="1.4" /><circle cx="12" cy="6" r="2" stroke="currentColor" strokeWidth="1.4" /><path d="M2 15C2 12 4 10.5 6 10.5C8 10.5 10 12 10 15M8 15C8 12.5 9.7 11 12 11C14.3 11 16 12.5 16 15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>Thu hồ sơ trực tiếp
+                        </NavLink>
                       )}
                       {hasAnyRole(currentUser.roles, ['TuyenSinh', 'ThamDinh', 'Admin']) && (
-                        <li>
-                          <NavLink
-                            to="/xet-tuyen"
-                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
-                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
-                          >
-                            <i className="bi bi-card-checklist me-2"></i>Nhập hồ sơ trực tuyến
-                          </NavLink>
-                        </li>
+                        <NavLink to="/xet-tuyen" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><rect x="4" y="3" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4" /><path d="M7 2.5H11V4.5H7V2.5Z" stroke="currentColor" strokeWidth="1.4" /><path d="M6.5 8H11.5M6.5 11H11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>Nhập hồ sơ trực tuyến
+                        </NavLink>
                       )}
-                      {/* ĐÃ CHUYỂN vào đây (theo yêu cầu — mở "Tạo yêu cầu ký số" thêm cho
-                          TuyenSinh/CanBo): trước đây nằm trong nhóm "Thẩm định" (chỉ
-                          ThamDinh/Admin thấy nhóm đó), giờ mở rộng quyền nên chuyển sang
-                          đúng nhóm "Tuyển sinh" — nhóm này vốn đã hiện cho cả CanBo/
-                          TuyenSinh/ThamDinh/Admin (khớp đúng outer gate NHÓM 1 phía trên). */}
                       {hasAnyRole(currentUser.roles, ['ThamDinh', 'TuyenSinh', 'CanBo', 'Admin']) && (
-                        <li>
-                          <NavLink
-                            to="/ho-so-ky-so"
-                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
-                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
-                          >
-                            <i className="bi bi-file-earmark-check me-2"></i>Hồ sơ ký số
-                          </NavLink>
-                        </li>
+                        <NavLink to="/ho-so-ky-so" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><path d="M5 2H11L14 5V16H5V2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M7 10L8.5 11.5L11.5 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>Hồ sơ ký số
+                        </NavLink>
                       )}
-                    </ul>
-                  </li>
-                )}
+                    </div>
+                  )}
+                </div>
+              )}
 
-                {/* NHÓM 2 — THẨM ĐỊNH: Ban Thẩm định + Xác nhận định danh. */}
-                {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
-                  <li className="nav-item dropdown position-relative" ref={thamDinhRef}>
-                    <a
-                      className="nav-link px-3 rounded dropdown-toggle text-light"
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); toggleNavGroup('thamdinh'); }}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <i className="bi bi-clipboard-check me-1"></i> Thẩm định
-                      <i className={`bi bi-chevron-right ms-2 small app-menu-chevron ${openGroups.thamdinh ? 'app-menu-chevron-open' : ''}`}></i>
-                    </a>
-                    <ul
-                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroups.thamdinh ? 'show' : ''}`}
-                      style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
-                    >
+              {/* NHÓM 2 — THẨM ĐỊNH */}
+              {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
+                <div className="mb-1" ref={thamDinhRef}>
+                  <button
+                    type="button"
+                    className="btn w-100 d-flex align-items-center justify-content-between px-2 py-2 border-0"
+                    onClick={() => toggleNavGroup('thamdinh')}
+                    style={{ color: '#212529', background: openGroups.thamdinh ? '#f1f3f5' : 'transparent' }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}><svg width="16" height="16" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px' }}><rect x="4" y="3" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4" /><path d="M7 2.5H11V4.5H7V2.5Z" stroke="currentColor" strokeWidth="1.4" /><path d="M7 9.5L8.3 11L11.2 7.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>Thẩm định</span>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ transform: openGroups.thamdinh ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s ease', flexShrink: 0 }}><path d="M4 2L8 6L4 10" stroke="#6c757d" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
+                  {openGroups.thamdinh && (
+                    <div className="ps-4">
                       {hasAnyRole(currentUser.roles, ['ThamDinh', 'Admin']) && (
-                        <li>
-                          <NavLink
-                            to="/tham-dinh"
-                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
-                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
-                          >
-                            <i className="bi bi-clipboard-check me-2"></i>Ban Thẩm định
-                          </NavLink>
-                        </li>
+                        <NavLink to="/tham-dinh" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><rect x="4" y="3" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.4" /><path d="M7 2.5H11V4.5H7V2.5Z" stroke="currentColor" strokeWidth="1.4" /><path d="M7 9.5L8.3 11L11.2 7.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>Ban Thẩm định
+                        </NavLink>
                       )}
                       {hasAnyRole(currentUser.roles, ['Admin', 'ThamDinh']) && (
-                        <li>
-                          <NavLink
-                            to="/xac-nhan-dinh-danh"
-                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
-                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
-                          >
-                            <i className="bi bi-person-fill-exclamation me-2"></i>Định danh hồ sơ
-                          </NavLink>
-                        </li>
+                        <NavLink to="/xac-nhan-dinh-danh" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><rect x="3" y="4" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" /><circle cx="7" cy="8.3" r="1.5" strokeWidth="1.3" stroke="currentColor" /><path d="M5 12C5 10.6 5.9 9.8 7 9.8C8.1 9.8 9 10.6 9 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /><path d="M11 8H13M11 10.5H13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>Định danh hồ sơ
+                        </NavLink>
                       )}
-                    </ul>
-                  </li>
-                )}
+                    </div>
+                  )}
+                </div>
+              )}
 
-                {/* NHÓM 3 — HỆ THỐNG: Kho tra cứu sinh viên + Cấu hình hệ thống.
-                    ĐÃ THÊM "DaoTao" (2026-09-14) — role mới cho bộ phận Đào tạo, chỉ cần
-                    thấy đúng mục "Student Overview", không cần "Cấu hình hệ thống". */}
-                {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']) && (
-                  <li className="nav-item dropdown position-relative" ref={heThongRef}>
-                    <a
-                      className="nav-link px-3 rounded dropdown-toggle text-light"
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); toggleNavGroup('hethong'); }}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <i className="bi bi-hdd-stack-fill me-1"></i> Hệ thống
-                      <i className={`bi bi-chevron-right ms-2 small app-menu-chevron ${openGroups.hethong ? 'app-menu-chevron-open' : ''}`}></i>
-                    </a>
-                    <ul
-                      className={`dropdown-menu app-submenu shadow border-0 mt-2 ${openGroups.hethong ? 'show' : ''}`}
-                      style={{ position: 'absolute', left: 0, top: '100%', zIndex: 1030 }}
-                    >
+              {/* NHÓM 3 — HỆ THỐNG */}
+              {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']) && (
+                <div className="mb-1" ref={heThongRef}>
+                  <button
+                    type="button"
+                    className="btn w-100 d-flex align-items-center justify-content-between px-2 py-2 border-0"
+                    onClick={() => toggleNavGroup('hethong')}
+                    style={{ color: '#212529', background: openGroups.hethong ? '#f1f3f5' : 'transparent' }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}><svg width="16" height="16" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px' }}><path d="M9 2L16 5.5L9 9L2 5.5L9 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M2 9.5L9 13L16 9.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M2 13L9 16.5L16 13" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>Hệ thống</span>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ transform: openGroups.hethong ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s ease', flexShrink: 0 }}><path d="M4 2L8 6L4 10" stroke="#6c757d" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
+                  {openGroups.hethong && (
+                    <div className="ps-4">
                       {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']) && (
-                        <li>
-                          <NavLink
-                            to="/quan-ly-ho-so-moi"
-                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
-                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
-                          >
-                            <i className="bi bi-archive-fill me-2"></i>Student Overview
-                          </NavLink>
-                        </li>
+                        <NavLink to="/quan-ly-ho-so-moi" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><rect x="2.5" y="3" width="13" height="3.5" rx="1" stroke="currentColor" strokeWidth="1.4" /><path d="M3.5 6.5V14.5H14.5V6.5" stroke="currentColor" strokeWidth="1.4" /><path d="M7 9.5H11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>Student Overview
+                        </NavLink>
                       )}
                       {hasAnyRole(currentUser.roles, ['Admin']) && (
-                        <li>
-                          <NavLink
-                            to="/settings"
-                            onClick={() => { setIsNavCollapsed(true); closeAllNavGroups(); }}
-                            className={({ isActive }) => `dropdown-item text-start py-2 ${isActive ? 'active' : ''}`}
-                          >
-                            <i className="bi bi-gear-fill me-2"></i>Cấu hình hệ thống
-                          </NavLink>
-                        </li>
+                        <NavLink to="/settings" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
+                          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><circle cx="9" cy="9" r="2.3" stroke="currentColor" strokeWidth="1.4" /><path d="M9 2.5V4.3M9 13.7V15.5M15.5 9H13.7M4.3 9H2.5M13.5 4.5L12.2 5.8M5.8 12.2L4.5 13.5M13.5 13.5L12.2 12.2M5.8 5.8L4.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>Cấu hình hệ thống
+                        </NavLink>
                       )}
-                    </ul>
-                  </li>
-                )}
-              </ul>
-
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        </nav>
+          )}
+
+          {/* CỘT NỘI DUNG CHÍNH — chứa Routes + footer, KHÔNG đổi gì bên trong (xem tiếp
+              bên dưới, y hệt bản cũ). */}
+          <div style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
         <div className="p-2 p-md-3" style={{ flex: '1 0 auto' }}>
           {/* VÙNG ĐỊNH TUYẾN CHÍNH (Chỉ giữ 1 khối Routes duy nhất) */}
@@ -814,7 +854,7 @@ const App = () => {
             {/* Trang báo lỗi 404 */}
             <Route path="*" element={
               <div className="d-flex flex-column align-items-center justify-content-center mt-5 pt-5">
-                <h1 className="text-muted display-1"><i className="bi bi-emoji-frown"></i></h1>
+                <h1 className="text-muted"><svg width="64" height="64" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" stroke="currentColor" strokeWidth="1.3" /><circle cx="6.3" cy="7.5" r="0.9" fill="currentColor" /><circle cx="11.7" cy="7.5" r="0.9" fill="currentColor" /><path d="M6 13C6.8 11.7 7.8 11 9 11C10.2 11 11.2 11.7 12 13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg></h1>
                 <h3 className="text-muted mt-3">404 - Không tìm thấy trang</h3>
               </div>
             } />
@@ -840,6 +880,8 @@ const App = () => {
           <span className="text-muted">Cập nhật lần cuối bởi Nguyễn Tiến Thịnh</span>
         </div>
 
+          </div>
+        </div>
       </div>
     </HashRouter>
   );
