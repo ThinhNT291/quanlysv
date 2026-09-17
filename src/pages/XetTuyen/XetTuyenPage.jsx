@@ -2895,7 +2895,7 @@ const XetTuyenPage = () => {
               <div className="modal-dialog modal-dialog-centered">
                   <div className="modal-content shadow-lg">
                       <div className="modal-header bg-info text-white">
-                          <h5 className="modal-title fw-bold">📂 IMPORT DỮ LIỆU TỪ EXCEL</h5>
+                          <h5 className="modal-title fw-bold">📂 NHẬP DỮ LIỆU TỪ EXCEL</h5>
                           <button type="button" className="btn-close btn-close-white" onClick={() => {setIsImportModalOpen(false); setImportFile(null); setImportStatus("");}}></button>
                       </div>
                       <div className="modal-body p-4">
@@ -2903,24 +2903,24 @@ const XetTuyenPage = () => {
                               TRƯỚC khi tải file mẫu — quyết định luôn cả bộ cột điểm trong file mẫu
                               lẫn cách executeImport() đọc/tính điểm khi import lại chính file đó. */}
                           <div className="mb-3">
-                              <label className="form-label fw-bold small mb-1">Phương thức xét điểm của file này</label>
+                              <label className="form-label fw-bold small mb-1">Chọn phương thức xét tuyển</label>
                               <select className="form-select form-select-sm" value={importPhuongThuc} onChange={(e) => setImportPhuongThuc(e.target.value)}>
-                                  <option value="THI_THPT">Điểm thi THPT (11 cột, mỗi môn 1 điểm)</option>
-                                  <option value="HOC_BA">Điểm học bạ (mỗi môn 3 cột: Lớp 10/11/12)</option>
-                                  <option value="HOC_BA_2025">Điểm học bạ (TBTS 2025) (mỗi môn 3 cột: HK2/11, HK1/12, HK2/12)</option>
-                                  <option value="HOC_BA_DAY_DU">Điểm học bạ đầy đủ (mỗi môn 6 cột — hệ thống tự so & chọn phương án Học bạ/TBTS 2025 có lợi hơn)</option>
-                                  <option value="VAN_BANG_1">Xét từ văn bằng 1/Liên thông (không xét điểm môn học — chỉ ĐTB toàn khóa Hệ 4/10)</option>
+                                  <option value="THI_THPT">Điểm thi THPT</option>
+                                  <option value="HOC_BA">Điểm học bạ (TBTS 2026)</option>
+                                  <option value="HOC_BA_2025">Điểm học bạ (TBTS 2025)</option>
+                                  <option value="HOC_BA_DAY_DU">Điểm học bạ đầy đủ</option>
+                                  <option value="VAN_BANG_1">Xét từ văn bằng 1/Liên thông</option>
                               </select>
                           </div>
                           <button className="btn btn-outline-primary w-100 mb-3 fw-bold" onClick={handleDownloadTemplate} disabled={dangTaiFileMau}>
-                              {dangTaiFileMau ? '⏳ Đang tạo file...' : '⬇️ Tải file mẫu'}
+                              {dangTaiFileMau ? '⏳ Processing...' : '⬇️ Tải file mẫu'}
                           </button>
                           <div className="d-flex align-items-center gap-2 p-2 border rounded bg-light mb-3">
                               <div className="flex-grow-1 text-truncate text-muted small">{importFile ? importFile.name : "Chọn file dữ liệu..."}</div>
                               <button className="btn btn-primary btn-sm fw-bold" onClick={() => importFileRef.current.click()}>📁 Chọn file</button>
                           </div>
                           <input type="file" ref={importFileRef} accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImportFileChange} />
-                          <div className="alert alert-secondary small mb-0">Chấp nhận file Excel (.xlsx, .xls) hoặc CSV chuẩn. Dòng 2 là hướng dẫn sẽ tự bỏ qua.</div>
+                          <div className="alert alert-secondary small mb-0">Chấp nhận file Excel (.xlsx, .xls) hoặc CSV chuẩn. Dòng 2 là dòng mẫu sẽ tự bỏ qua.</div>
                       </div>
                       <div className="modal-footer bg-light">
                           <span className="text-primary fw-bold me-auto small">{importStatus}</span>
