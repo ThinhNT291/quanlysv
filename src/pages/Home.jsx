@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, NavLink } from 'react-router-dom';
 import './Home.css';
 // ĐÃ THÊM: ảnh nền thật cho từng thẻ (ông gửi 4 ảnh, đặt đúng theo thứ tự ông chỉ định)
 import imgNhapHoc from '../assets/nhaphoc.jpg';
@@ -9,7 +9,7 @@ import imgThongKe from '../assets/thongke.jpg';
 import imgCauHinh from '../assets/cauhinh.jpg';
 // ĐÃ THÊM: 2 nguồn dữ liệu thật cho khối "Việc cần xử lý" + "Hoạt động gần đây" bên
 // dưới lưới thẻ — dùng lại action đã có sẵn, không tạo action GAS mới.
-import { laySoLuongChoToiKy, fetchSoLuongCanXacNhanDinhDanhCuaToi, fetchLogs, fetchDanhSachBaoThieu, fetchThongKeTrangThaiThamDinh, fetchHoatDong24h } from '../api/studentApi';
+import { laySoLuongChoToiKy, fetchSoLuongCanXacNhanDinhDanhCuaToi, fetchLogs, fetchDanhSachBaoThieu, fetchThongKeTrangThaiThamDinh, fetchHoatDong24h, fetchBangTinMoiNhat } from '../api/studentApi';
 
 // DANH SÁCH THẺ CHỨC NĂNG — mỗi thẻ ứng với 1 route đã có sẵn trong App.jsx, cùng
 // điều kiện phân quyền y hệt menu ngang (hasAnyRole) để Trang chủ không lộ ra
@@ -138,6 +138,11 @@ const Home = ({ currentUser }) => {
   const [activities, setActivities] = useState([]);
   const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [hoatDong24h, setHoatDong24h] = useState(null);
+  // ĐÃ THÊM: "Tin tức mới nhất" (Bảng tin, trang mới "Quản lý văn bản") — chỉ hiện mục
+  // "Tin tức" (không hiện "Văn bản hành chính") ở khối này, lấy 3 tin đầu tiên (đã sắp
+  // mới nhất lên đầu ở backend, xem hdGet_layBangTinMoiNhat/VanBan.gs).
+  const [tinTucMoi, setTinTucMoi] = useState([]);
+  const [tinTucLoading, setTinTucLoading] = useState(true);
   useEffect(() => {
     if (!currentUser?.username) { setActivitiesLoading(false); return; }
     let daHuy = false;
@@ -146,6 +151,10 @@ const Home = ({ currentUser }) => {
       .catch(() => {})
       .finally(() => { if (!daHuy) setActivitiesLoading(false); });
     fetchHoatDong24h().then(d => { if (!daHuy) setHoatDong24h(d); }).catch(() => {});
+    fetchBangTinMoiNhat()
+      .then(list => { if (!daHuy) setTinTucMoi((Array.isArray(list) ? list : []).filter(it => it.loai === 'Tin tức').slice(0, 3)); })
+      .catch(() => {})
+      .finally(() => { if (!daHuy) setTinTucLoading(false); });
     return () => { daHuy = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -351,6 +360,27 @@ const Home = ({ currentUser }) => {
                 <li key={idx}>
                   <span className="home-activity-time">{log.thoiGian || log.time || log.timestamp || ''}</span>
                   <span className="home-activity-desc">{log.noiDung || log.hanhDong || log.action || log.description || 'Hoạt động'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="home-overview-panel">
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <h6 className="fw-bold mb-0">Tin tức mới nhất</h6>
+            <NavLink to="/quan-ly-van-ban" className="small text-decoration-none">Xem tất cả →</NavLink>
+          </div>
+          {tinTucLoading ? (
+            <div className="text-muted small">Đang tải...</div>
+          ) : tinTucMoi.length === 0 ? (
+            <div className="text-center py-2" style={{ fontSize: '28px' }}>🌸</div>
+          ) : (
+            <ul className="home-activity-list mb-0">
+              {tinTucMoi.map((tt, idx) => (
+                <li key={idx}>
+                  <span className="home-activity-time">{tt.ngayDang || ''}</span>
+                  <span className="home-activity-desc">{tt.tieuDe || '(Chưa có tiêu đề)'}</span>
                 </li>
               ))}
             </ul>

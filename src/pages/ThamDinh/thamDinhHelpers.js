@@ -356,13 +356,35 @@ export function generateMaSV(row) {
   return `${maNam}${maHe}${maHinhThuc}${maCCCD}`;
 }
 
+// ĐÃ THÊM (theo yêu cầu — điều kiện tổ hợp riêng khi "Năm tốt nghiệp THPT" chọn đúng
+// "2026"): lựa chọn "2026" là 1 giá trị MỚI, TÁCH BIỆT hoàn toàn với 2 mốc "Trước.../Từ...
+// về sau" hiện có (2 mốc đó chỉ dùng để chặn điểm khu vực ưu tiên, xem
+// biChanKhuVucUTTheoNamTN_TD) — không phụ thuộc/ảnh hưởng bởi bất kỳ điều kiện nào khác.
+// Tổ hợp chỉ được coi là HỢP LỆ (để so sánh chọn tổ hợp điểm cao nhất) nếu CÓ môn Toán
+// hoặc Ngữ văn, VÀ môn đó (tổ hợp có cả 2 thì chỉ cần 1 trong 2) đạt >= 5.33 — tổ hợp nào
+// không đạt bị loại khỏi vòng so sánh, "trượt" xuống đúng tổ hợp hợp lệ kế tiếp một cách
+// tự nhiên vì điều kiện được gộp thẳng vào so sánh "total > maxScore" bên dưới. Dùng CHUNG
+// đúng 1 hàm này cho CẢ getBestScore() (bảng danh sách/KPI) lẫn calculateScores() (modal
+// chi tiết) để 2 nơi luôn ra cùng 1 tổ hợp/điểm — không viết lại công thức song song (cùng
+// nguyên tắc đã áp dụng cho gate Điểm phỏng vấn 15-16 trước đây).
+function toHopHopLeNamTN2026_(namTotNghiepVal, subjects, row) {
+  if (String(namTotNghiepVal || '').trim() !== "2026") return true;
+  const monToanVan = subjects.filter(ma => SUBJ_MAP[ma] === "TOÁN" || SUBJ_MAP[ma] === "NGỮ VĂN");
+  if (monToanVan.length === 0) return false;
+  return monToanVan.some(ma => (parseFloat(getVal(row, [SUBJ_MAP[ma]]).replace(',', '.')) || 0) >= 5.33);
+}
+
 // Trả về { value, combo, unit, empty } thay vì chuỗi HTML dựng sẵn như bản cũ —
 // component tự quyết định cách hiển thị (JSX), tránh phải escape/dangerouslySetInnerHTML.
 export function getBestScore(row) {
   const dtDauVao = getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"]);
   if (dtDauVao === "Tốt nghiệp THPT") {
     const nganh = getVal(row, ["NGÀNH", "NGÀNH ĐÀO TẠO"]);
-    const diemCong = parseFloat(getVal(row, ["ĐIỂM CỘNG"]).replace(',', '.')) || 0;
+    // ĐÃ THÊM (theo yêu cầu — chặn Điểm cộng ở trang Thẩm định): xem chú thích đầy đủ tại
+    // chỗ ép giống hệt trong calculateScores() bên dưới — sửa cả 2 nơi để bảng danh sách/KPI
+    // (dùng getBestScore) và modal chi tiết (dùng calculateScores) không lệch điểm nhau.
+    const diemCongRaw = parseFloat(getVal(row, ["ĐIỂM CỘNG"]).replace(',', '.')) || 0;
+    const diemCong = Math.min(Math.max(diemCongRaw, 0), 3);
     const kvVal = getVal(row, ["KHU VỰC ƯU TIÊN"]);
     const dtVal = getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"]);
     // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): xem chú thích
@@ -380,7 +402,7 @@ export function getBestScore(row) {
         const s2 = parseFloat(getVal(row, [SUBJ_MAP[subjects[1]]]).replace(',', '.')) || 0;
         const s3 = parseFloat(getVal(row, [SUBJ_MAP[subjects[2]]]).replace(',', '.')) || 0;
         const total = s1 + s2 + s3;
-        if (s1 > 0 && s2 > 0 && s3 > 0 && total > maxScore) { maxScore = total; bestCombo = maToHop; }
+        if (s1 > 0 && s2 > 0 && s3 > 0 && total > maxScore && toHopHopLeNamTN2026_(namTotNghiepVal, subjects, row)) { maxScore = total; bestCombo = maToHop; }
       }
     });
 
@@ -580,7 +602,14 @@ function suyRaPhuongThuc(row) {
 // sẵn để component tự render qua JSX.
 export function calculateScores(row, targetNganh) {
   const dtDauVao = getVal(row, ["ĐỐI TƯỢNG ĐẦU VÀO", "ĐỐI TƯỢNG"]);
-  const diemCong = parseFloat(getVal(row, ["ĐIỂM CỘNG"]).replace(',', '.')) || 0;
+  // ĐÃ THÊM (theo yêu cầu — chặn Điểm cộng ở trang Thẩm định): giá trị đọc thô từ cột
+  // "ĐIỂM CỘNG" trên Goc01 (nhập tay hoặc import Excel đều không chặn tại lúc lưu) được
+  // ép về đúng khoảng hợp lệ [0, 3] NGAY TẠI ĐÂY — vượt quá 3 thì tính bằng 3, số âm thì
+  // tính bằng 0. Vì calculateScores() là nguồn tính điểm duy nhất dùng chung (modal thẩm
+  // định, panel tổ hợp, effect xem trước "3 màu sơ tuyển" bên XetTuyenPage.jsx, và gate
+  // 15-16 lúc import Excel), chặn 1 chỗ này là áp dụng được ở mọi nơi cùng lúc.
+  const diemCongRaw = parseFloat(getVal(row, ["ĐIỂM CỘNG"]).replace(',', '.')) || 0;
+  const diemCong = Math.min(Math.max(diemCongRaw, 0), 3);
   const kvVal = getVal(row, ["KHU VỰC ƯU TIÊN"]);
   const dtVal = getVal(row, ["ĐỐI TƯỢ ƯU TIÊN", "ĐỐI TƯỢNG ƯU TIÊN"]);
   // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): xem chú thích
@@ -608,7 +637,7 @@ export function calculateScores(row, targetNganh) {
         const s3 = parseFloat(getVal(row, [SUBJ_MAP[subjects[2]]]).replace(',', '.')) || 0;
         const total = s1 + s2 + s3;
         comboResults.push({ combo: maToHop, s1, s2, s3, total });
-        if (s1 > 0 && s2 > 0 && s3 > 0 && total > maxScore) { maxScore = total; bestCombo = maToHop; }
+        if (s1 > 0 && s2 > 0 && s3 > 0 && total > maxScore && toHopHopLeNamTN2026_(namTotNghiepVal, subjects, row)) { maxScore = total; bestCombo = maToHop; }
       }
     });
 

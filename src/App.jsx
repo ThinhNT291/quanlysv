@@ -18,6 +18,7 @@ import ChiTietHoSoKhoPage from './pages/KhoSinhVien/ChiTietHoSoKhoPage'; // ĐÃ
 import HoSoCaNhanPage from './pages/HoSoCaNhan/HoSoCaNhanPage'; // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 2): thay placeholder "đang xây dựng" cũ
 import ChoKyPage from './pages/KySo/ChoKyPage'; // ĐÃ THÊM (Ký điện tử Pha 1 — Bước 4): trang "Hồ sơ chờ ký"
 import TaoYeuCauKySoPage from './pages/KySo/TaoYeuCauKySoPage'; // ĐÃ THÊM (Ký điện tử Pha 2 — Bước 6): trang "Tạo yêu cầu ký số" (route /ho-so-ky-so)
+import QuanLyVanBanPage from './pages/VanBan/QuanLyVanBanPage'; // ĐÃ THÊM: trang "Quản lý văn bản" (Tin tức + Văn bản hành chính), route /quan-ly-van-ban
 
 // ĐÃ THÊM: helper so quyền không phân biệt hoa/thường, hỗ trợ 1 tài khoản có
 // nhiều role cùng lúc (userRoles là mảng, khớp với "roles" mảng backend trả về ở
@@ -719,6 +720,11 @@ const App = () => {
                   </button>
                   {openGroups.hethong && (
                     <div className="ps-4">
+                      {/* ĐÃ THÊM: "Quản lý văn bản" — mọi role trong nhóm Hệ thống đều xem được
+                          (không có điều kiện hasAnyRole riêng, vì nhóm này đã gate đủ mọi role). */}
+                      <NavLink to="/quan-ly-van-ban" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
+                        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><rect x="3" y="2.5" width="12" height="13" rx="1" stroke="currentColor" strokeWidth="1.4" /><path d="M6 6H12M6 9H12M6 12H9.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>Quản lý văn bản
+                      </NavLink>
                       {hasAnyRole(currentUser.roles, ['CanBo', 'TuyenSinh', 'ThamDinh', 'DaoTao', 'Admin']) && (
                         <NavLink to="/quan-ly-ho-so-moi" onClick={() => { if (isMobileNav) setIsSidebarOpen(false); }} className={({ isActive }) => `d-block py-2 text-decoration-none small ${isActive ? 'fw-bold text-primary' : 'text-secondary'}`}>
                           <svg width="14" height="14" viewBox="0 0 18 18" fill="none" style={{ marginRight: '8px', verticalAlign: '-2px' }}><rect x="2.5" y="3" width="13" height="3.5" rx="1" stroke="currentColor" strokeWidth="1.4" /><path d="M3.5 6.5V14.5H14.5V6.5" stroke="currentColor" strokeWidth="1.4" /><path d="M7 9.5H11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>Student Overview
@@ -821,6 +827,11 @@ const App = () => {
             
             {/* Các trang chung ai cũng vào được */}
             <Route path="/user-stats" element={<UserStatsPage />} />
+
+            {/* ĐÃ THÊM: "Quản lý văn bản" (Tin tức + Văn bản hành chính) — mọi role đăng
+                nhập đều xem được, không bọc ProtectedRoute (giống /user-stats ngay trên).
+                CRUD (chỉ Admin) làm ở đợt sau, đợt này nhập liệu tay trên Sheet BangTin. */}
+            <Route path="/quan-ly-van-ban" element={<QuanLyVanBanPage />} />
 
             {/* ĐÃ SỬA (Ký điện tử Pha 1 — Bước 2): thay placeholder "đang xây dựng" bằng
                 trang thật HoSoCaNhanPage (khối "Chữ ký cá nhân" — nền tảng cho luồng ký

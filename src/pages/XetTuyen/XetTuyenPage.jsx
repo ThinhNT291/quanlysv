@@ -160,6 +160,13 @@ const NAM_HIEN_TAI_TTTHPT = new Date().getFullYear();
 const MOC_NAM_TN_THPT = NAM_HIEN_TAI_TTTHPT - 1;
 const NTN_THPT_TRUOC = `Trước ${MOC_NAM_TN_THPT}`;
 const NTN_THPT_TU = `Từ ${MOC_NAM_TN_THPT} về sau`;
+// ĐÃ THÊM (theo yêu cầu — điều kiện tổ hợp Toán/Văn riêng cho hồ sơ tốt nghiệp THPT năm
+// 2026): lựa chọn thứ 3, TÁCH BIỆT hoàn toàn với 2 mốc "Trước.../Từ... về sau" ở trên (2
+// mốc đó chỉ dùng để chặn khu vực ưu tiên) — chọn đúng "2026" sẽ áp thêm điều kiện tổ hợp
+// xét tuyển tại calculateScores()/getBestScore() (thamDinhHelpers.js): tổ hợp phải có Toán
+// hoặc Văn và 1 trong 2 môn đó phải >= 5.33, không đạt thì tự "trượt" xuống tổ hợp hợp lệ
+// kế tiếp. Là 1 giá trị CỐ ĐỊNH (không tự trượt theo năm hiện tại như NTN_THPT_TRUOC/TU).
+const NTN_2026 = "2026";
 // Hồ sơ có "Năm tốt nghiệp THPT" khớp ĐÚNG chuỗi "Trước..." ở trên -> bị Thông tư mới cấm
 // cộng điểm khu vực ưu tiên. Dùng ĐÚNG 1 hàm này ở MỌI nơi có tính/ghi điểm khu vực ưu tiên
 // (nhập tay lẫn đọc thẳng dữ liệu Trung Gian) để không lệch nhau giữa các chỗ — xem các chỗ
@@ -168,6 +175,11 @@ const NTN_THPT_TU = `Từ ${MOC_NAM_TN_THPT} về sau`;
 // Thẩm định) — CHẶN CẢ trường hợp ai đó điền trực tiếp cột "KHU VỰC ƯU TIÊN" trên sheet Trung
 // Gian mà bỏ qua form, miễn cột "NĂM TỐT NGHIỆP THPT" của dòng đó khớp mốc "Trước...".
 const biChanKhuVucUTTheoNamTN = (namTotNghiep) => String(namTotNghiep || '').trim() === NTN_THPT_TRUOC;
+// ĐÃ THÊM (theo yêu cầu — ẩn field "Năm tốt nghiệp THPT" khi Đối tượng đầu vào không phải
+// "Tốt nghiệp THPT"/"Trung học nghề"): 2 đối tượng này là nhóm DUY NHẤT còn dùng tới field
+// này (khu vực ưu tiên/điều kiện tổ hợp 2026) — các đối tượng còn lại (Trung cấp/Cao đẳng/
+// Đại học...) xét theo Điểm TB toàn khóa, không liên quan.
+const apDungNamTotNghiepThpt = (doituongdauvao) => doituongdauvao === 'Tốt nghiệp THPT' || doituongdauvao === 'Trung học nghề';
 
 const initialFormState = {
   // ĐÃ THÊM (theo yêu cầu — bổ sung Giới tính/Nơi sinh): "gioitinh" dùng ĐÚNG tên field đã
@@ -264,7 +276,7 @@ const getSubjectAverage = (subjId, data) => {
 // (quyết định có hiện ô "Điểm phỏng vấn" hay không, theo yêu cầu: hiện khi điểm tổ hợp
 // nằm trong khoảng 15-16) và effect tính điểm xét tuyển dùng CHUNG đúng 1 nguồn duy nhất,
 // tránh 2 nơi tính lệch nhau nếu sau này sửa công thức.
-const tinhToHopCaoNhat = (nganh, data) => {
+const tinhToHopCaoNhat = (nganh, data, namTotNghiepVal) => {
     let maxScore = 0, bestCombo = "";
     (DICT_NGANH[nganh] || []).forEach(maToHop => {
         const subjects = DICT_TO_HOP[maToHop];
@@ -276,7 +288,19 @@ const tinhToHopCaoNhat = (nganh, data) => {
             const v2 = getSubjectAverage(s2_id, data);
             const v3 = getSubjectAverage(s3_id, data);
             const total = v1 + v2 + v3;
-            if (total > maxScore && v1 > 0 && v2 > 0 && v3 > 0) {
+            // ĐÃ THÊM (theo yêu cầu — điều kiện tổ hợp Toán/Văn riêng cho "Năm tốt nghiệp
+            // THPT" = "2026", xem chú thích đầy đủ tại NTN_2026 phía trên): độc lập hoàn
+            // toàn với mọi điều kiện khác, chỉ ảnh hưởng việc CHỌN tổ hợp cao nhất — tổ hợp
+            // nào không có Toán/Văn, hoặc có nhưng cả 2 đều dưới 5.33, bị loại khỏi vòng so
+            // sánh (không được cập nhật maxScore/bestCombo), "trượt" tự nhiên xuống tổ hợp
+            // hợp lệ kế tiếp vì điều kiện được gộp thẳng vào so sánh "total > maxScore".
+            let hopLe2026 = true;
+            if (String(namTotNghiepVal || '').trim() === NTN_2026) {
+                const idsToanVan = [s1_id, s2_id, s3_id].filter(id => id === 'toan' || id === 'nguvan');
+                const diemTheoId = { [s1_id]: v1, [s2_id]: v2, [s3_id]: v3 };
+                hopLe2026 = idsToanVan.length > 0 && idsToanVan.some(id => diemTheoId[id] >= 5.33);
+            }
+            if (total > maxScore && v1 > 0 && v2 > 0 && v3 > 0 && hopLe2026) {
                 maxScore = total; bestCombo = maToHop;
             }
         }
@@ -776,7 +800,8 @@ const XetTuyenPage = () => {
 
     setFormData(prev => ({
       ...prev, [name]: finalValue,
-      ...(name === 'doituongdauvao' ? Object.values(DICT_HO_SO.tien_quyet).flat().reduce((acc, doc) => ({...acc, [doc.id]: false}), {}) : {})
+      ...(name === 'doituongdauvao' ? Object.values(DICT_HO_SO.tien_quyet).flat().reduce((acc, doc) => ({...acc, [doc.id]: false}), {}) : {}),
+      ...(name === 'doituongdauvao' && !apDungNamTotNghiepThpt(finalValue) ? { namtotnghiepthpt: '' } : {})
     }));
   };
 
@@ -906,7 +931,11 @@ const XetTuyenPage = () => {
     // ĐÃ SỬA (theo phản hồi — thêm "Năm tốt nghiệp THPT"): "khuvucuutien" bỏ khỏi danh sách
     // bắt buộc CHUNG, tự kiểm tra riêng ngay dưới đây — vì ô này bị ẨN HẲN (không còn bắt
     // buộc) khi chọn mốc "Trước..." (xem biChanKhuVucUTTheoNamTN/JSX ô "Khu vực ưu tiên").
-    const requiredFields = ['hoten', 'cccd', 'ngaysinh', 'nganh', 'khoa', 'namtotnghiepthpt', 'doituonguutien', 'doituongdauvao', 'namtt', 'hedaotao', 'htdaotao'];
+    // ĐÃ SỬA (theo yêu cầu — ẩn field "Năm tốt nghiệp THPT" khi Đối tượng đầu vào không phải
+    // "Tốt nghiệp THPT"/"Trung học nghề"): "namtotnghiepthpt" cũng bỏ khỏi danh sách bắt buộc
+    // CHUNG vì cùng lý do — ô này giờ có thể bị ẨN HẲN tuỳ Đối tượng đầu vào, tự kiểm tra
+    // riêng CÓ ĐIỀU KIỆN ngay dưới đây (xem apDungNamTotNghiepThpt phía trên component).
+    const requiredFields = ['hoten', 'cccd', 'ngaysinh', 'nganh', 'khoa', 'doituonguutien', 'doituongdauvao', 'namtt', 'hedaotao', 'htdaotao'];
     for (let field of requiredFields) {
         if (!formData[field]) { alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); focusInvalidField(field); return; }
     }
@@ -915,6 +944,9 @@ const XetTuyenPage = () => {
     // chỉ bắt buộc CÓ ĐIỀU KIỆN (tick mới bắt buộc).
     if (laHoSoCu && !formData.masv.trim()) {
         alert(`Vui lòng nhập Mã sinh viên`); focusInvalidField('masv'); return;
+    }
+    if (apDungNamTotNghiepThpt(formData.doituongdauvao) && !formData.namtotnghiepthpt) {
+        alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); focusInvalidField('namtotnghiepthpt'); return;
     }
     if (!biChanKhuVucUTTheoNamTN(formData.namtotnghiepthpt) && !formData.khuvucuutien) {
         alert(`Vui lòng điền đầy đủ các mục có dấu (*)`); focusInvalidField('khuvucuutien'); return;
@@ -1554,8 +1586,15 @@ const XetTuyenPage = () => {
             // từ sheet CauHinh (khác các dropdown còn lại) vì đây là 2 mốc tự tính theo năm
             // dương lịch thực tế (xem NTN_THPT_TRUOC/NTN_THPT_TU phía trên), không phải danh
             // mục do Admin tự cấu hình.
-            'NĂM TỐT NGHIỆP THPT': [NTN_THPT_TRUOC, NTN_THPT_TU],
-            'ĐỐI TƯỢNG ĐẦU VÀO': config.DoiTuongDauVao,
+            'NĂM TỐT NGHIỆP THPT': [NTN_THPT_TRUOC, NTN_THPT_TU, NTN_2026],
+            // ĐÃ SỬA (theo yêu cầu — mẫu mới "Xét từ văn bằng 1/Liên thông"): riêng data
+            // validation cột "ĐỐI TƯỢNG ĐẦU VÀO" TRONG FILE MẪU EXCEL của mẫu này bỏ 2 lựa
+            // chọn "Tốt nghiệp THPT"/"Trung học nghề" (2 đối tượng đó không xét theo văn bằng
+            // 1/liên thông) — CHỈ áp dụng cho file mẫu Excel, KHÔNG đụng gì đến dropdown
+            // "Đối tượng đầu vào" trên form nhập tay (giữ nguyên đầy đủ như cũ).
+            'ĐỐI TƯỢNG ĐẦU VÀO': importPhuongThuc === 'VAN_BANG_1'
+              ? (config.DoiTuongDauVao || []).filter(dt => dt !== 'Tốt nghiệp THPT' && dt !== 'Trung học nghề')
+              : config.DoiTuongDauVao,
             'NĂM XÉT TUYỂN': config.NamXetTuyen,
             'HỆ ĐÀO TẠO': config.HeDaoTao,
             'HÌNH THỨC ĐÀO TẠO': config.HinhThucDaoTao,
@@ -1608,6 +1647,7 @@ const XetTuyenPage = () => {
             HOC_BA: 'FileMau_NhapLieu_TuyenSinh_DiemHocBa.xlsx',
             HOC_BA_2025: 'FileMau_NhapLieu_TuyenSinh_DiemHocBaTBTS2025.xlsx',
             HOC_BA_DAY_DU: 'FileMau_NhapLieu_TuyenSinh_DiemHocBaDayDu.xlsx',
+            VAN_BANG_1: 'FileMau_NhapLieu_TuyenSinh_VanBang1LienThong.xlsx',
           };
           await taiFileMauExcel({
             headers,
@@ -1718,6 +1758,11 @@ const XetTuyenPage = () => {
 
               const tinhDiemImportTheoPhuongThuc_ = (rowArr, nganhValRow) => {
                   const flatScores = {}; const errs = [];
+                  // ĐÃ THÊM (theo yêu cầu — điều kiện tổ hợp Toán/Văn khi "Năm tốt nghiệp
+                  // THPT" = "2026"): đọc 1 lần, truyền xuống mọi lời gọi tinhToHopCaoNhat bên
+                  // dưới để việc chọn tổ hợp cao nhất lúc import Excel khớp đúng công thức
+                  // dùng chung với form nhập tay/trang Thẩm định (xem NTN_2026 phía trên).
+                  const namTotNghiepValRow = getField(rowArr, ["NĂM TỐT NGHIỆP THPT"]);
 
                   if (importPhuongThuc === 'THI_THPT') {
                       SCORE_FIELDS.forEach(({ ten, aliases }) => {
@@ -1750,12 +1795,23 @@ const XetTuyenPage = () => {
                       // Gate 15-16 CHỈ áp dụng cho "Điểm học bạ" (đúng y hệt điều kiện
                       // `formData.loai_diem === 'HOC_BA'` ở effect tính điểm nhập tay — TBTS 2025
                       // KHÔNG có khái niệm cộng điểm phỏng vấn).
-                      const maxScoreHB = laHocBa ? tinhToHopCaoNhat(nganhValRow, dataGia).maxScore : 0;
+                      const maxScoreHB = laHocBa ? tinhToHopCaoNhat(nganhValRow, dataGia, namTotNghiepValRow).maxScore : 0;
                       return {
                           flatScores, phuongThucGhi: laHocBa ? 'Điểm học bạ' : 'Điểm học bạ (TBTS 2025)',
                           coTheCongPV: laHocBa && maxScoreHB > 0 && coTheCongPhongVan_(rowArr, nganhValRow, flatScores),
                           rawHK: JSON.stringify(rawObj), rawKhac1: "", errs
                       };
+                  }
+
+                  if (importPhuongThuc === 'VAN_BANG_1') {
+                      // Mẫu "Xét từ văn bằng 1/Liên thông" không có bất kỳ cột điểm môn học/
+                      // Điểm cộng/Điểm phỏng vấn nào (đã bỏ khỏi file mẫu, xem
+                      // XETTUYEN_HEADERS_VAN_BANG_1 bên Tuyensinh.gs) — flatScores rỗng, không
+                      // có gì để validate. "ĐIỂM TB TOÀN KHÓA HỆ 4/10" vẫn được đọc bình thường
+                      // ở khối chung bên ngoài (he4Final/he10Final, đọc generic theo tên cột,
+                      // không phụ thuộc importPhuongThuc). "PHƯƠNG THỨC XÉT TUYỂN" ghi thẳng
+                      // "Văn bằng 1" — đúng cơ chế tự ghi hiện có (không đọc ô Excel nào).
+                      return { flatScores, phuongThucGhi: "Văn bằng 1", coTheCongPV: false, rawHK: "", rawKhac1: "", errs };
                   }
 
                   if (importPhuongThuc === 'HOC_BA_DAY_DU') {
@@ -1773,8 +1829,8 @@ const XetTuyenPage = () => {
                           raw6ThoTheoMon[subj.id] = c;
                       });
                       const { hocBa, hocBa2025 } = tachBoDiemDayDu_(raw6ThoTheoMon);
-                      const diemHocBa = tinhToHopCaoNhat(nganhValRow, layFormDataGia_('HOC_BA', hocBa)).maxScore;
-                      const diemHocBa2025 = tinhToHopCaoNhat(nganhValRow, layFormDataGia_('HOC_BA_2025', hocBa2025)).maxScore;
+                      const diemHocBa = tinhToHopCaoNhat(nganhValRow, layFormDataGia_('HOC_BA', hocBa), namTotNghiepValRow).maxScore;
+                      const diemHocBa2025 = tinhToHopCaoNhat(nganhValRow, layFormDataGia_('HOC_BA_2025', hocBa2025), namTotNghiepValRow).maxScore;
                       const hocBaThang = diemHocBa >= diemHocBa2025;
                       const rawThang = hocBaThang ? hocBa : hocBa2025;
                       const rawThua = hocBaThang ? hocBa2025 : hocBa;
@@ -2196,7 +2252,7 @@ const XetTuyenPage = () => {
     // thức DICT_KHU_VUC/DICT_DOI_TUONG ở effect đó — KHÔNG cần áp công thức giảm trừ theo
     // maxScore>=22.5 (công thức đó CHỈ áp dụng cho phương thức Điểm thi THPT, hàm này chỉ
     // gọi khi loai_diem === 'HOC_BA').
-    const toHopHienTai = tinhToHopCaoNhat(formData.nganh, formData).maxScore;
+    const toHopHienTai = tinhToHopCaoNhat(formData.nganh, formData, formData.namtotnghiepthpt).maxScore;
     const diemCongHienTai = lamTronDiem(formData.diem_cong);
     // ĐÃ SỬA (theo phản hồi — chặn khu vực ưu tiên theo năm tốt nghiệp THPT): dùng chung
     // biChanKhuVucUTTheoNamTN() để ô "ĐIỂM PV" hiện/ẩn ĐÚNG theo tổng điểm đã trừ khu vực ưu
@@ -2446,15 +2502,23 @@ const XetTuyenPage = () => {
             {/* ĐÃ THÊM (theo phản hồi — Thông tư tuyển sinh đại học mới áp dụng từ 15/2/2026):
                 trường "Năm tốt nghiệp THPT" — 2 mốc tự tính theo năm dương lịch thực tế (xem
                 NTN_THPT_TRUOC/NTN_THPT_TU phía trên component). Chọn mốc "Trước..." sẽ ẩn hẳn
-                ô "Khu vực ưu tiên" ngay sau đây (xem điều kiện render + biChanKhuVucUTTheoNamTN). */}
+                ô "Khu vực ưu tiên" ngay sau đây (xem điều kiện render + biChanKhuVucUTTheoNamTN).
+                ĐÃ SỬA (theo yêu cầu): ẨN HẲN cả field này khi Đối tượng đầu vào không phải
+                "Tốt nghiệp THPT"/"Trung học nghề" (xem apDungNamTotNghiepThpt) — required cũng
+                bỏ theo, đã chuyển sang kiểm tra CÓ ĐIỀU KIỆN ở handleAddRow. ĐÃ THÊM lựa chọn
+                thứ 3 "2026" (NTN_2026) — năm tốt nghiệp thật, áp thêm điều kiện tổ hợp Toán/
+                Văn riêng khi tính điểm (xem NTN_2026/toHopHopLeNamTN2026_). */}
+            {apDungNamTotNghiepThpt(formData.doituongdauvao) && (
             <div>
                 <label className="form-label fw-bold small mb-1">Năm tốt nghiệp THPT <span className="text-danger">*</span></label>
                 <select className="form-select" name="namtotnghiepthpt" value={formData.namtotnghiepthpt} onChange={handleChange} required disabled={isOldRecordApproved}>
                     <option value="">-- Chọn --</option>
                     <option value={NTN_THPT_TRUOC}>{NTN_THPT_TRUOC}</option>
                     <option value={NTN_THPT_TU}>{NTN_THPT_TU}</option>
+                    <option value={NTN_2026}>{NTN_2026}</option>
                 </select>
             </div>
+            )}
             <div>
                 <label className="form-label fw-bold small mb-1">Đối tượng ƯT <span className="text-danger">*</span></label>
                 <select className="form-select" name="doituonguutien" value={formData.doituonguutien} onChange={handleChange} required disabled={isOldRecordApproved}>
@@ -2845,6 +2909,7 @@ const XetTuyenPage = () => {
                                   <option value="HOC_BA">Điểm học bạ (mỗi môn 3 cột: Lớp 10/11/12)</option>
                                   <option value="HOC_BA_2025">Điểm học bạ (TBTS 2025) (mỗi môn 3 cột: HK2/11, HK1/12, HK2/12)</option>
                                   <option value="HOC_BA_DAY_DU">Điểm học bạ đầy đủ (mỗi môn 6 cột — hệ thống tự so & chọn phương án Học bạ/TBTS 2025 có lợi hơn)</option>
+                                  <option value="VAN_BANG_1">Xét từ văn bằng 1/Liên thông (không xét điểm môn học — chỉ ĐTB toàn khóa Hệ 4/10)</option>
                               </select>
                           </div>
                           <button className="btn btn-outline-primary w-100 mb-3 fw-bold" onClick={handleDownloadTemplate} disabled={dangTaiFileMau}>

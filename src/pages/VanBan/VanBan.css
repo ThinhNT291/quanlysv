@@ -1,0 +1,121 @@
+/* ========================================================
+   TRANG "QUẢN LÝ VĂN BẢN" — 2 tab (Tin tức / Văn bản hành chính) + preview overlay.
+   Theo đúng thang cỡ chữ chung của app (15px, xem XetTuyen.css/ThamDinh.css).
+   ======================================================== */
+.vanban-wrapper {
+  font-size: 15px;
+}
+
+.vanban-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vanban-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.vanban-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vanban-item-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #212529;
+  margin-bottom: 4px;
+}
+
+.vanban-item-desc {
+  font-size: 0.85rem;
+  color: #495057;
+  margin-bottom: 6px;
+  white-space: pre-line;
+}
+
+.vanban-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.75rem;
+  color: #adb5bd;
+}
+
+.vanban-item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ========================================================
+   PREVIEW OVERLAY — nhúng iframe Drive trực tiếp, không rời khỏi tab.
+   ======================================================== */
+.vanban-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.vanban-preview-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: min(900px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.vanban-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.vanban-preview-iframe {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 65vh;
+  border: none;
+}
+
+.vanban-preview-footer {
+  padding: 10px 14px;
+  border-top: 1px solid #e9ecef;
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 575.98px) {
+  .vanban-item {
+    flex-direction: column;
+  }
+  .vanban-item-actions {
+    flex-direction: row;
+    width: 100%;
+  }
+  .vanban-item-actions .btn,
+  .vanban-item-actions a {
+    flex: 1 1 auto;
+  }
+}

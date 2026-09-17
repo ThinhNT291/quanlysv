@@ -813,6 +813,19 @@ export const fetchHoatDong24h = async () => {
   throw new Error(response.data.message || 'Lỗi tải hoạt động 24h');
 };
 
+// ĐÃ THÊM: trang "Quản lý văn bản" (route /quan-ly-van-ban) — đọc Bảng tin (Tin tức +
+// Văn bản hành chính), dùng chung cho cả QuanLyVanBanPage.jsx lẫn panel "Tin tức mới
+// nhất" ở Home.jsx. Mọi role đăng nhập đều gọi được (xem hdGet_layBangTinMoiNhat,
+// VanBan.gs).
+export const fetchBangTinMoiNhat = async () => {
+  const auth = getAuthParams();
+  const response = await axios.get(`${GAS_URL}?action=layBangTinMoiNhat&idToken=${encodeURIComponent(auth.idToken)}&sessionToken=${encodeURIComponent(auth.sessionToken)}`);
+  if (response.data && response.data.code === 200) {
+    return response.data.data;
+  }
+  throw new Error(response.data.message || 'Lỗi tải bảng tin');
+};
+
 // Danh sách yêu cầu ký đang chờ người đang đăng nhập ký — cho trang "Hồ sơ chờ ký".
 export const fetchDanhSachChoToiKy = async () => {
   const auth = getAuthParams();
