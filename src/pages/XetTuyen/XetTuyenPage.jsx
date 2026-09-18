@@ -1569,7 +1569,7 @@ const XetTuyenPage = () => {
   // để dễ nhìn khi cuộn ngang, KHÔNG ảnh hưởng gì tới việc đọc file lúc import.
   const handleDownloadTemplate = async () => {
       setDangTaiFileMau(true);
-      setImportStatus("⏳ Đang tạo file mẫu...");
+      setImportStatus("⏳ Downloading template...");
       try {
           const headers = await fetchXetTuyenHeaders(importPhuongThuc);
           // Lấy danh sách hợp lệ từ CauHinh — nếu gọi lỗi thì vẫn tạo được file mẫu bình

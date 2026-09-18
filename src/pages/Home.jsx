@@ -142,6 +142,9 @@ const Home = ({ currentUser }) => {
   // "Tin tức" (không hiện "Văn bản hành chính") ở khối này, lấy 3 tin đầu tiên (đã sắp
   // mới nhất lên đầu ở backend, xem hdGet_layBangTinMoiNhat/VanBan.gs).
   const [tinTucMoi, setTinTucMoi] = useState([]);
+  // ĐÃ THÊM (theo yêu cầu): thêm 2 "Văn bản hành chính" mới nhất, tách riêng khỏi
+  // tinTucMoi ở trên — lọc từ CÙNG 1 lần gọi fetchBangTinMoiNhat (không tốn thêm request).
+  const [vanBanMoi, setVanBanMoi] = useState([]);
   const [tinTucLoading, setTinTucLoading] = useState(true);
   useEffect(() => {
     if (!currentUser?.username) { setActivitiesLoading(false); return; }
@@ -152,7 +155,12 @@ const Home = ({ currentUser }) => {
       .finally(() => { if (!daHuy) setActivitiesLoading(false); });
     fetchHoatDong24h().then(d => { if (!daHuy) setHoatDong24h(d); }).catch(() => {});
     fetchBangTinMoiNhat()
-      .then(list => { if (!daHuy) setTinTucMoi((Array.isArray(list) ? list : []).filter(it => it.loai === 'Tin tức').slice(0, 3)); })
+      .then(list => {
+        if (daHuy) return;
+        const arr = Array.isArray(list) ? list : [];
+        setTinTucMoi(arr.filter(it => it.loai === 'Tin tức').slice(0, 3));
+        setVanBanMoi(arr.filter(it => it.loai === 'Văn bản hành chính').slice(0, 2));
+      })
       .catch(() => {})
       .finally(() => { if (!daHuy) setTinTucLoading(false); });
     return () => { daHuy = true; };
@@ -368,22 +376,41 @@ const Home = ({ currentUser }) => {
 
         <div className="home-overview-panel">
           <div className="d-flex justify-content-between align-items-center mb-3">
-            <h6 className="fw-bold mb-0">Tin tức mới nhất</h6>
+            <h6 className="fw-bold mb-0">Tin tức &amp; văn bản mới</h6>
             <NavLink to="/quan-ly-van-ban" className="small text-decoration-none">Xem tất cả →</NavLink>
           </div>
           {tinTucLoading ? (
             <div className="text-muted small">Đang tải...</div>
-          ) : tinTucMoi.length === 0 ? (
+          ) : tinTucMoi.length === 0 && vanBanMoi.length === 0 ? (
             <div className="text-center py-2" style={{ fontSize: '28px' }}>🌸</div>
           ) : (
-            <ul className="home-activity-list mb-0">
-              {tinTucMoi.map((tt, idx) => (
-                <li key={idx}>
-                  <span className="home-activity-time">{tt.ngayDang || ''}</span>
-                  <span className="home-activity-desc">{tt.tieuDe || '(Chưa có tiêu đề)'}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              {tinTucMoi.length > 0 && (
+                <ul className="home-activity-list mb-0">
+                  {tinTucMoi.map((tt, idx) => (
+                    <li key={idx}>
+                      <span className="home-activity-time">{tt.ngayDang || ''}</span>
+                      <span className="home-activity-desc">{tt.tieuDe || '(Chưa có tiêu đề)'}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {/* ĐÃ THÊM (theo yêu cầu): 2 "Văn bản hành chính" mới nhất — tách nhãn phụ nhỏ
+                  phía trên để phân biệt với danh sách Tin tức ngay trên, không lẫn 2 loại. */}
+              {vanBanMoi.length > 0 && (
+                <>
+                  <div className="text-muted small fw-bold mt-2 mb-1">Văn bản hành chính</div>
+                  <ul className="home-activity-list mb-0">
+                    {vanBanMoi.map((vb, idx) => (
+                      <li key={idx}>
+                        <span className="home-activity-time">{vb.ngayDang || ''}</span>
+                        <span className="home-activity-desc">{vb.tieuDe || '(Chưa có tiêu đề)'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </>
           )}
         </div>
       </div>
